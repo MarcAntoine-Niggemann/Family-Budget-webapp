@@ -1,0 +1,316 @@
+rules_version = '2';
+// =========================================================================
+// ONE-TIME STATIC SETUP — DYNAMIC ROLE & MULTI-TENANT VAULT SECURITY RULES
+// You NEVER need to update or redeploy these rules when adding, editing,
+// or removing Family Members in the app. Member roles are dynamically
+// evaluated on every request from the `/security_config/roles` document.
+// =========================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null && (
+        (request.auth.token.email != null && request.auth.token.email.size() > 0) ||
+        request.auth.uid != null
+      );
+    }
+
+    function userEmail() {
+      return (request.auth.token.email != null) ? request.auth.token.email.lower() : '';
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. SELF-HOSTED (BYOB) ROOT-LEVEL HELPERS
+    // -------------------------------------------------------------------------
+    function rolesDocPath() {
+      return /databases/$(database)/documents/security_config/roles;
+    }
+
+    function vaultMetaPath() {
+      return /databases/$(database)/documents/family_meta/vault;
+    }
+
+    function rolesDocExists() {
+      return exists(rolesDocPath());
+    }
+
+    function vaultMetaExists() {
+      return exists(vaultMetaPath());
+    }
+
+    // Bootstrap condition: If roles doc does not exist, or userRoles map is empty/missing, the vault is uninitialized.
+    function isRolesDocEmpty() {
+      return !rolesDocExists() ||
+        !('userRoles' in get(rolesDocPath()).data) ||
+        get(rolesDocPath()).data.userRoles.size() == 0;
+    }
+
+    function hasUserRole() {
+      return rolesDocExists() &&
+        ('userRoles' in get(rolesDocPath()).data) &&
+        (userEmail() != '') &&
+        (userEmail() in get(rolesDocPath()).data.userRoles);
+    }
+
+    function isUserAdmin() {
+      return hasUserRole() &&
+        get(rolesDocPath()).data.userRoles[userEmail()] == 'ADMIN';
+    }
+
+    function isUserEditorOrMember() {
+      return hasUserRole() &&
+        (get(rolesDocPath()).data.userRoles[userEmail()] in ['ADMIN', 'EDITOR', 'MEMBER']);
+    }
+
+    function isVaultAdminEmail() {
+      return vaultMetaExists() &&
+        ('adminEmail' in get(vaultMetaPath()).data) &&
+        (userEmail() != '') &&
+        get(vaultMetaPath()).data.adminEmail.lower() == userEmail();
+    }
+
+    function isFamilyMember() {
+      return isSignedIn() && (
+        isRolesDocEmpty() ||
+        !vaultMetaExists() ||
+        hasUserRole() ||
+        isVaultAdminEmail()
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isRolesDocEmpty() ||
+        !vaultMetaExists() ||
+        isUserAdmin() ||
+        isVaultAdminEmail()
+      );
+    }
+
+    function canEdit() {
+      return isSignedIn() && (
+        isRolesDocEmpty() ||
+        !vaultMetaExists() ||
+        isAdmin() ||
+        isUserEditorOrMember()
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. TURNKEY MANAGED CLOUD (/vaults/{vaultId}) MULTI-TENANT HELPERS
+    // -------------------------------------------------------------------------
+    function vaultRolesPath(vaultId) {
+      return /databases/$(database)/documents/vaults/$(vaultId)/security_config/roles;
+    }
+
+    function vaultMetaDocPath(vaultId) {
+      return /databases/$(database)/documents/vaults/$(vaultId)/family_meta/vault;
+    }
+
+    function vaultRolesExists(vaultId) {
+      return exists(vaultRolesPath(vaultId));
+    }
+
+    function vaultMetaDocExists(vaultId) {
+      return exists(vaultMetaDocPath(vaultId));
+    }
+
+    function isVaultRolesEmpty(vaultId) {
+      return !vaultRolesExists(vaultId) ||
+        !('userRoles' in get(vaultRolesPath(vaultId)).data) ||
+        get(vaultRolesPath(vaultId)).data.userRoles.size() == 0;
+    }
+
+    function hasVaultUserRole(vaultId) {
+      return vaultRolesExists(vaultId) &&
+        ('userRoles' in get(vaultRolesPath(vaultId)).data) &&
+        (userEmail() != '') &&
+        (userEmail() in get(vaultRolesPath(vaultId)).data.userRoles);
+    }
+
+    function isVaultUserAdmin(vaultId) {
+      return hasVaultUserRole(vaultId) &&
+        get(vaultRolesPath(vaultId)).data.userRoles[userEmail()] == 'ADMIN';
+    }
+
+    function isVaultUserEditorOrMember(vaultId) {
+      return hasVaultUserRole(vaultId) &&
+        (get(vaultRolesPath(vaultId)).data.userRoles[userEmail()] in ['ADMIN', 'EDITOR', 'MEMBER']);
+    }
+
+    function isVaultAdminEmailMatch(vaultId) {
+      return vaultMetaDocExists(vaultId) &&
+        ('adminEmail' in get(vaultMetaDocPath(vaultId)).data) &&
+        (userEmail() != '') &&
+        get(vaultMetaDocPath(vaultId)).data.adminEmail.lower() == userEmail();
+    }
+
+    function isVaultMember(vaultId) {
+      return isSignedIn() && (
+        isVaultRolesEmpty(vaultId) ||
+        !vaultMetaDocExists(vaultId) ||
+        hasVaultUserRole(vaultId) ||
+        isVaultAdminEmailMatch(vaultId)
+      );
+    }
+
+    function isVaultAdmin(vaultId) {
+      return isSignedIn() && (
+        isVaultRolesEmpty(vaultId) ||
+        !vaultMetaDocExists(vaultId) ||
+        isVaultUserAdmin(vaultId) ||
+        isVaultAdminEmailMatch(vaultId)
+      );
+    }
+
+    function canWriteVaultData(vaultId) {
+      return isSignedIn() && (
+        isVaultRolesEmpty(vaultId) ||
+        !vaultMetaDocExists(vaultId) ||
+        isVaultAdmin(vaultId) ||
+        isVaultUserEditorOrMember(vaultId)
+      );
+    }
+
+    function isVaultSubscriptionActive(vaultId) {
+      return !vaultMetaDocExists(vaultId) || (
+        ('subscriptionStatus' in get(vaultMetaDocPath(vaultId)).data) &&
+        get(vaultMetaDocPath(vaultId)).data.subscriptionStatus == 'ACTIVE' &&
+        get(vaultMetaDocPath(vaultId)).data.subscriptionExpiryMillis > request.time.toMillis() &&
+        get(vaultMetaDocPath(vaultId)).data.subscriptionPurchaseToken is string &&
+        get(vaultMetaDocPath(vaultId)).data.subscriptionPurchaseToken.size() > 10
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // SELF-HOSTED (BYOB) ROOT COLLECTIONS
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /security_config/{configDoc} {
+      allow read: if isFamilyMember();
+      allow write: if isAdmin();
+    }
+
+    match /family_meta/{docId} {
+      allow read: if isFamilyMember();
+      allow write: if isAdmin();
+    }
+
+    match /family_members/{memberId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /categories/{catId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /transactions/{txId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /category_budgets/{budgetId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /rules/{ruleId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /expected_spends/{spendId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /account_balance/{docId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /accounts/{accountId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    match /payment_methods/{pmId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
+    // -------------------------------------------------------------------------
+    // TURNKEY MANAGED CLOUD MULTI-TENANT VAULTS (/vaults/{vaultId}/...)
+    // -------------------------------------------------------------------------
+    match /vaults/{vaultId} {
+      allow list: if false;
+      allow get: if isVaultMember(vaultId);
+      allow create, update: if isVaultAdmin(vaultId);
+      allow delete: if false;
+
+      match /users/{userId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      match /security_config/{configDoc} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if isVaultAdmin(vaultId);
+      }
+
+      match /family_meta/{docId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if isVaultAdmin(vaultId);
+      }
+
+      match /family_members/{memberId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId);
+      }
+
+      match /categories/{catId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /transactions/{txId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /category_budgets/{budgetId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /rules/{ruleId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /expected_spends/{spendId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /account_balance/{docId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /accounts/{accountId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /payment_methods/{pmId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+    }
+  }
+}

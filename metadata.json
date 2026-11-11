@@ -1,0 +1,6 @@
+{
+  "name": "Budget Family",
+  "description": "Privacy-focused, multi-account family personal finance, budget planner, cash flow forecast, and bank reconciliation application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
