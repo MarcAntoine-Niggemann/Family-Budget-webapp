@@ -1,47 +1,189 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Shield,
   CloudCheck,
   CloudSync,
+  CloudOff,
   Users,
-  Lock,
-  Unlock,
   RefreshCw,
-  Key,
   Globe,
-  CheckCircle2,
-  AlertCircle,
   Sparkles,
-  QrCode
+  QrCode,
+  AlertCircle,
+  Copy,
+  Check,
+  LogOut,
+  DownloadCloud,
+  Wallet,
+  Plus,
+  Pencil,
+  Fingerprint,
+  Trash2
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { ShareVaultQrModal } from '../components/ShareVaultQrModal';
+import { AccountModal } from '../components/AccountModal';
+import { CategoryIcon } from '../components/CategoryIcon';
+import { AccountEntity, AccountType } from '../types';
+import {
+  BiometricStatus,
+  checkBiometricSupport,
+  clearBiometricCredential,
+  enrollBiometricCredential
+} from '../utils/biometricKeyvault';
+
+export const BYOB_FIRESTORE_RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+    function userEmail() {
+      return request.auth.token.email.lower();
+    }
+    function rolesDocPath() {
+      return /databases/$(database)/documents/security_config/roles;
+    }
+    function vaultMetaPath() {
+      return /databases/$(database)/documents/family_meta/vault;
+    }
+    function isRolesEmpty() {
+      return !exists(rolesDocPath()) || !('userRoles' in get(rolesDocPath()).data) || get(rolesDocPath()).data.userRoles.size() == 0;
+    }
+    function hasUserRole() {
+      return exists(rolesDocPath()) && ('userRoles' in get(rolesDocPath()).data) && (userEmail() in get(rolesDocPath()).data.userRoles);
+    }
+    function isAdmin() {
+      return isSignedIn() && (isRolesEmpty() || !exists(vaultMetaPath()) || (hasUserRole() && get(rolesDocPath()).data.userRoles[userEmail()] == 'ADMIN') || (exists(vaultMetaPath()) && get(vaultMetaPath()).data.adminEmail.lower() == userEmail()));
+    }
+    function canEdit() {
+      return isSignedIn() && (isRolesEmpty() || !exists(vaultMetaPath()) || isAdmin() || (hasUserRole() && get(rolesDocPath()).data.userRoles[userEmail()] in ['ADMIN', 'EDITOR', 'MEMBER']));
+    }
+    function isMember() {
+      return isSignedIn() && (isRolesEmpty() || !exists(vaultMetaPath()) || hasUserRole() || isAdmin());
+    }
+    match /security_config/{docId} { allow read: if isMember(); allow write: if isAdmin(); }
+    match /family_meta/{docId} { allow read: if isMember(); allow write: if isAdmin(); }
+    match /family_members/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /accounts/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /account_balance/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /categories/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /category_budgets/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /transactions/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /rules/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /expected_spends/{id} { allow read: if isMember(); allow write: if canEdit(); }
+  }
+}`;
 
 export const FirebaseSyncScreen: React.FC = () => {
   const {
+    sessionMode,
     config,
     updateConfig,
+    accounts,
+    currency,
     members,
     syncState,
     syncWithFirebaseNow,
     resetToMockData,
     language,
     setLanguage,
-    navigateTo
+    firebaseUser,
+    loginWithGoogle,
+    logout,
+    forgetByobConfig,
+    showToast
   } = useBudget();
 
   const isFr = language === 'fr';
+  const isFirestoreMode = sessionMode === 'FIRESTORE';
+  const isByobConfigured = !!(config.projectId?.trim() && config.apiKey?.trim());
+  const isActuallyAuthenticated = isFirestoreMode && isByobConfigured && !!firebaseUser;
 
   const [familyName, setFamilyName] = useState(config.familyName || 'Family Vault');
-  const [isLockEnabled, setIsLockEnabled] = useState(config.isBiometricLockEnabled || false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<AccountEntity | null>(null);
+  const [copiedRules, setCopiedRules] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [biometricStatus, setBiometricStatus] = useState<BiometricStatus>({
+    isSupported: false,
+    isPlatformAvailable: false,
+    hasEnrolledCredential: false
+  });
+  const [biometricLoading, setBiometricLoading] = useState(false);
+
+  useEffect(() => {
+    checkBiometricSupport().then(setBiometricStatus);
+  }, []);
+
+  const getAccountTypeLabel = (type: AccountType) => {
+    switch (type) {
+      case 'CHECKING':
+        return isFr ? 'Compte Courant' : 'Checking';
+      case 'DEFERRED_CARD':
+        return isFr ? 'Carte Différée' : 'Deferred Card';
+      case 'SAVINGS':
+        return isFr ? 'Épargne' : 'Savings';
+      case 'CASH':
+        return isFr ? 'Espèces' : 'Cash';
+      case 'INVESTMENT':
+        return isFr ? 'Investissement' : 'Investment';
+      default:
+        return isFr ? 'Autre' : 'Other';
+    }
+  };
 
   const handleSaveVault = (e: React.FormEvent) => {
     e.preventDefault();
     updateConfig({
-      familyName: familyName.trim(),
-      isBiometricLockEnabled: isLockEnabled
+      familyName: familyName.trim()
     });
+  };
+
+  const handleCopyRules = () => {
+    navigator.clipboard.writeText(BYOB_FIRESTORE_RULES);
+    setCopiedRules(true);
+    showToast(isFr ? 'Règles Firestore copiées dans le presse-papiers' : 'Firestore rules copied to clipboard');
+    setTimeout(() => setCopiedRules(false), 2000);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    const res = await loginWithGoogle();
+    if (!res.success && res.error) {
+      setAuthError(res.error);
+    }
+  };
+
+  const handleEnrollFingerprint = async () => {
+    setBiometricLoading(true);
+    try {
+      const res = await enrollBiometricCredential(
+        firebaseUser?.displayName || config.currentUserName || 'Vault Owner',
+        firebaseUser?.email || config.currentUserEmail || 'vault@family.local'
+      );
+      const updated = await checkBiometricSupport();
+      setBiometricStatus(updated);
+      if (res.success) {
+        showToast(
+          isFr
+            ? 'Empreinte enregistrée pour la reconnexion rapide !'
+            : 'Fingerprint enrolled for instant unlock!'
+        );
+      } else if (res.error) {
+        showToast(res.error);
+      }
+    } finally {
+      setBiometricLoading(false);
+    }
+  };
+
+  const handleRemoveFingerprint = async () => {
+    clearBiometricCredential();
+    const updated = await checkBiometricSupport();
+    setBiometricStatus(updated);
+    showToast(isFr ? 'Empreinte supprimée de cet appareil' : 'Fingerprint credential removed from this device');
   };
 
   const lastSyncDateStr = syncState.lastPushTimestamp
@@ -53,24 +195,49 @@ export const FirebaseSyncScreen: React.FC = () => {
   return (
     <div className="space-y-6 pb-12 max-w-4xl mx-auto">
       {/* Top Header */}
-      <div>
-        <h1 className="text-xl font-bold text-white tracking-tight">
-          {isFr ? 'Configuration du Coffre & Synchronisation' : 'Vault Config & Cloud Sync'}
-        </h1>
-        <p className="text-xs text-slate-400 mt-0.5">
-          {isFr
-            ? 'Gestion de la famille, des membres RBAC, du chiffrement et de la synchronisation hors-ligne'
-            : 'Family members RBAC, offline-first transactional outbox, and security lock'}
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-white tracking-tight">
+            {isFr ? 'Configuration du Coffre & Synchronisation' : 'Vault Config & Cloud Sync'}
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {isFr
+              ? 'Gestion de la famille, des membres RBAC, de l’empreinte digitale et de la synchronisation Firestore'
+              : 'Family members RBAC, fingerprint unlock, and Cloud Firestore synchronization'}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-200 font-semibold text-xs transition self-start sm:self-auto cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>{isFr ? 'Déconnexion (effacer données locales)' : 'Log Out (Erase Local Data)'}</span>
+        </button>
       </div>
 
       {/* Cloud & Outbox Sync Status Card */}
-      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+      <div
+        className={`p-5 rounded-2xl bg-slate-900 border shadow-xl space-y-4 ${
+          syncState.lastSyncStatus === 'ERROR'
+            ? 'border-rose-500/50'
+            : 'border-slate-800'
+        }`}
+      >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-300 flex items-center justify-center">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                syncState.lastSyncStatus === 'ERROR'
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : 'bg-teal-500/20 text-teal-300'
+              }`}
+            >
               {syncState.lastSyncStatus === 'SYNCING' ? (
                 <CloudSync className="w-5 h-5 animate-spin" />
+              ) : syncState.lastSyncStatus === 'ERROR' || !isFirestoreMode ? (
+                <CloudOff className="w-5 h-5" />
               ) : (
                 <CloudCheck className="w-5 h-5" />
               )}
@@ -79,41 +246,40 @@ export const FirebaseSyncScreen: React.FC = () => {
               <h2 className="font-bold text-base text-white">
                 {isFr ? 'Statut de Synchronisation du Coffre' : 'Vault Synchronization Status'}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {syncState.lastSyncMessage || (isFr ? 'Toutes les données sont synchronisées.' : 'All local changes synchronized.')}
+              <p
+                className={`text-xs mt-0.5 ${
+                  syncState.lastSyncStatus === 'ERROR' ? 'text-rose-300 font-medium' : 'text-slate-400'
+                }`}
+              >
+                {syncState.lastSyncMessage || (isFr ? 'Prêt.' : 'Ready.')}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setIsShareModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-              title={isFr ? 'Partager le QR Code du Coffre' : 'Share Vault QR Code'}
-            >
-              <QrCode className="w-4 h-4 text-teal-400" />
-              <span>{isFr ? 'Partager QR' : 'Share QR'}</span>
-            </button>
+            {isFirestoreMode && isByobConfigured && (
+              <button
+                onClick={() => setIsShareModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+                title={isFr ? 'Partager le QR Code du Coffre' : 'Share Vault QR Code'}
+              >
+                <QrCode className="w-4 h-4 text-teal-400" />
+                <span>{isFr ? 'Partager QR' : 'Share QR'}</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => navigateTo('LOGIN')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-              title={isFr ? 'Changer de Coffre / Se Connecter' : 'Switch Vault / Login'}
-            >
-              <Key className="w-4 h-4 text-indigo-400" />
-              <span>{isFr ? 'Changer Coffre' : 'Switch Vault'}</span>
-            </button>
-
-            <button
-              onClick={syncWithFirebaseNow}
-              disabled={syncState.lastSyncStatus === 'SYNCING'}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95 disabled:opacity-50"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${syncState.lastSyncStatus === 'SYNCING' ? 'animate-spin' : ''}`}
-              />
-              <span>{isFr ? 'Synchroniser' : 'Sync Now'}</span>
-            </button>
+            {isFirestoreMode && (
+              <button
+                onClick={() => syncWithFirebaseNow()}
+                disabled={syncState.lastSyncStatus === 'SYNCING'}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${syncState.lastSyncStatus === 'SYNCING' ? 'animate-spin' : ''}`}
+                />
+                <span>{isFr ? 'Synchroniser' : 'Sync Now'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -126,20 +292,196 @@ export const FirebaseSyncScreen: React.FC = () => {
             <span className="text-slate-500 block">
               {isFr ? 'Modifications en attente :' : 'Outbox Queue:'}
             </span>
-            <span className="font-semibold text-teal-400 mt-0.5 block">
+            <span className="font-semibold text-teal-400 mt-0.5 block tabular-nums">
               {syncState.pendingOutboxCount} {isFr ? 'opérations' : 'items'}
             </span>
           </div>
           <div>
-            <span className="text-slate-500 block">{isFr ? 'Mode de données :' : 'Storage Mode:'}</span>
+            <span className="text-slate-500 block">{isFr ? 'Mode actif :' : 'Active Mode:'}</span>
             <span className="font-semibold text-indigo-300 mt-0.5 block">
-              {config.isAnonymous ? 'Offline-First Local (Simulated Cloud)' : 'Cloud Live'}
+              {isFirestoreMode && isByobConfigured
+                ? isActuallyAuthenticated
+                  ? `Firestore BYOB (${config.projectId})`
+                  : isFr
+                  ? `BYOB (${config.projectId}) — Non authentifié`
+                  : `BYOB (${config.projectId}) — Sign-in required`
+                : isFr
+                ? 'Mode Démo (en mémoire uniquement)'
+                : 'Demo Mode (In-memory only)'}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Family Vault Identity & Security Settings */}
+      {/* Private Cloud BYOB & Fingerprint Card */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center p-2 shadow-md shrink-0 overflow-hidden">
+              {firebaseUser?.photoURL ? (
+                <img src={firebaseUser.photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover rounded-xl" />
+              ) : (
+                <Shield className="w-6 h-6" />
+              )}
+            </div>
+            <div>
+              <h2 className="font-bold text-base text-white">
+                {isFirestoreMode && isByobConfigured
+                  ? (isFr ? 'Firebase Privé (BYOB) & Google OAuth' : 'Private Firebase (BYOB) & Google OAuth')
+                  : (isFr ? 'Session Démo en Mémoire' : 'In-Memory Demo Session')}
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isFirestoreMode && isByobConfigured
+                  ? isActuallyAuthenticated
+                    ? `${isFr ? 'Projet' : 'Project'}: ${config.projectId} · ${firebaseUser.email}`
+                    : `${isFr ? 'Projet configuré' : 'Configured project'}: ${config.projectId} · ${
+                        isFr ? 'Aucune session Google active' : 'No active Google session'
+                      }`
+                  : isFr
+                  ? 'Aucun stockage local. Déconnectez-vous pour configurer votre projet Firestore.'
+                  : 'Zero local storage. Log out to configure and sign in with your own Firestore project.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {isFirestoreMode && isByobConfigured ? (
+              <>
+                {!isActuallyAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shadow-lg transition active:scale-95 cursor-pointer"
+                  >
+                    <span>{isFr ? 'Se connecter avec Google' : 'Sign in with Google'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => forgetByobConfig()}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-rose-300 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isFr ? 'Oublier config BYOB & Déconnexion' : 'Forget BYOB Config & Log Out'}</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>{isFr ? 'Quitter Démo & Connecter Firestore' : 'Exit Demo & Connect Firestore'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {authError && (
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <span>{authError}</span>
+          </div>
+        )}
+
+        {/* Biometric Fingerprint Enrollment for BYOB */}
+        {isFirestoreMode && isByobConfigured && (
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
+                <Fingerprint className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="font-semibold text-xs text-white block">
+                  {isFr ? 'Connexion directe par Empreinte / Face ID' : 'Direct Fingerprint / Face ID Login'}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {biometricStatus.hasEnrolledCredential
+                    ? isFr
+                      ? 'Empreinte enregistrée sur cet appareil — demandée directement à la prochaine connexion.'
+                      : 'Fingerprint enrolled on this device — prompted directly on next sign-in.'
+                    : biometricStatus.isPlatformAvailable
+                    ? isFr
+                      ? 'Enregistrez votre empreinte pour déverrouiller ce coffre directement.'
+                      : 'Enroll your device fingerprint to unlock this vault directly.'
+                    : isFr
+                    ? 'Capteur biométrique matériel non détecté dans ce navigateur.'
+                    : 'Hardware biometric authenticator not detected in this browser.'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={biometricLoading || !biometricStatus.isPlatformAvailable}
+                onClick={handleEnrollFingerprint}
+                className="px-3.5 py-2 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-300 font-semibold text-xs transition disabled:opacity-40 cursor-pointer"
+              >
+                {biometricStatus.hasEnrolledCredential
+                  ? isFr
+                    ? 'Ré-enregistrer Empreinte'
+                    : 'Re-enroll Fingerprint'
+                  : isFr
+                  ? 'Activer l’Empreinte'
+                  : 'Enroll Fingerprint'}
+              </button>
+
+              {biometricStatus.hasEnrolledCredential && (
+                <button
+                  type="button"
+                  onClick={handleRemoveFingerprint}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-xs transition cursor-pointer"
+                >
+                  {isFr ? 'Retirer' : 'Remove'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isFirestoreMode && isByobConfigured && (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400">
+            <div className="space-y-1 max-w-xl">
+              <p className="text-slate-300 font-medium">
+                {isFr
+                  ? 'Actions de synchronisation & règles de sécurité Firestore :'
+                  : 'Firestore synchronization actions & security rules:'}
+              </p>
+              <p className="text-[11px] text-slate-400">
+                {isFr
+                  ? 'Si vous obtenez une erreur « permission-denied », copiez ces règles dans Firebase Console → Firestore Database → Rules puis rechargez le coffre.'
+                  : 'If you see a "permission-denied" error, copy these rules to Firebase Console → Firestore Database → Rules and resync.'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopyRules}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+              >
+                {copiedRules ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-teal-400" />}
+                <span>{copiedRules ? (isFr ? 'Règles copiées !' : 'Rules Copied!') : (isFr ? 'Copier firestore.rules' : 'Copy firestore.rules')}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={!isActuallyAuthenticated || syncState.lastSyncStatus === 'SYNCING'}
+                onClick={() => syncWithFirebaseNow({ forceFullPull: true, resetCacheBeforePull: true })}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-xs font-semibold text-indigo-200 transition disabled:opacity-40 cursor-pointer"
+              >
+                <DownloadCloud className="w-3.5 h-3.5" />
+                <span>{isFr ? 'Tout recharger depuis Firestore' : 'Reset Cache & Pull Firestore'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Family Vault Identity Settings */}
       <form
         onSubmit={handleSaveVault}
         className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4"
@@ -147,7 +489,7 @@ export const FirebaseSyncScreen: React.FC = () => {
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-teal-400" />
           <h2 className="font-bold text-white text-base">
-            {isFr ? 'Paramètres du Coffre Familial' : 'Vault Identity & Security Lock'}
+            {isFr ? 'Identité du Coffre Familial' : 'Vault Identity'}
           </h2>
         </div>
 
@@ -169,48 +511,132 @@ export const FirebaseSyncScreen: React.FC = () => {
               {isFr ? 'Utilisateur Actif' : 'Active User'}
             </label>
             <div className="p-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs text-slate-200">
-              <span className="font-semibold">{config.currentUserName}</span>
-              <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-bold text-[10px]">
+              <span className="font-semibold">{firebaseUser?.displayName || config.currentUserName}</span>
+              <span className="font-mono text-teal-300 font-bold text-[11px]">
                 {config.currentUserRole}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Security Lock Toggle */}
-        <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-              {isLockEnabled ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-            </div>
-            <div>
-              <span className="font-semibold text-xs text-white block">
-                {isFr ? 'Verrouillage de sécurité du coffre' : 'Vault Security Lock'}
-              </span>
-              <span className="text-[11px] text-slate-400">
-                {isFr
-                  ? 'Protège l’accès aux soldes et transactions lors du lancement'
-                  : 'Requires authentication before accessing balances'}
-              </span>
-            </div>
-          </div>
-          <input
-            type="checkbox"
-            checked={isLockEnabled}
-            onChange={e => setIsLockEnabled(e.target.checked)}
-            className="w-5 h-5 rounded text-teal-500 bg-slate-900 border-slate-700 cursor-pointer"
-          />
-        </div>
-
         <div className="flex items-center justify-end">
           <button
             type="submit"
-            className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition"
+            className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition cursor-pointer"
           >
             {isFr ? 'Mettre à jour le coffre' : 'Save Vault Settings'}
           </button>
         </div>
       </form>
+
+      {/* Bank Accounts & Cards Configuration */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Wallet className="w-5 h-5 text-teal-400" />
+            <div>
+              <h2 className="font-bold text-white text-base">
+                {isFr ? 'Comptes Bancaires & Cartes' : 'Bank Accounts & Cards'}
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                {isFr
+                  ? 'Ajoutez, modifiez les soldes ou configurez vos comptes courants, cartes différées et livrets d’épargne'
+                  : 'Add, edit balances, or configure checking accounts, deferred cards, and savings accounts'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedAccount(null);
+              setIsAccountModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-teal-500/20 transition active:scale-95 self-start sm:self-auto cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{isFr ? 'Ajouter un compte' : 'Add Account'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {accounts.map(acc => {
+            const linkedChecking = acc.linkedCheckingAccountId
+              ? accounts.find(a => a.id === acc.linkedCheckingAccountId)
+              : null;
+
+            return (
+              <div
+                key={acc.id}
+                onClick={() => {
+                  setSelectedAccount(acc);
+                  setIsAccountModalOpen(true);
+                }}
+                className="p-3.5 rounded-xl bg-slate-950/70 hover:bg-slate-950 border border-slate-800 hover:border-teal-500/40 cursor-pointer transition flex items-start justify-between gap-3 group"
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
+                    style={{ backgroundColor: `#${(acc.color || 0xff0f766e).toString(16).slice(-6)}` }}
+                  >
+                    <CategoryIcon name={acc.icon || acc.type} className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-bold text-xs text-white truncate group-hover:text-teal-300 transition">
+                        {acc.name}
+                      </span>
+                      {acc.isDefault && (
+                        <span className="text-[10px] font-semibold text-teal-300">
+                          · {isFr ? 'Défaut' : 'Default'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-slate-400">
+                      <span>{getAccountTypeLabel(acc.type)}</span>
+                      {acc.type === 'DEFERRED_CARD' && (
+                        <span>
+                          ·{' '}
+                          {isFr
+                            ? `Arrêté le ${acc.billingCycleClosingDay || 25} / Prél. ${acc.settlementDay || 30}`
+                            : `Closes ${acc.billingCycleClosingDay || 25} / Settles ${acc.settlementDay || 30}`}
+                          {linkedChecking ? ` (${linkedChecking.name})` : ''}
+                        </span>
+                      )}
+                      {(acc.type === 'SAVINGS' || acc.type === 'INVESTMENT') && acc.targetSavingsGoal ? (
+                        <span>
+                          · {isFr ? 'Objectif :' : 'Goal:'} {acc.targetSavingsGoal.toLocaleString()} {acc.currency || currency}
+                        </span>
+                      ) : null}
+                      {acc.includeInLiquidForecast && (
+                        <span className="text-emerald-400/90">
+                          · {isFr ? 'Trésorerie' : 'Liquid forecast'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-right">
+                    <span
+                      className={`text-xs font-extrabold tabular-nums block ${
+                        acc.currentBalance < 0 ? 'text-rose-400' : 'text-white'
+                      }`}
+                    >
+                      {acc.currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} {acc.currency || currency}
+                    </span>
+                  </div>
+                  <div className="p-1.5 rounded-lg bg-slate-800/80 group-hover:bg-teal-500/20 text-slate-400 group-hover:text-teal-300 transition">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Family Members & RBAC Roles */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
@@ -221,7 +647,9 @@ export const FirebaseSyncScreen: React.FC = () => {
               {isFr ? 'Membres de la Famille & Rôles RBAC' : 'Family Members & RBAC Roles'}
             </h2>
           </div>
-          <span className="text-xs text-slate-400">{members.length} {isFr ? 'membres' : 'members'}</span>
+          <span className="text-xs text-slate-400 tabular-nums">
+            {members.length} {isFr ? 'membres' : 'members'}
+          </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -243,7 +671,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                 </div>
               </div>
 
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-teal-300">
+              <span className="font-mono text-[11px] font-bold text-teal-300">
                 {m.role}
               </span>
             </div>
@@ -251,49 +679,61 @@ export const FirebaseSyncScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Demo Mock Data Reset & Language Switcher */}
-      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-amber-400" />
-          <h2 className="font-bold text-white text-base">
-            {isFr ? 'Démonstration & Données de Test' : 'Demo Mode & Data Presets'}
-          </h2>
-        </div>
-        <p className="text-xs text-slate-400">
-          {isFr
-            ? 'Vous pouvez basculer l’application en français ou en anglais et réinitialiser les comptes et les opérations avec le profil type de famille de 4 personnes (classes moyennes).'
-            : 'Reset the complete dataset for a middle-class family of 4 with preloaded accounts, budgets, and transactions in English or French.'}
-        </p>
+      {/* Demo Mode Reset (Only visible in Demo Mode) */}
+      {sessionMode === 'DEMO' && (
+        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-amber-400" />
+            <h2 className="font-bold text-white text-base">
+              {isFr ? 'Démonstration & Langue' : 'Demo Mode Presets'}
+            </h2>
+          </div>
+          <p className="text-xs text-slate-400">
+            {isFr
+              ? 'Réinitialisez les données en mémoire vive en français ou en anglais. Aucune donnée n’est conservée localement après déconnexion.'
+              : 'Reset the in-memory dataset in French or English. No data is kept locally after logging out.'}
+          </p>
 
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <button
-            onClick={() => {
-              setLanguage('fr');
-              resetToMockData('fr');
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-          >
-            <Globe className="w-3.5 h-3.5 text-teal-400" />
-            <span>Charger Démo Famille Martin (Français)</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <button
+              onClick={() => {
+                setLanguage('fr');
+                resetToMockData('fr');
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5 text-teal-400" />
+              <span>Charger Démo Famille Martin (Français)</span>
+            </button>
 
-          <button
-            onClick={() => {
-              setLanguage('en');
-              resetToMockData('en');
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
-          >
-            <Globe className="w-3.5 h-3.5 text-teal-400" />
-            <span>Load Smith Family Demo (English)</span>
-          </button>
+            <button
+              onClick={() => {
+                setLanguage('en');
+                resetToMockData('en');
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5 text-teal-400" />
+              <span>Load Smith Family Demo (English)</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Share QR Code Modal */}
       <ShareVaultQrModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
+      />
+
+      {/* Add / Edit Account Modal */}
+      <AccountModal
+        isOpen={isAccountModalOpen}
+        account={selectedAccount}
+        onClose={() => {
+          setIsAccountModalOpen(false);
+          setSelectedAccount(null);
+        }}
       />
     </div>
   );

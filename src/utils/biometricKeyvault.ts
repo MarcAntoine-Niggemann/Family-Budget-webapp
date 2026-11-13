@@ -1,7 +1,9 @@
+import { BIOMETRIC_CRED_STORAGE_KEY } from './storage';
+
 /**
  * Biometric Hardware Keyvault integration using WebAuthn (FIDO2 / Platform Authenticator).
- * Ties cryptographic key access directly to the phone's hardware security module
- * (Apple Secure Enclave on iOS / Android Hardware Keystore & Titan M).
+ * Ties cryptographic verification directly to the device's hardware security module
+ * (Apple Secure Enclave on iOS/macOS / Android Hardware Keystore / Windows Hello).
  */
 
 export interface BiometricStatus {
@@ -10,7 +12,32 @@ export interface BiometricStatus {
   hasEnrolledCredential: boolean;
 }
 
-const CREDENTIAL_STORAGE_KEY = 'fbv_biometric_cred_id';
+function base64UrlToUint8Array(base64Url: string): Uint8Array {
+  const padded = base64Url.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(base64Url.length / 4) * 4, '=');
+  const raw = atob(padded);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    bytes[i] = raw.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export function clearBiometricCredential(): void {
+  try {
+    localStorage.removeItem(BIOMETRIC_CRED_STORAGE_KEY);
+  } catch {
+    // Ignore
+  }
+}
 
 /**
  * Checks if the current browser and device support native biometric verification (Touch ID, Face ID, Fingerprint).
@@ -32,7 +59,7 @@ export async function checkBiometricSupport(): Promise<BiometricStatus> {
   try {
     const isPlatformAvailable =
       await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-    const hasEnrolledCredential = !!localStorage.getItem(CREDENTIAL_STORAGE_KEY);
+    const hasEnrolledCredential = !!localStorage.getItem(BIOMETRIC_CRED_STORAGE_KEY);
 
     return {
       isSupported: true,
@@ -70,7 +97,7 @@ export async function enrollBiometricCredential(
       publicKey: {
         challenge,
         rp: {
-          name: 'Family Budget Vault',
+          name: 'Budget Family',
           id: window.location.hostname
         },
         user: {
@@ -83,33 +110,39 @@ export async function enrollBiometricCredential(
           { type: 'public-key', alg: -257 } // RS256
         ],
         authenticatorSelection: {
-          authenticatorAttachment: 'platform', // Enforce device hardware: Touch ID / Face ID / Android Keystore
-          userVerification: 'required', // Enforce biometric / fingerprint verification
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
           residentKey: 'preferred'
         },
         timeout: 60000,
         attestation: 'none'
       }
-    })) as PublicKeyCredential;
+    })) as PublicKeyCredential | null;
 
-    if (credential && credential.id) {
-      localStorage.setItem(CREDENTIAL_STORAGE_KEY, credential.id);
-      return { success: true };
+    if (credential) {
+      const encodedId = credential.rawId
+        ? arrayBufferToBase64Url(credential.rawId)
+        : credential.id;
+      if (encodedId) {
+        localStorage.setItem(BIOMETRIC_CRED_STORAGE_KEY, encodedId);
+        return { success: true };
+      }
     }
 
     return { success: false, error: 'Registration cancelled or failed.' };
   } catch (err: any) {
     return {
       success: false,
-      error: err.name === 'NotAllowedError'
-        ? 'Accès biométrique refusé ou annulé par l’utilisateur.'
-        : err.message || 'Erreur lors de l’enrôlement biométrique.'
+      error:
+        err.name === 'NotAllowedError'
+          ? 'Biometric prompt was cancelled or blocked by browser permissions.'
+          : err.message || 'Biometric enrollment failed.'
     };
   }
 }
 
 /**
- * Prompts the phone's hardware biometric scanner (Touch ID, Face ID, Android Fingerprint).
+ * Prompts the device's hardware biometric scanner (Touch ID, Face ID, Fingerprint).
  * Only succeeds if biometric verification is verified by the device's hardware enclave.
  */
 export async function authenticateWithBiometrics(): Promise<{
@@ -124,12 +157,12 @@ export async function authenticateWithBiometrics(): Promise<{
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
 
-    const credId = localStorage.getItem(CREDENTIAL_STORAGE_KEY);
+    const credId = localStorage.getItem(BIOMETRIC_CRED_STORAGE_KEY);
     const allowCredentials = credId
       ? [
           {
             type: 'public-key' as const,
-            id: Uint8Array.from(atob(credId), c => c.charCodeAt(0))
+            id: base64UrlToUint8Array(credId)
           }
         ]
       : undefined;
@@ -139,7 +172,7 @@ export async function authenticateWithBiometrics(): Promise<{
         challenge,
         rpId: window.location.hostname,
         allowCredentials,
-        userVerification: 'required', // Guarantees fingerprint or Face ID match
+        userVerification: 'required',
         timeout: 60000
       }
     });
@@ -150,13 +183,43 @@ export async function authenticateWithBiometrics(): Promise<{
 
     return { success: false, error: 'Biometric verification failed.' };
   } catch (err: any) {
-    // If no credential is saved yet, try enrolling first or return helpful error
     return {
       success: false,
       error:
         err.name === 'NotAllowedError'
-          ? 'Empreinte ou visage non reconnu / annulé.'
-          : err.message || 'Authentification biométrique non disponible.'
+          ? 'Biometric verification cancelled or not permitted.'
+          : err.message || 'Biometric authentication unavailable.'
     };
   }
+}
+
+/**
+ * Authenticates with existing enrolled biometric credential, or enrolls one first
+ * if the user has a platform authenticator but hasn't enrolled on this device yet.
+ */
+export async function verifyOrEnrollBiometrics(
+  userName: string = 'Vault Owner',
+  userEmail: string = 'vault@family.local'
+): Promise<{ success: boolean; enrolledNow?: boolean; error?: string }> {
+  const status = await checkBiometricSupport();
+  if (!status.isSupported || !status.isPlatformAvailable) {
+    return {
+      success: false,
+      error: 'Hardware biometric authenticator (Touch ID / Face ID / Fingerprint) is unavailable on this device or browser context.'
+    };
+  }
+
+  if (status.hasEnrolledCredential) {
+    const authRes = await authenticateWithBiometrics();
+    if (authRes.success) {
+      return { success: true };
+    }
+    return authRes;
+  }
+
+  const enrollRes = await enrollBiometricCredential(userName, userEmail);
+  if (enrollRes.success) {
+    return { success: true, enrolledNow: true };
+  }
+  return enrollRes;
 }

@@ -50,11 +50,14 @@ Originally ported from the Android native Kotlin/Compose application `Budgetappa
    - Transaction splitting (splitting 1 bulk purchase into multiple budget categories)
    - Exclude from totals toggle
 
-8. **Family Vault & Security**:
-   - Family members list with RBAC roles (`ADMIN`, `EDITOR`, `MEMBER`)
-   - Security passcode / lock screen
-   - Offline-First persistence with simulated and cloud sync readiness
+8. **Family Vault, BYOB Firestore & Security**:
+   - Mandatory login gate before displaying any data: choose **My Firestore (BYOB)** with Google OAuth or **Demo Mode** (100% in-memory)
+   - Direct **Fingerprint / Face ID (WebAuthn)** unlock when BYOB Firestore is already configured
+   - Local delta cache (`lastPullTimestamp`) for BYOB sessions to avoid full Firestore reloads on reconnect, with full local data erasure on Log Out (retaining only the BYOB config and biometric credential ID)
+   - Family members list with dynamic RBAC roles (`ADMIN`, `EDITOR`, `MEMBER`, `VIEWER`) via static `firestore.rules`
    - Bilingual support: French (Français) & English
+
+See [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md) for full BYOB Firestore and Google OAuth setup instructions.
 
 ---
 

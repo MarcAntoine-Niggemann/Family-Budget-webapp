@@ -1,88 +1,99 @@
-# Firebase Project Setup & Configuration Guide
+# Firebase & Google OAuth Setup Guide (BYOB Firestore)
 
-This guide explains how to configure **Family Budget Vault** in both **Managed Cloud (Subscription Tier)** and **Self-Hosted ("Bring Your Own Firebase" / BYOB)** modes, as well as how to configure multi-environment keys (`DEV` vs. `PROD`) as the repository maintainer.
+This guide explains how users configure their own **private Firebase / Cloud Firestore project ("Bring Your Own Backend" / BYOB)** and **Google OAuth** to use **Budget Family (Family Budget Vault)**.
 
----
-
-## 🏢 Part A: Maintainer Setup for Managed Cloud (`DEV` & `PROD` Environments)
-
-If you are the app maintainer hosting the **Managed Cloud** service:
-
-### 1. Create Two Separate Firebase Projects
-1. **`family-budget-dev` (Dev / Staging)**: Used by debug builds, emulator previews, and open-source contributors.
-   - Register your **Debug Keystore** SHA-1 and SHA-256 fingerprints.
-2. **`family-budget-prod` (Production)**: Used strictly by signed Google Play Store release builds.
-   - Register **ONLY** your private **Release / Upload Keystore** SHA-1 and SHA-256 fingerprints. Never register a debug key on the Production project.
-
-### 2. Configure Multi-Environment Keys in `.env` or AI Studio Secrets Panel
-Copy `.env.example` to `.env` (which is gitignored) or set the following keys in the **AI Studio Secrets Panel**:
-
-```properties
-# MANAGED CLOUD — DEV / STAGING (Used automatically when BuildConfig.DEBUG == true)
-MANAGED_DEV_PROJECT_ID=your-dev-project-id
-MANAGED_DEV_API_KEY=AIzaSy...
-MANAGED_DEV_APP_ID=1:123456789:android:...
-MANAGED_DEV_WEB_CLIENT_ID=123456789-...apps.googleusercontent.com
-
-# MANAGED CLOUD — PRODUCTION (Used automatically when BuildConfig.DEBUG == false)
-MANAGED_PROD_PROJECT_ID=your-prod-project-id
-MANAGED_PROD_API_KEY=AIzaSy...
-MANAGED_PROD_APP_ID=1:987654321:android:...
-MANAGED_PROD_WEB_CLIENT_ID=987654321-...apps.googleusercontent.com
-```
-
-### 3. Deploy `firestore.rules`
-Deploy the repository's `firestore.rules` file to both projects. In your **Production** project, remove `'DEV_SANDBOX'` from `isValidSubscriptionPayload()` so only real Google Play Billing tokens (`'GOOGLE_PLAY'`) are accepted.
+> [!IMPORTANT]
+> **No Standalone Local-Only Mode:**
+> Before accessing any screen or data, you must either configure & sign in to your own **BYOB Firestore** project with Google OAuth, or launch **Demo Mode** (strictly in-memory with zero persistence). When using BYOB Firestore, a **local delta cache** is maintained while signed in so you don't reload the entire database on every visit, and **all cached local data is erased on Log Out** (keeping only your BYOB connection details and WebAuthn fingerprint credential ID).
 
 ---
 
-## 🛠️ Part B: Self-Hosted (BYOB) User Setup Guide
-
-If you prefer 100% private ownership of your family database using your own Firebase project:
+## 🛠️ Part A: User Setup for Private Firestore (BYOB) & Google OAuth (Web App)
 
 ### Step 1: Create a Firebase Project & Firestore Database
-1. Open the [Firebase Console](https://console.firebase.google.com/) and click **Create a project**.
-2. Go to **Build ➔ Firestore Database** and click **Create database** (start in production mode).
+1. Open the [Firebase Console](https://console.firebase.google.com/) and click **Create a project** (or select an existing project).
+2. In the left sidebar, go to **Build ➔ Firestore Database**.
+3. Click **Create database**, choose your preferred Cloud Firestore location, and start in **Production mode**.
 
-### Step 2: Enable Google Authentication
-1. Go to **Build ➔ Authentication ➔ Sign-in method**.
-2. Click **Add new provider ➔ Google** and toggle **Enable**.
-3. Set your project support email and click **Save**. That's it!
+### Step 2: Register a Web App & Copy Credentials
+1. In the Firebase Console, open **Project Settings** (gear icon) ➔ **General**.
+2. Under **Your apps**, click the **Web (`</>`)** icon to register a web app (hosting is optional).
+3. Copy the following values from the `firebaseConfig` snippet:
+   - **Project ID** (`projectId`, e.g. `my-family-budget-123`)
+   - **Web API Key** (`apiKey`, starts with `AIzaSy...`)
+   - **Application ID** (`appId`, optional on the login form, e.g. `1:123456789:web:...`)
+   - *(Note: The app automatically derives `authDomain` as `<projectId>.firebaseapp.com` and `storageBucket` as `<projectId>.firebasestorage.app`.)*
 
-### Step 3: Zero SHA-1 Registration Required (No Android App Setup Needed)
 > [!NOTE]
-> **No Android App or SHA-1 Registration Needed!**
-> Google Cloud restricts a combination of `(Package Name, SHA-1 Fingerprint)` to a single project globally. Because Family Budget Vault uses **Web-based OAuth in a Chrome Custom Tab** for private BYOB vaults, you do **NOT** need to add an Android app or paste any SHA-1 fingerprint into your Firebase project! The sign-in flow connects directly to your project's secure web handler (`https://<projectId>.firebaseapp.com/__/auth/handler`).
+> **No Android App or SHA-1 Registration Needed for Web OAuth:**
+> You do **not** need to register an Android app or SHA-1/SHA-256 fingerprint for web authentication.
 
-### Step 4: One-Time Security Rules Setup (Never Needs Re-Copying!)
-1. In **Family Budget Vault**, open **Settings ➔ Storage-Level Security Rules** and tap **Copy Rules** (or copy `firestore.rules` from this repository).
-2. Paste the rules into **Firestore Database ➔ Rules** in the Firebase Console and click **Publish**.
-3. **One-Time Setup**: Because these rules dynamically look up member emails and roles in the `security_config/roles` document, **you never need to re-copy or edit `firestore.rules` when adding, removing, or changing family members in the app.**
+### Step 3: Enable Google Authentication & Configure OAuth Consent Screen
+1. In Firebase Console, go to **Build ➔ Authentication ➔ Get started**.
+2. Open the **Sign-in method** tab, click **Add new provider ➔ Google**, and toggle **Enable**.
+3. Select a **Project support email** and click **Save**. Firebase automatically creates the Web OAuth 2.0 Client ID in the linked Google Cloud project.
+4. **Inviting Family Members (Google Cloud OAuth Consent Screen):**
+   - Open [Google Cloud Console ➔ APIs & Services ➔ OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent) for the same project.
+   - If **Publishing status** is **Testing**, only emails listed under **Test users** can sign in with Google. Add every family member's Google email to **Test users**, or click **Publish App** (for basic `email` / `profile` scopes, no sensitive app verification is required).
 
-### Step 5: Connect in Self-Hosted Mode
-1. In Firebase Console ➔ **Project Settings**, copy your **Project ID** and **Web API Key**.
-2. On the app Login screen (or in Settings), select **Self-Hosted (BYOB)**.
-3. Enter your `Project ID` and `API Key` (or scan a Family QR code from another device) and tap **Sign in with Google (Web OAuth)**.
-4. A secure Custom Tab will prompt you to select your Google Account, and you'll be connected directly to your private vault!
+### Step 4: Add Authorized Domains for Web OAuth (Required)
+Firebase Authentication blocks OAuth popups and redirects from unrecognized domains (`auth/unauthorized-domain`).
+
+1. On the **Budget Family** Login screen, under **My Firestore (BYOB)**, locate the **Authorized domain for Firebase Auth** box and click **Copy** (for example `localhost` or your deployed/preview hostname such as `*.run.app`).
+2. In Firebase Console, go to **Build ➔ Authentication ➔ Settings ➔ Authorized domains**.
+3. Click **Add domain**, paste the copied hostname, and save.
+4. If you deploy or access the app from multiple URLs (e.g., development preview URL, production URL, and `localhost`), add each hostname to **Authorized domains**.
+
+> [!TIP]
+> **Popups vs. Redirect Fallback:**
+> The app uses `signInWithPopup` first. If your browser blocks popups (`auth/popup-blocked`), it stores your pending BYOB configuration temporarily in `sessionStorage` and falls back to `signInWithRedirect`. Allowing popups for the app domain provides the smoothest experience and avoids browser third-party cookie restrictions on redirects.
+
+### Step 5: Publish One-Time Firestore Security Rules (`firestore.rules`)
+1. Copy the static security rules from any of these places:
+   - `/firestore.rules` in this repository, **or**
+   - In the app: **Login Screen** (expand **View & copy firestore.rules** if a permission error appears), **or**
+   - After connecting: **Vault Config & Cloud Sync ➔ Copy firestore.rules**.
+2. In Firebase Console, go to **Build ➔ Firestore Database ➔ Rules**.
+3. Replace the default rules with the copied rules and click **Publish**.
+
+#### How Bootstrap & Dynamic RBAC Work
+- **Automatic First-User Bootstrap:** When the first authenticated user connects to an empty Firestore database, the app initializes `/security_config/roles` (with the first user as `ADMIN`) and `/family_meta/vault` (with `adminEmail` and `familyName`).
+- **One-Time Rule Setup:** Because `firestore.rules` dynamically checks `request.auth.token.email.lower()` against `/security_config/roles`, **you never need to edit or re-publish `firestore.rules`** when adding, editing, or removing family members in the app.
+
+### Step 6: First Sign-In, Local Delta Cache & Fingerprint Unlock
+1. Open the app — the Login screen is enforced before any financial UI or data loads.
+2. Select **My Firestore (BYOB)** (or **Scan QR Code** if joining an existing family vault).
+3. Enter your **Firebase Project ID**, **Firebase Web API Key**, optional **Application ID**, and **Vault Name**.
+4. Click **Sign in with Google & Connect Firestore**.
+5. Once authenticated, your initial data is pulled from Firestore and cached locally (`localStorage` `fbv_*` keys + `lastPullTimestamp` watermark).
+
+#### Returning Visits & Fingerprint Unlock
+- Because your BYOB connection details (`fbv_byob_config`) are saved locally, subsequent visits open directly on the **Fingerprint / Face ID Unlock** screen (powered by WebAuthn / FIDO2).
+- On first use, click **Verify Fingerprint & Connect** (or enroll anytime in **Vault Config & Cloud Sync ➔ Direct Fingerprint / Face ID Login**) to register a hardware platform credential (`fbv_biometric_cred_id`).
+- When unlocked, the app hydrates from the local cache (if still present) and performs an **incremental delta sync** (`updatedAt > lastPullTimestamp`) rather than re-downloading every collection.
+
+#### What Happens on Log Out
+- Clicking **Log Out** signs out of Firebase Auth, wipes React state and `sessionStorage`, and **erases all local cached financial data** (`accounts`, `transactions`, `categories`, `budgets`, `rules`, `members`, `syncState`, `outbox`, preferences).
+- **Only** your BYOB connection configuration (`fbv_byob_config`) and WebAuthn credential ID (`fbv_biometric_cred_id`) are retained so you can unlock with fingerprint on your next visit.
+- Clicking **Forget Config** erases everything including `fbv_byob_config` and `fbv_biometric_cred_id`.
 
 ---
 
-## 💻 Part C: Dev & Emulator Environment Defaults for Self-Hosted Vaults
+## 🩺 Troubleshooting OAuth & Firestore Connection Errors
 
-To speed up development and emulator testing without entering credentials manually and **without risking exposing secrets in code**, you can configure development environment variables in your `.env` file or in the **AI Studio Secrets panel**:
+| Error / Code | Cause | Fix |
+| :--- | :--- | :--- |
+| `auth/unauthorized-domain` | Current web app hostname is not allowlisted in Firebase Auth. | Copy the hostname displayed on the Login screen and add it in **Firebase Console ➔ Authentication ➔ Settings ➔ Authorized domains**. |
+| `auth/operation-not-allowed` | Google Sign-In provider is disabled in your Firebase project. | Enable **Google** under **Firebase Console ➔ Authentication ➔ Sign-in method**. |
+| `auth/invalid-api-key` | Web API Key does not match your Firebase project. | Copy the exact `apiKey` (`AIzaSy...`) from **Project Settings ➔ General ➔ Your apps (Web)**. |
+| `auth/popup-blocked` / `auth/popup-closed-by-user` | Browser blocked or user closed the Google OAuth window. | Allow popups for the app hostname and retry Google Sign-In. |
+| `Access blocked: This app has not completed Google verification` or `403: access_denied` | Google Cloud OAuth Consent Screen is in **Testing** mode and the user isn't a Test User. | In **Google Cloud Console ➔ OAuth consent screen**, add the family member's email under **Test users** or publish the app. |
+| `permission-denied` | Firestore rules were not published or user email is missing from `security_config/roles`. | Publish `firestore.rules` in **Firestore Database ➔ Rules** and ensure the Admin added the member's exact Google email in the vault. |
 
-```properties
-# SELF-HOSTED (BYOB) VAULT — DEV / EMULATOR ENVIRONMENT DEFAULTS
-SELF_HOSTED_DEV_PROJECT_ID=your-dev-project-id
-SELF_HOSTED_DEV_API_KEY=AIzaSy...
-SELF_HOSTED_DEV_APP_ID=1:123456789:android:...
-SELF_HOSTED_DEV_WEB_CLIENT_ID=123456789-...apps.googleusercontent.com
+---
 
-# (Aliases BYOB_DEV_* are also supported)
-```
+## 📱 Part B: Native Android Companion Build Notes (Repository Maintainers)
 
-### Behavior:
-- **No Secrets in Code**: Credentials remain 100% externalized in `.env` / Secrets Panel and are accessed safely through `BuildConfig` during debug builds.
-- **Auto-Preset on Login Form**: When running in development/emulator (`BuildConfig.DEBUG == true`) and nothing has been saved yet in app local storage (Room database or EncryptedSharedPreferences), the login form fields are automatically preset with these values.
-- **Local Storage Precedence**: If the user has already entered and saved credentials (or scans a QR code), the saved local storage values always take precedence over the dev environment defaults.
-
+This repository also contains legacy/companion Android Gradle files (`build.gradle.kts`, `settings.gradle.kts`). If maintaining the native Android **Managed Cloud** vs. **BYOB** build:
+- **Managed Cloud (`DEV` / `PROD`)**: Uses `.env` keys (`MANAGED_DEV_*` / `MANAGED_PROD_*`) with SHA-1/SHA-256 certificate pinning per environment.
+- **Native Android BYOB**: Uses Firebase Web-based OAuth via Chrome Custom Tabs (`https://<projectId>.firebaseapp.com/__/auth/handler`) so no per-user Android SHA-1 registration is required.

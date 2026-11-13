@@ -18,11 +18,11 @@ export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, on
   const payload = JSON.stringify({
     vaultId: config.id || 'family_vault_primary',
     familyName: config.familyName || 'Family Budget Vault',
-    projectId: config.projectId || 'gen-lang-client-0096915776',
-    apiKey: config.apiKey || 'AIzaSyCgctVVs5NJYNaEguMQto0k2GLZfIgzf-Q',
-    applicationId: config.applicationId || '1:181331993196:web:f7216223fd77449f96ee49',
+    projectId: config.projectId || '',
+    apiKey: config.apiKey || '',
+    applicationId: config.applicationId || '',
     adminEmail: config.currentUserEmail || 'admin@family.local',
-    mode: config.isAnonymous ? 'DEMO' : 'MANAGED'
+    mode: config.projectId ? 'BYOB' : 'DEMO'
   });
 
   useEffect(() => {

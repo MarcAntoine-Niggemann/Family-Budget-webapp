@@ -6,67 +6,257 @@ import {
   CategorizationRuleEntity,
   FamilyMemberEntity,
   FirebaseConfigEntity,
-  SyncStateEntity,
-  SyncOutboxEntity
+  SyncStateEntity
 } from '../types';
 
-const STORAGE_KEYS = {
+export const BYOB_CONFIG_STORAGE_KEY = 'fbv_byob_config';
+export const BIOMETRIC_CRED_STORAGE_KEY = 'fbv_biometric_cred_id';
+
+export const CACHE_STORAGE_KEYS = {
+  PROJECT_ID: 'fbv_cache_project_id',
   ACCOUNTS: 'fbv_accounts',
   TRANSACTIONS: 'fbv_transactions',
   CATEGORIES: 'fbv_categories',
   BUDGETS: 'fbv_budgets',
   RULES: 'fbv_rules',
   MEMBERS: 'fbv_members',
-  CONFIG: 'fbv_config',
   SYNC_STATE: 'fbv_sync_state',
   OUTBOX: 'fbv_outbox',
-  LANGUAGE: 'fbv_language',
+  OPEN_BANKING: 'fbv_open_banking',
   CURRENCY: 'fbv_currency',
-  ACTIVE_ACCOUNT: 'fbv_active_account_id',
-  IS_LOCKED: 'fbv_app_locked',
-  OPEN_BANKING: 'fbv_open_banking'
-};
+  LANGUAGE: 'fbv_language',
+  FAMILY_NAME: 'fbv_family_name'
+} as const;
 
+export interface SavedByobConfig {
+  projectId: string;
+  apiKey: string;
+  applicationId?: string;
+  familyName?: string;
+}
+
+/**
+ * Loads the user's saved BYOB Firestore connection configuration.
+ */
+export function loadByobConfig(): SavedByobConfig | null {
+  try {
+    const raw = localStorage.getItem(BYOB_CONFIG_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SavedByobConfig;
+    if (
+      parsed &&
+      typeof parsed.projectId === 'string' &&
+      typeof parsed.apiKey === 'string' &&
+      parsed.projectId.trim() &&
+      parsed.apiKey.trim()
+    ) {
+      return {
+        projectId: parsed.projectId.trim(),
+        apiKey: parsed.apiKey.trim(),
+        applicationId: parsed.applicationId?.trim() || '',
+        familyName: parsed.familyName?.trim() || 'Private Family Vault'
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveByobConfig(cfg: SavedByobConfig): void {
+  try {
+    const sanitized: SavedByobConfig = {
+      projectId: cfg.projectId.trim(),
+      apiKey: cfg.apiKey.trim(),
+      applicationId: cfg.applicationId?.trim() || '',
+      familyName: cfg.familyName?.trim() || 'Private Family Vault'
+    };
+    localStorage.setItem(BYOB_CONFIG_STORAGE_KEY, JSON.stringify(sanitized));
+  } catch (e) {
+    console.error('Failed to save BYOB Firestore config:', e);
+  }
+}
+
+export function clearByobConfig(): void {
+  try {
+    localStorage.removeItem(BYOB_CONFIG_STORAGE_KEY);
+  } catch {
+    // Ignore
+  }
+}
+
+export function loadCachedData<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch (e) {
+    console.error(`Failed to load ${key} from local cache:`, e);
+    return fallback;
+  }
+}
+
+export function saveCachedData<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.error(`Failed to save ${key} to local cache:`, e);
+  }
+}
+
+export interface ByobLocalCacheSnapshot {
+  accounts: AccountEntity[];
+  transactions: TransactionEntity[];
+  categories: CategoryEntity[];
+  budgets: CategoryBudgetEntity[];
+  rules: CategorizationRuleEntity[];
+  members: FamilyMemberEntity[];
+  syncState: SyncStateEntity;
+  outbox: any[];
+  familyName?: string;
+}
+
+/**
+ * Loads the locally cached Firestore BYOB dataset for a given projectId so
+ * returning users can perform incremental delta sync instead of reloading everything.
+ */
+export function loadByobLocalCache(projectId: string): ByobLocalCacheSnapshot | null {
+  try {
+    const cachedProjectId = loadCachedData<string>(CACHE_STORAGE_KEYS.PROJECT_ID, '');
+    if (!cachedProjectId || cachedProjectId !== projectId.trim()) {
+      return null;
+    }
+
+    const syncState = loadCachedData<SyncStateEntity | null>(CACHE_STORAGE_KEYS.SYNC_STATE, null);
+    if (!syncState || !syncState.lastPullTimestamp) {
+      return null;
+    }
+
+    return {
+      accounts: loadCachedData<AccountEntity[]>(CACHE_STORAGE_KEYS.ACCOUNTS, []),
+      transactions: loadCachedData<TransactionEntity[]>(CACHE_STORAGE_KEYS.TRANSACTIONS, []),
+      categories: loadCachedData<CategoryEntity[]>(CACHE_STORAGE_KEYS.CATEGORIES, []),
+      budgets: loadCachedData<CategoryBudgetEntity[]>(CACHE_STORAGE_KEYS.BUDGETS, []),
+      rules: loadCachedData<CategorizationRuleEntity[]>(CACHE_STORAGE_KEYS.RULES, []),
+      members: loadCachedData<FamilyMemberEntity[]>(CACHE_STORAGE_KEYS.MEMBERS, []),
+      syncState,
+      outbox: loadCachedData<any[]>(CACHE_STORAGE_KEYS.OUTBOX, []),
+      familyName: loadCachedData<string>(CACHE_STORAGE_KEYS.FAMILY_NAME, '')
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Erases all local browser data (cached financial collections, sync state,
+ * outbox, sessionStorage, pending OAuth payloads). By default preserves only
+ * the BYOB Firestore configuration and WebAuthn credential ID.
+ */
+export function purgeLocalData(options: { preserveByob?: boolean } = { preserveByob: true }): void {
+  const preserveByob = options.preserveByob !== false;
+
+  try {
+    sessionStorage.clear();
+  } catch {
+    // Ignore
+  }
+
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (preserveByob && (key === BYOB_CONFIG_STORAGE_KEY || key === BIOMETRIC_CRED_STORAGE_KEY)) {
+        continue;
+      }
+      if (key.startsWith('fbv_')) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  } catch (e) {
+    console.error('Failed to purge localStorage:', e);
+  }
+}
+
+export function getEmptyConfig(byob?: SavedByobConfig | null): FirebaseConfigEntity {
+  return {
+    id: 'active_config',
+    apiKey: byob?.apiKey || '',
+    applicationId: byob?.applicationId || '',
+    projectId: byob?.projectId || '',
+    projectNumber: '',
+    webClientId: '',
+    familyName: byob?.familyName || 'Private Family Vault',
+    currentUserEmail: '',
+    currentUserName: '',
+    currentUserRole: 'ADMIN',
+    isGoogleAuthenticated: false,
+    isFamilyCreated: false,
+    isConfigured: !!byob,
+    isEnabled: true,
+    isBiometricLockEnabled: !!byob,
+    isAnonymous: false,
+    lastSyncTimestamp: 0,
+    syncStatusMessage: ''
+  };
+}
+
+export function getEmptySyncState(): SyncStateEntity {
+  return {
+    syncKey: 'primary_sync',
+    lastPullTimestamp: 0,
+    lastPushTimestamp: 0,
+    lastSyncStatus: 'IDLE',
+    lastSyncMessage: '',
+    pendingOutboxCount: 0
+  };
+}
+
+/**
+ * In-memory Demo Mode dataset generator. Never persisted to localStorage.
+ */
 export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
   const now = Date.now();
   const dayMs = 86_400_000;
   const isEn = language === 'en';
 
   const config: FirebaseConfigEntity = {
-    id: 'active_config',
+    id: 'demo_config',
     apiKey: '',
     applicationId: '',
-    projectId: 'family-budget-vault',
-    projectNumber: '181331993196',
+    projectId: '',
+    projectNumber: '',
     webClientId: '',
-    familyName: isEn ? 'Smith Family Vault' : 'Famille Martin Vault',
-    currentUserEmail: isEn ? 'john.smith@family.local' : 'jean.martin@famille.local',
-    currentUserName: isEn ? 'John Smith (Admin)' : 'Jean Martin (Admin)',
+    familyName: isEn ? 'Smith Family (Demo)' : 'Famille Martin (Démo)',
+    currentUserEmail: isEn ? 'john.smith@demo.local' : 'jean.martin@demo.local',
+    currentUserName: isEn ? 'John Smith (Demo)' : 'Jean Martin (Démo)',
     currentUserRole: 'ADMIN',
     isGoogleAuthenticated: false,
     isFamilyCreated: true,
     isConfigured: true,
-    isEnabled: true,
+    isEnabled: false,
     isBiometricLockEnabled: false,
     isAnonymous: true,
     lastSyncTimestamp: now,
     syncStatusMessage: isEn
-      ? 'Middle-class family of 4 active. Offline-first local storage synced.'
-      : 'Famille de 4 active. Synchronisation locale hors-ligne active.'
+      ? 'Demo mode active (in-memory only).'
+      : 'Mode Démo actif (en mémoire uniquement).'
   };
 
   const members: FamilyMemberEntity[] = isEn
     ? [
-        { id: 'john_smith', name: 'John Smith', email: 'john.smith@family.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: true },
-        { id: 'sophie_smith', name: 'Sophie Smith', email: 'sophie.smith@family.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: true },
-        { id: 'lucas_smith', name: 'Lucas Smith', email: 'lucas.smith@family.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: true },
-        { id: 'emma_smith', name: 'Emma Smith', email: 'emma.smith@family.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: true }
+        { id: 'john_smith', name: 'John Smith', email: 'john.smith@demo.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: false },
+        { id: 'sophie_smith', name: 'Sophie Smith', email: 'sophie.smith@demo.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: false },
+        { id: 'lucas_smith', name: 'Lucas Smith', email: 'lucas.smith@demo.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: false },
+        { id: 'emma_smith', name: 'Emma Smith', email: 'emma.smith@demo.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: false }
       ]
     : [
-        { id: 'jean_martin', name: 'Jean Martin', email: 'jean.martin@famille.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: true },
-        { id: 'sophie_martin', name: 'Sophie Martin', email: 'sophie.martin@famille.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: true },
-        { id: 'lucas_martin', name: 'Lucas Martin', email: 'lucas.martin@famille.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: true },
-        { id: 'emma_martin', name: 'Emma Martin', email: 'emma.martin@famille.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: true }
+        { id: 'jean_martin', name: 'Jean Martin', email: 'jean.martin@demo.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: false },
+        { id: 'sophie_martin', name: 'Sophie Martin', email: 'sophie.martin@demo.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: false },
+        { id: 'lucas_martin', name: 'Lucas Martin', email: 'lucas.martin@demo.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: false },
+        { id: 'emma_martin', name: 'Emma Martin', email: 'emma.martin@demo.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: false }
       ];
 
   const accounts: AccountEntity[] = isEn
@@ -886,7 +1076,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
     lastPullTimestamp: now,
     lastPushTimestamp: now,
     lastSyncStatus: 'SUCCESS',
-    lastSyncMessage: isEn ? 'Vault ready. All systems nominal.' : 'Coffre prêt. Toutes les données sont synchronisées.',
+    lastSyncMessage: isEn ? 'Demo mode active (in-memory only).' : 'Mode Démo actif (en mémoire uniquement).',
     pendingOutboxCount: 0
   };
 
@@ -901,24 +1091,3 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
     syncState
   };
 }
-
-export function loadStoredData<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error(`Failed to load ${key} from localStorage:`, e);
-    return fallback;
-  }
-}
-
-export function saveStoredData<T>(key: string, data: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (e) {
-    console.error(`Failed to save ${key} to localStorage:`, e);
-  }
-}
-
-export { STORAGE_KEYS };

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import {
   AccountEntity,
   AppScreen,
@@ -14,20 +14,44 @@ import {
   TransactionEntity
 } from '../types';
 import {
-  STORAGE_KEYS,
+  CACHE_STORAGE_KEYS,
+  SavedByobConfig,
+  clearByobConfig,
+  getEmptyConfig,
+  getEmptySyncState,
   getInitialSeedData,
-  loadStoredData,
-  saveStoredData
+  loadByobConfig,
+  loadByobLocalCache,
+  loadCachedData,
+  purgeLocalData,
+  saveByobConfig,
+  saveCachedData
 } from '../utils/storage';
+import { clearBiometricCredential, verifyOrEnrollBiometrics } from '../utils/biometricKeyvault';
 import { ParsedBankRow } from '../utils/csvParser';
-import { executeBidirectionalSync } from '../services/firebaseSyncService';
+import { executeBidirectionalSync, resetFirebaseInstances, SyncResult } from '../services/firebaseSyncService';
 import {
   DEFAULT_OPEN_BANKING_CONFIG,
   executeOpenBankingSync,
   testOpenBankingConnection
 } from '../services/openBankingService';
+import {
+  AuthUserInfo,
+  consumePendingByobConfig,
+  getOrInitAuth,
+  signInWithGoogle,
+  signOutGoogle,
+  subscribeToAuth,
+  checkRedirectAuthResult
+} from '../services/firebaseAuthService';
+
+export type SessionMode = 'DEMO' | 'FIRESTORE' | null;
 
 interface BudgetContextType {
+  sessionMode: SessionMode;
+  savedByobConfig: SavedByobConfig | null;
+  authInitialized: boolean;
+
   accounts: AccountEntity[];
   transactions: TransactionEntity[];
   categories: CategoryEntity[];
@@ -41,16 +65,30 @@ interface BudgetContextType {
   currency: string;
   currentScreen: AppScreen;
   activeAccountId: string | null;
-  isBiometricLocked: boolean;
   toastMessage: string | null;
 
   navigateTo: (screen: AppScreen) => void;
   setLanguage: (lang: 'fr' | 'en') => void;
   setCurrency: (cur: string) => void;
   setActiveAccountId: (id: string | null) => void;
-  setIsBiometricLocked: (locked: boolean) => void;
   showToast: (msg: string) => void;
   dismissToast: () => void;
+
+  startDemoMode: (lang?: 'fr' | 'en') => void;
+  logout: () => Promise<void>;
+  forgetByobConfig: () => Promise<void>;
+  unlockSavedByobWithBiometrics: () => Promise<{
+    success: boolean;
+    redirecting?: boolean;
+    biometricVerified?: boolean;
+    needsGoogleAuth?: boolean;
+    error?: string;
+  }>;
+  loginSavedByobWithGoogle: () => Promise<{
+    success: boolean;
+    redirecting?: boolean;
+    error?: string;
+  }>;
 
   addTransaction: (tx: Omit<TransactionEntity, 'id' | 'updatedAt' | 'isDeleted'>) => number;
   updateTransaction: (tx: TransactionEntity) => void;
@@ -87,122 +125,252 @@ interface BudgetContextType {
 
   importCsvTransactions: (records: ParsedBankRow[], targetAccountId: string) => number;
   updateConfig: (patch: Partial<FirebaseConfigEntity>) => void;
-  syncWithFirebaseNow: () => void;
+  syncWithFirebaseNow: (options?: { forceFullPull?: boolean; resetCacheBeforePull?: boolean }) => Promise<void>;
+  connectAndSyncByob: (
+    byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
+    options?: { resetLocalData?: boolean }
+  ) => Promise<{ success: boolean; redirecting?: boolean; error?: string; message?: string }>;
   resetToMockData: (lang?: 'fr' | 'en') => void;
 
   updateOpenBankingConfig: (patch: Partial<OpenBankingConfig>) => void;
   syncOpenBankingNow: () => Promise<void>;
   testOpenBankingConn: () => Promise<{ success: boolean; message: string; accounts: OpenBankingAccountDto[] }>;
+
+  firebaseUser: AuthUserInfo | null;
+  loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const BudgetContext = createContext<BudgetContextType | undefined>(undefined);
 
 export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [savedByobConfig, setSavedByobConfig] = useState<SavedByobConfig | null>(() => loadByobConfig());
+  const [sessionMode, setSessionMode] = useState<SessionMode>(null);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(() => !loadByobConfig());
+
   const [language, setLangState] = useState<'fr' | 'en'>(() =>
-    loadStoredData<'fr' | 'en'>(STORAGE_KEYS.LANGUAGE, 'fr')
+    loadCachedData<'fr' | 'en'>(CACHE_STORAGE_KEYS.LANGUAGE, 'fr')
   );
+  const [currency, setCurrencyState] = useState<string>('€');
 
-  const initialSeed = useMemo(() => getInitialSeedData(language), [language]);
-
-  const [accounts, setAccounts] = useState<AccountEntity[]>(() =>
-    loadStoredData<AccountEntity[]>(STORAGE_KEYS.ACCOUNTS, initialSeed.accounts)
-  );
-
-  const [transactions, setTransactions] = useState<TransactionEntity[]>(() =>
-    loadStoredData<TransactionEntity[]>(STORAGE_KEYS.TRANSACTIONS, initialSeed.transactions)
-  );
-
-  const [categories, setCategories] = useState<CategoryEntity[]>(() =>
-    loadStoredData<CategoryEntity[]>(STORAGE_KEYS.CATEGORIES, initialSeed.categories)
-  );
-
-  const [budgets, setBudgets] = useState<CategoryBudgetEntity[]>(() =>
-    loadStoredData<CategoryBudgetEntity[]>(STORAGE_KEYS.BUDGETS, initialSeed.budgets)
-  );
-
-  const [rules, setRules] = useState<CategorizationRuleEntity[]>(() =>
-    loadStoredData<CategorizationRuleEntity[]>(STORAGE_KEYS.RULES, initialSeed.rules)
-  );
-
-  const [members, setMembers] = useState<FamilyMemberEntity[]>(() =>
-    loadStoredData<FamilyMemberEntity[]>(STORAGE_KEYS.MEMBERS, initialSeed.members)
-  );
-
-  const [config, setConfig] = useState<FirebaseConfigEntity>(() =>
-    loadStoredData<FirebaseConfigEntity>(STORAGE_KEYS.CONFIG, initialSeed.config)
-  );
-
-  const [syncState, setSyncState] = useState<SyncStateEntity>(() =>
-    loadStoredData<SyncStateEntity>(STORAGE_KEYS.SYNC_STATE, initialSeed.syncState)
-  );
-
-  const [openBankingConfig, setOpenBankingConfig] = useState<OpenBankingConfig>(() =>
-    loadStoredData<OpenBankingConfig>(STORAGE_KEYS.OPEN_BANKING, DEFAULT_OPEN_BANKING_CONFIG)
-  );
-
-  const [currency, setCurrencyState] = useState<string>(() =>
-    loadStoredData<string>(STORAGE_KEYS.CURRENCY, '€')
-  );
+  // Empty before login; hydrated from local BYOB cache + delta sync on Firestore auth, or seed data on Demo
+  const [accounts, setAccounts] = useState<AccountEntity[]>([]);
+  const [transactions, setTransactions] = useState<TransactionEntity[]>([]);
+  const [categories, setCategories] = useState<CategoryEntity[]>([]);
+  const [budgets, setBudgets] = useState<CategoryBudgetEntity[]>([]);
+  const [rules, setRules] = useState<CategorizationRuleEntity[]>([]);
+  const [members, setMembers] = useState<FamilyMemberEntity[]>([]);
+  const [outbox, setOutbox] = useState<SyncOutboxEntity[]>([]);
+  const [config, setConfig] = useState<FirebaseConfigEntity>(() => getEmptyConfig(loadByobConfig()));
+  const [syncState, setSyncState] = useState<SyncStateEntity>(() => getEmptySyncState());
+  const [openBankingConfig, setOpenBankingConfig] = useState<OpenBankingConfig>(DEFAULT_OPEN_BANKING_CONFIG);
 
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('DASHBOARD');
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
-  const [isBiometricLocked, setIsBiometricLocked] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<AuthUserInfo | null>(null);
 
+  const isSyncingRef = useRef(false);
+
+  // Persist local cache ONLY while actively authenticated in BYOB Firestore mode (never in Demo or before login)
   useEffect(() => {
-    saveStoredData(STORAGE_KEYS.OPEN_BANKING, openBankingConfig);
-  }, [openBankingConfig]);
+    if (sessionMode !== 'FIRESTORE' || !config.projectId?.trim()) return;
+    saveCachedData(CACHE_STORAGE_KEYS.PROJECT_ID, config.projectId.trim());
+    saveCachedData(CACHE_STORAGE_KEYS.FAMILY_NAME, config.familyName);
+    saveCachedData(CACHE_STORAGE_KEYS.ACCOUNTS, accounts);
+    saveCachedData(CACHE_STORAGE_KEYS.TRANSACTIONS, transactions);
+    saveCachedData(CACHE_STORAGE_KEYS.CATEGORIES, categories);
+    saveCachedData(CACHE_STORAGE_KEYS.BUDGETS, budgets);
+    saveCachedData(CACHE_STORAGE_KEYS.RULES, rules);
+    saveCachedData(CACHE_STORAGE_KEYS.MEMBERS, members);
+    saveCachedData(CACHE_STORAGE_KEYS.SYNC_STATE, syncState);
+    saveCachedData(CACHE_STORAGE_KEYS.OUTBOX, outbox);
+    saveCachedData(CACHE_STORAGE_KEYS.OPEN_BANKING, openBankingConfig);
+    saveCachedData(CACHE_STORAGE_KEYS.CURRENCY, currency);
+    saveCachedData(CACHE_STORAGE_KEYS.LANGUAGE, language);
+  }, [
+    sessionMode,
+    config.projectId,
+    config.familyName,
+    accounts,
+    transactions,
+    categories,
+    budgets,
+    rules,
+    members,
+    syncState,
+    outbox,
+    openBankingConfig,
+    currency,
+    language
+  ]);
 
-  // Sync to localStorage
+  const applySyncResult = (
+    result: SyncResult,
+    base: {
+      accounts: AccountEntity[];
+      transactions: TransactionEntity[];
+      categories: CategoryEntity[];
+      budgets: CategoryBudgetEntity[];
+      rules: CategorizationRuleEntity[];
+      members: FamilyMemberEntity[];
+    }
+  ) => {
+    if (result.incomingTransactions && result.incomingTransactions.length > 0) {
+      const map = new Map(base.transactions.map(t => [t.id, t]));
+      for (const inc of result.incomingTransactions) {
+        map.set(inc.id, inc);
+      }
+      setTransactions(Array.from(map.values()).sort((a, b) => b.date - a.date));
+    }
+
+    if (result.incomingAccounts && result.incomingAccounts.length > 0) {
+      const map = new Map(base.accounts.map(a => [a.id, a]));
+      for (const inc of result.incomingAccounts) {
+        map.set(inc.id, inc);
+      }
+      setAccounts(Array.from(map.values()));
+    }
+
+    if (result.incomingCategories && result.incomingCategories.length > 0) {
+      const map = new Map(base.categories.map(c => [c.id, c]));
+      for (const inc of result.incomingCategories) {
+        map.set(inc.id, inc);
+      }
+      setCategories(Array.from(map.values()));
+    }
+
+    if (result.incomingBudgets && result.incomingBudgets.length > 0) {
+      const map = new Map(base.budgets.map(b => [b.id, b]));
+      for (const inc of result.incomingBudgets) {
+        map.set(inc.id, inc);
+      }
+      setBudgets(Array.from(map.values()));
+    }
+
+    if (result.incomingRules && result.incomingRules.length > 0) {
+      const map = new Map(base.rules.map(r => [r.id, r]));
+      for (const inc of result.incomingRules) {
+        map.set(inc.id, inc);
+      }
+      setRules(Array.from(map.values()));
+    }
+
+    if (result.incomingMembers && result.incomingMembers.length > 0) {
+      setMembers(result.incomingMembers);
+    }
+
+    if (result.incomingFamilyName) {
+      setConfig(prev => ({
+        ...prev,
+        familyName: result.incomingFamilyName || prev.familyName
+      }));
+    }
+
+    if (result.success) {
+      setOutbox([]);
+      setConfig(prev => ({
+        ...prev,
+        lastSyncTimestamp: Date.now(),
+        syncStatusMessage: result.message
+      }));
+    } else {
+      setConfig(prev => ({
+        ...prev,
+        syncStatusMessage: result.message
+      }));
+    }
+
+    setSyncState(result.updatedSyncState);
+  };
+
+  // Handle Google redirect OAuth return on mount + subscribe to Firebase Auth for active BYOB project
   useEffect(() => {
-    saveStoredData(STORAGE_KEYS.ACCOUNTS, accounts);
-  }, [accounts]);
+    const pendingByob = consumePendingByobConfig();
+    if (pendingByob && pendingByob.projectId && pendingByob.apiKey) {
+      const tempCfg: Partial<FirebaseConfigEntity> = {
+        projectId: pendingByob.projectId,
+        apiKey: pendingByob.apiKey,
+        applicationId: pendingByob.applicationId
+      };
+      checkRedirectAuthResult(tempCfg).then(async user => {
+        if (user && user.email) {
+          await completeByobSetupWithUser(
+            {
+              projectId: pendingByob.projectId,
+              apiKey: pendingByob.apiKey,
+              applicationId: pendingByob.applicationId,
+              familyName: pendingByob.familyName
+            },
+            user,
+            pendingByob.resetLocalData
+          );
+        }
+      });
+    }
 
+    const activeProjectId = config.projectId?.trim() || savedByobConfig?.projectId?.trim() || '';
+    const activeApiKey = config.apiKey?.trim() || savedByobConfig?.apiKey?.trim() || '';
+    const activeAppId = config.applicationId?.trim() || savedByobConfig?.applicationId?.trim() || '';
+
+    if (!activeProjectId || !activeApiKey) {
+      setFirebaseUser(null);
+      setAuthInitialized(true);
+      return;
+    }
+
+    const unsub = subscribeToAuth(
+      { projectId: activeProjectId, apiKey: activeApiKey, applicationId: activeAppId },
+      user => {
+        setFirebaseUser(user);
+        setAuthInitialized(true);
+        if (user && user.email) {
+          setConfig(prev => ({
+            ...prev,
+            isGoogleAuthenticated: true,
+            currentUserEmail: user.email!,
+            currentUserName: user.displayName || user.email!.split('@')[0],
+            isAnonymous: false
+          }));
+        } else {
+          setConfig(prev =>
+            prev.isGoogleAuthenticated
+              ? {
+                  ...prev,
+                  isGoogleAuthenticated: false
+                }
+              : prev
+          );
+        }
+      }
+    );
+
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.projectId, config.apiKey, config.applicationId, savedByobConfig?.projectId, savedByobConfig?.apiKey]);
+
+  // Auto-sync pending mutations to Firestore when in FIRESTORE mode
   useEffect(() => {
-    saveStoredData(STORAGE_KEYS.TRANSACTIONS, transactions);
-  }, [transactions]);
+    if (
+      sessionMode !== 'FIRESTORE' ||
+      outbox.length === 0 ||
+      !firebaseUser ||
+      isSyncingRef.current ||
+      syncState.lastSyncStatus === 'SYNCING' ||
+      syncState.lastSyncStatus === 'ERROR'
+    ) {
+      return;
+    }
 
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.CATEGORIES, categories);
-  }, [categories]);
+    const timer = setTimeout(() => {
+      syncWithFirebaseNow();
+    }, 600);
 
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.BUDGETS, budgets);
-  }, [budgets]);
-
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.RULES, rules);
-  }, [rules]);
-
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.MEMBERS, members);
-  }, [members]);
-
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.CONFIG, config);
-  }, [config]);
-
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.SYNC_STATE, syncState);
-  }, [syncState]);
-
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.LANGUAGE, language);
-  }, [language]);
-
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.CURRENCY, currency);
-  }, [currency]);
-
-  const [outbox, setOutbox] = useState<SyncOutboxEntity[]>(() =>
-    loadStoredData<SyncOutboxEntity[]>(STORAGE_KEYS.OUTBOX, [])
-  );
-
-  useEffect(() => {
-    saveStoredData(STORAGE_KEYS.OUTBOX, outbox);
-  }, [outbox]);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionMode, outbox.length, firebaseUser, syncState.lastSyncStatus]);
 
   const enqueueOutbox = (entityType: string, entityId: string, operation: 'UPSERT' | 'DELETE') => {
+    if (sessionMode !== 'FIRESTORE') return;
     const nextOutboxId = Date.now() + Math.floor(Math.random() * 1000);
     const newEntry: SyncOutboxEntity = {
       outboxId: nextOutboxId,
@@ -215,6 +383,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setOutbox(prev => [...prev, newEntry]);
     setSyncState(prev => ({
       ...prev,
+      lastSyncStatus: prev.lastSyncStatus === 'ERROR' ? 'IDLE' : prev.lastSyncStatus,
       pendingOutboxCount: (prev.pendingOutboxCount || 0) + 1
     }));
   };
@@ -240,7 +409,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setCurrencyState(cur);
   };
 
-  const resetToMockData = (lang: 'fr' | 'en' = language) => {
+  const startDemoMode = (lang: 'fr' | 'en' = language) => {
+    setLangState(lang);
     const data = getInitialSeedData(lang);
     setAccounts(data.accounts);
     setTransactions(data.transactions);
@@ -250,7 +420,76 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setMembers(data.members);
     setConfig(data.config);
     setSyncState(data.syncState);
-    showToast(lang === 'fr' ? 'Données de démonstration réinitialisées' : 'Demo data reset successfully');
+    setOutbox([]);
+    setActiveAccountId(null);
+    setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
+    setSessionMode('DEMO');
+    setCurrentScreen('DASHBOARD');
+    showToast(lang === 'fr' ? 'Mode Démo activé (en mémoire uniquement)' : 'Demo Mode activated (in-memory only)');
+  };
+
+  const resetToMockData = (lang: 'fr' | 'en' = language) => {
+    if (sessionMode === 'DEMO') {
+      startDemoMode(lang);
+    } else {
+      const data = getInitialSeedData(lang);
+      setAccounts(data.accounts);
+      setTransactions(data.transactions);
+      setCategories(data.categories);
+      setBudgets(data.budgets);
+      setRules(data.rules);
+      setMembers(data.members);
+      setOutbox([]);
+      setActiveAccountId(null);
+      showToast(lang === 'fr' ? 'Données de démonstration chargées' : 'Demo data loaded');
+    }
+  };
+
+  const eraseAllSessionMemory = (preservedByob: SavedByobConfig | null) => {
+    setAccounts([]);
+    setTransactions([]);
+    setCategories([]);
+    setBudgets([]);
+    setRules([]);
+    setMembers([]);
+    setOutbox([]);
+    setActiveAccountId(null);
+    setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
+    setSyncState(getEmptySyncState());
+    setConfig(getEmptyConfig(preservedByob));
+    setFirebaseUser(null);
+    setSessionMode(null);
+    setCurrentScreen('DASHBOARD');
+  };
+
+  const logout = async () => {
+    const activeByob = loadByobConfig() || savedByobConfig;
+    await signOutGoogle(config);
+    await resetFirebaseInstances();
+    purgeLocalData({ preserveByob: true });
+    const latestByob = loadByobConfig() || activeByob;
+    setSavedByobConfig(latestByob);
+    eraseAllSessionMemory(latestByob);
+    showToast(
+      language === 'fr'
+        ? 'Déconnecté — toutes les données locales ont été effacées.'
+        : 'Logged out — all local data erased.'
+    );
+  };
+
+  const forgetByobConfig = async () => {
+    await signOutGoogle(config);
+    await resetFirebaseInstances();
+    clearByobConfig();
+    clearBiometricCredential();
+    purgeLocalData({ preserveByob: false });
+    setSavedByobConfig(null);
+    eraseAllSessionMemory(null);
+    showToast(
+      language === 'fr'
+        ? 'Configuration Firestore BYOB oubliée et données effacées.'
+        : 'Saved Firestore BYOB configuration cleared.'
+    );
   };
 
   // Transaction mutations
@@ -267,7 +506,6 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setTransactions(prev => [newTx, ...prev]);
     enqueueOutbox('TRANSACTION', `tx_${nextId}`, 'UPSERT');
 
-    // Update account balance
     setAccounts(prev =>
       prev.map(acc => {
         if (acc.id === newTx.accountId) {
@@ -294,7 +532,6 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
     enqueueOutbox('TRANSACTION', `tx_${updatedTx.id}`, 'UPSERT');
 
-    // Adjust balances if amount changed
     if (oldTx && oldTx.amount !== updatedTx.amount) {
       const diff = updatedTx.amount - oldTx.amount;
       setAccounts(prev =>
@@ -324,7 +561,6 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
     enqueueOutbox('TRANSACTION', `tx_${id}`, 'DELETE');
 
-    // Revert account balance impact
     setAccounts(prev =>
       prev.map(acc => {
         if (acc.id === target.accountId) {
@@ -351,14 +587,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const now = Date.now();
     let nextId = Math.max(0, ...transactions.map(t => t.id)) + 1;
 
-    // Mark parent as split parent
     const updatedParent: TransactionEntity = {
       ...parent,
       isSplitParent: true,
       updatedAt: now
     };
 
-    // Create child split items
     const childTxs: TransactionEntity[] = splits.map(s => {
       const isExp = s.amount < 0 || parent.isExpense;
       const childAmount = isExp ? -Math.abs(s.amount) : Math.abs(s.amount);
@@ -398,6 +632,9 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ...prev.map(t => (t.id === parentId ? updatedParent : t))
     ]);
 
+    enqueueOutbox('TRANSACTION', `tx_${parentId}`, 'UPSERT');
+    childTxs.forEach(c => enqueueOutbox('TRANSACTION', `tx_${c.id}`, 'UPSERT'));
+
     showToast(language === 'fr' ? 'Transaction ventilée avec succès' : 'Transaction split successfully');
   };
 
@@ -416,7 +653,6 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let nextId = Math.max(0, ...transactions.map(t => t.id)) + 1;
     const absAmount = Math.abs(amount);
 
-    // Outgoing transaction from source
     const outTx: TransactionEntity = {
       id: nextId++,
       title: `${language === 'fr' ? 'Virement vers' : 'Transfer to'} ${targetAcc.name}`,
@@ -446,7 +682,6 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isDeleted: false
     };
 
-    // Incoming transaction to target
     const inTx: TransactionEntity = {
       id: nextId++,
       title: `${language === 'fr' ? 'Virement reçu de' : 'Transfer from'} ${sourceAcc.name}`,
@@ -477,8 +712,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     setTransactions(prev => [outTx, inTx, ...prev]);
+    enqueueOutbox('TRANSACTION', `tx_${outTx.id}`, 'UPSERT');
+    enqueueOutbox('TRANSACTION', `tx_${inTx.id}`, 'UPSERT');
+    enqueueOutbox('ACCOUNT', sourceAccId, 'UPSERT');
+    enqueueOutbox('ACCOUNT', targetAccId, 'UPSERT');
 
-    // Update balances
     setAccounts(prev =>
       prev.map(acc => {
         if (acc.id === sourceAccId) {
@@ -525,6 +763,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return tx;
       })
     );
+    enqueueOutbox('TRANSACTION', `tx_${manualId}`, 'UPSERT');
+    enqueueOutbox('TRANSACTION', `tx_${bankId}`, 'UPSERT');
 
     showToast(
       language === 'fr'
@@ -536,14 +776,50 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Accounts CRUD
   const addAccount = (acc: Omit<AccountEntity, 'updatedAt' | 'isDeleted'>) => {
     const now = Date.now();
-    setAccounts(prev => [...prev, { ...acc, updatedAt: now, isDeleted: false }]);
+    const prevDefaults = acc.isDefault ? accounts.filter(a => a.isDefault && !a.isDeleted) : [];
+    setAccounts(prev => {
+      const updated = acc.isDefault
+        ? prev.map(a => (a.isDefault ? { ...a, isDefault: false, updatedAt: now } : a))
+        : prev;
+      return [...updated, { ...acc, updatedAt: now, isDeleted: false }];
+    });
+    prevDefaults.forEach(a => enqueueOutbox('ACCOUNT', a.id, 'UPSERT'));
     enqueueOutbox('ACCOUNT', acc.id, 'UPSERT');
     showToast(language === 'fr' ? 'Compte créé' : 'Account created');
   };
 
   const updateAccount = (acc: AccountEntity) => {
     const now = Date.now();
-    setAccounts(prev => prev.map(a => (a.id === acc.id ? { ...acc, updatedAt: now } : a)));
+    const prevAccount = accounts.find(a => a.id === acc.id);
+    const clearedDefaults = acc.isDefault
+      ? accounts.filter(a => a.id !== acc.id && a.isDefault && !a.isDeleted)
+      : [];
+    setAccounts(prev =>
+      prev.map(a => {
+        if (a.id === acc.id) return { ...acc, updatedAt: now };
+        if (acc.isDefault && a.isDefault) return { ...a, isDefault: false, updatedAt: now };
+        return a;
+      })
+    );
+    clearedDefaults.forEach(a => enqueueOutbox('ACCOUNT', a.id, 'UPSERT'));
+    if (prevAccount && prevAccount.name !== acc.name) {
+      const affectedTxIds: number[] = [];
+      setTransactions(prev =>
+        prev.map(tx => {
+          if (tx.accountId === acc.id || tx.targetAccountId === acc.id) {
+            affectedTxIds.push(tx.id);
+            return {
+              ...tx,
+              accountName: tx.accountId === acc.id ? acc.name : tx.accountName,
+              targetAccountName: tx.targetAccountId === acc.id ? acc.name : tx.targetAccountName,
+              updatedAt: now
+            };
+          }
+          return tx;
+        })
+      );
+      affectedTxIds.forEach(txId => enqueueOutbox('TRANSACTION', `tx_${txId}`, 'UPSERT'));
+    }
     enqueueOutbox('ACCOUNT', acc.id, 'UPSERT');
     showToast(language === 'fr' ? 'Compte mis à jour' : 'Account updated');
   };
@@ -551,6 +827,9 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteAccount = (id: string) => {
     const now = Date.now();
     setAccounts(prev => prev.map(a => (a.id === id ? { ...a, isDeleted: true, updatedAt: now } : a)));
+    if (activeAccountId === id) {
+      setActiveAccountId(null);
+    }
     enqueueOutbox('ACCOUNT', id, 'DELETE');
     showToast(language === 'fr' ? 'Compte supprimé' : 'Account deleted');
   };
@@ -677,8 +956,9 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
 
     setTransactions(prev => [...newTxs, ...prev]);
+    newTxs.forEach(t => enqueueOutbox('TRANSACTION', `tx_${t.id}`, 'UPSERT'));
+    enqueueOutbox('ACCOUNT', targetAccountId, 'UPSERT');
 
-    // Update target account balance
     setAccounts(prev =>
       prev.map(acc => {
         if (acc.id === targetAccountId) {
@@ -704,17 +984,398 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateConfig = (patch: Partial<FirebaseConfigEntity>) => {
     setConfig(prev => ({ ...prev, ...patch }));
+    if (patch.familyName && sessionMode === 'FIRESTORE' && savedByobConfig) {
+      const updated = { ...savedByobConfig, familyName: patch.familyName };
+      saveByobConfig(updated);
+      setSavedByobConfig(updated);
+    }
     showToast(language === 'fr' ? 'Configuration mise à jour' : 'Configuration updated');
   };
 
-  const syncWithFirebaseNow = async () => {
-    setSyncState(prev => ({
-      ...prev,
+  const syncWithFirebaseNow = async (options?: { forceFullPull?: boolean; resetCacheBeforePull?: boolean }) => {
+    if (sessionMode !== 'FIRESTORE') {
+      showToast(
+        language === 'fr'
+          ? 'Mode Démo (en mémoire uniquement) — Connectez votre Firestore pour synchroniser.'
+          : 'Demo Mode (in-memory only) — Connect your Firestore to sync.'
+      );
+      return;
+    }
+
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+
+    const forceFullPull = options?.forceFullPull || false;
+    const resetCacheBeforePull = options?.resetCacheBeforePull || false;
+
+    const baseSyncState: SyncStateEntity = {
+      ...syncState,
+      lastPullTimestamp: forceFullPull ? 0 : syncState.lastPullTimestamp,
       lastSyncStatus: 'SYNCING',
       lastSyncMessage: language === 'fr' ? 'Synchronisation Cloud Firestore en cours...' : 'Syncing with Cloud Firestore...'
-    }));
+    };
+    setSyncState(baseSyncState);
+
+    const baseData = resetCacheBeforePull
+      ? {
+          accounts: [],
+          transactions: [],
+          categories: [],
+          budgets: [],
+          rules: [],
+          members
+        }
+      : {
+          accounts,
+          transactions,
+          categories,
+          budgets,
+          rules,
+          members
+        };
+
+    if (resetCacheBeforePull) {
+      setAccounts([]);
+      setTransactions([]);
+      setCategories([]);
+      setBudgets([]);
+      setRules([]);
+      setOutbox([]);
+      setActiveAccountId(null);
+    }
 
     try {
+      const result = await executeBidirectionalSync({
+        accounts: baseData.accounts,
+        transactions: baseData.transactions,
+        categories: baseData.categories,
+        budgets: baseData.budgets,
+        rules: baseData.rules,
+        members: baseData.members,
+        outbox: resetCacheBeforePull ? [] : outbox,
+        syncState: baseSyncState,
+        config
+      });
+
+      applySyncResult(result, baseData);
+      showToast(result.message);
+    } catch (err: any) {
+      const errMsg = err?.message || 'Sync failed';
+      setSyncState(prev => ({
+        ...prev,
+        lastSyncStatus: 'ERROR',
+        lastSyncMessage: errMsg
+      }));
+      showToast(errMsg);
+    } finally {
+      isSyncingRef.current = false;
+    }
+  };
+
+  const completeByobSetupWithUser = async (
+    byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
+    user: AuthUserInfo,
+    resetLocalData: boolean
+  ): Promise<{ success: boolean; error?: string; message?: string }> => {
+    const cleanByob: SavedByobConfig = {
+      projectId: byob.projectId.trim(),
+      apiKey: byob.apiKey.trim(),
+      applicationId: byob.applicationId?.trim() || '',
+      familyName: byob.familyName?.trim() || 'Private Family Vault'
+    };
+
+    saveByobConfig(cleanByob);
+    setSavedByobConfig(cleanByob);
+
+    const adminMember: FamilyMemberEntity = {
+      id: user.uid,
+      name: user.displayName || user.email?.split('@')[0] || 'Admin',
+      email: user.email || '',
+      role: 'ADMIN',
+      avatarColor: 0xff0f766e,
+      firestoreSynced: true
+    };
+
+    // Check if we have a valid local cache for this exact BYOB projectId so we can do incremental delta sync!
+    const localCache = !resetLocalData ? loadByobLocalCache(cleanByob.projectId) : null;
+
+    let syncAccounts: AccountEntity[] = [];
+    let syncTxs: TransactionEntity[] = [];
+    let syncCats: CategoryEntity[] = [];
+    let syncBudgets: CategoryBudgetEntity[] = [];
+    let syncRules: CategorizationRuleEntity[] = [];
+    let syncMembers: FamilyMemberEntity[] = [adminMember];
+    let syncOutbox: SyncOutboxEntity[] = [];
+    let baseSyncState: SyncStateEntity;
+
+    if (localCache) {
+      syncAccounts = localCache.accounts;
+      syncTxs = localCache.transactions;
+      syncCats = localCache.categories;
+      syncBudgets = localCache.budgets;
+      syncRules = localCache.rules;
+      syncMembers = localCache.members.length > 0 ? localCache.members : [adminMember];
+      syncOutbox = localCache.outbox || [];
+      baseSyncState = {
+        ...localCache.syncState,
+        lastSyncStatus: 'SYNCING',
+        lastSyncMessage:
+          language === 'fr'
+            ? 'Cache local chargé — Synchronisation delta Firestore...'
+            : 'Local cache loaded — Delta syncing Firestore...'
+      };
+
+      setOpenBankingConfig(
+        loadCachedData<OpenBankingConfig>(CACHE_STORAGE_KEYS.OPEN_BANKING, DEFAULT_OPEN_BANKING_CONFIG)
+      );
+      setCurrencyState(loadCachedData<string>(CACHE_STORAGE_KEYS.CURRENCY, '€'));
+      setAccounts(syncAccounts);
+      setTransactions(syncTxs);
+      setCategories(syncCats);
+      setBudgets(syncBudgets);
+      setRules(syncRules);
+      setMembers(syncMembers);
+      setOutbox(syncOutbox);
+      setActiveAccountId(null);
+    } else {
+      if (resetLocalData) {
+        purgeLocalData({ preserveByob: true });
+      }
+      baseSyncState = {
+        syncKey: 'primary_sync',
+        lastPullTimestamp: 0,
+        lastPushTimestamp: 0,
+        lastSyncStatus: 'SYNCING',
+        lastSyncMessage:
+          language === 'fr' ? 'Téléchargement initial depuis Firestore...' : 'Initial pull from Firestore...',
+        pendingOutboxCount: 0
+      };
+
+      setAccounts([]);
+      setTransactions([]);
+      setCategories([]);
+      setBudgets([]);
+      setRules([]);
+      setMembers([adminMember]);
+      setOutbox([]);
+      setActiveAccountId(null);
+      setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
+    }
+
+    const nextConfig: FirebaseConfigEntity = {
+      ...config,
+      familyName: (localCache?.familyName || cleanByob.familyName || 'Private Family Vault'),
+      projectId: cleanByob.projectId,
+      apiKey: cleanByob.apiKey,
+      applicationId: cleanByob.applicationId || '',
+      currentUserEmail: user.email || '',
+      currentUserName: user.displayName || user.email?.split('@')[0] || 'Admin',
+      currentUserRole: 'ADMIN',
+      isConfigured: true,
+      isFamilyCreated: true,
+      isGoogleAuthenticated: true,
+      isBiometricLockEnabled: true,
+      isAnonymous: false,
+      syncStatusMessage: baseSyncState.lastSyncMessage || ''
+    };
+
+    setFirebaseUser(user);
+    setConfig(nextConfig);
+    setSyncState(baseSyncState);
+
+    const result = await executeBidirectionalSync({
+      accounts: syncAccounts,
+      transactions: syncTxs,
+      categories: syncCats,
+      budgets: syncBudgets,
+      rules: syncRules,
+      members: syncMembers,
+      outbox: syncOutbox,
+      syncState: baseSyncState,
+      config: nextConfig
+    });
+
+    applySyncResult(result, {
+      accounts: syncAccounts,
+      transactions: syncTxs,
+      categories: syncCats,
+      budgets: syncBudgets,
+      rules: syncRules,
+      members: syncMembers
+    });
+
+    if (result.success) {
+      setSessionMode('FIRESTORE');
+      setCurrentScreen('DASHBOARD');
+      showToast(result.message);
+      return { success: true, message: result.message };
+    } else {
+      showToast(result.message);
+      return { success: false, error: result.message };
+    }
+  };
+
+  const connectAndSyncByob = async (
+    byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
+    options?: { resetLocalData?: boolean }
+  ): Promise<{ success: boolean; redirecting?: boolean; error?: string; message?: string }> => {
+    // Reuse local cache if connecting to the exact same projectId unless resetLocalData is explicitly forced
+    const isSameProject = savedByobConfig?.projectId?.trim() === byob.projectId.trim();
+    const shouldReset = options?.resetLocalData !== undefined ? options.resetLocalData : !isSameProject;
+
+    const tempCfg: Partial<FirebaseConfigEntity> = {
+      projectId: byob.projectId.trim(),
+      apiKey: byob.apiKey.trim(),
+      applicationId: byob.applicationId?.trim() || ''
+    };
+
+    const res = await signInWithGoogle(tempCfg, {
+      projectId: byob.projectId.trim(),
+      apiKey: byob.apiKey.trim(),
+      applicationId: byob.applicationId?.trim() || '',
+      familyName: byob.familyName?.trim() || 'Private Family Vault',
+      resetLocalData: shouldReset
+    });
+
+    if (res.redirecting) {
+      return { success: false, redirecting: true, error: res.error };
+    }
+
+    if (!res.success || !res.user) {
+      return {
+        success: false,
+        error: res.error || (language === 'fr' ? 'Échec de l’authentification Google' : 'Google authentication failed')
+      };
+    }
+
+    return await completeByobSetupWithUser(byob, res.user, shouldReset);
+  };
+
+  const unlockSavedByobWithBiometrics = async (): Promise<{
+    success: boolean;
+    redirecting?: boolean;
+    biometricVerified?: boolean;
+    needsGoogleAuth?: boolean;
+    error?: string;
+  }> => {
+    const targetByob = savedByobConfig || loadByobConfig();
+    if (!targetByob) {
+      return {
+        success: false,
+        error: language === 'fr' ? 'Aucune configuration Firestore BYOB enregistrée.' : 'No saved Firestore BYOB configuration found.'
+      };
+    }
+
+    const bioRes = await verifyOrEnrollBiometrics(
+      targetByob.familyName || 'Vault Owner',
+      firebaseUser?.email || 'vault@family.local'
+    );
+
+    if (!bioRes.success) {
+      return { success: false, error: bioRes.error };
+    }
+
+    const auth = getOrInitAuth(targetByob);
+    const activeFbUser = auth?.currentUser;
+
+    if (activeFbUser && activeFbUser.email) {
+      const userInfo: AuthUserInfo = {
+        uid: activeFbUser.uid,
+        email: activeFbUser.email,
+        displayName: activeFbUser.displayName,
+        photoURL: activeFbUser.photoURL
+      };
+      // Pass resetLocalData = false so existing local cache is hydrated and only delta changes are pulled
+      const syncRes = await completeByobSetupWithUser(targetByob, userInfo, false);
+      return {
+        success: syncRes.success,
+        biometricVerified: true,
+        error: syncRes.error
+      };
+    }
+
+    const googleRes = await signInWithGoogle(targetByob, {
+      projectId: targetByob.projectId,
+      apiKey: targetByob.apiKey,
+      applicationId: targetByob.applicationId || '',
+      familyName: targetByob.familyName || 'Private Family Vault',
+      resetLocalData: false
+    });
+
+    if (googleRes.redirecting) {
+      return {
+        success: false,
+        redirecting: true,
+        biometricVerified: true,
+        error: googleRes.error
+      };
+    }
+
+    if (!googleRes.success || !googleRes.user) {
+      return {
+        success: false,
+        biometricVerified: true,
+        needsGoogleAuth: true,
+        error:
+          googleRes.error ||
+          (language === 'fr'
+            ? 'Empreinte vérifiée. Cliquez sur « Se connecter avec Google » pour ouvrir votre session Firestore.'
+            : 'Fingerprint verified. Click "Sign in with Google" to open your Firestore session.')
+      };
+    }
+
+    const syncRes = await completeByobSetupWithUser(targetByob, googleRes.user, false);
+    return {
+      success: syncRes.success,
+      biometricVerified: true,
+      error: syncRes.error
+    };
+  };
+
+  const loginSavedByobWithGoogle = async (): Promise<{
+    success: boolean;
+    redirecting?: boolean;
+    error?: string;
+  }> => {
+    const targetByob = savedByobConfig || loadByobConfig();
+    if (!targetByob) {
+      return {
+        success: false,
+        error: language === 'fr' ? 'Aucune configuration Firestore BYOB enregistrée.' : 'No saved Firestore BYOB configuration found.'
+      };
+    }
+
+    const auth = getOrInitAuth(targetByob);
+    const existingUser = auth?.currentUser;
+    if (existingUser && existingUser.email) {
+      const userInfo: AuthUserInfo = {
+        uid: existingUser.uid,
+        email: existingUser.email,
+        displayName: existingUser.displayName,
+        photoURL: existingUser.photoURL
+      };
+      return await completeByobSetupWithUser(targetByob, userInfo, false);
+    }
+
+    return await connectAndSyncByob(targetByob, { resetLocalData: false });
+  };
+
+  const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+    const res = await signInWithGoogle(config);
+    if (res.success && res.user) {
+      setFirebaseUser(res.user);
+      const updatedCfg: FirebaseConfigEntity = {
+        ...config,
+        isGoogleAuthenticated: true,
+        currentUserEmail: res.user.email || '',
+        currentUserName: res.user.displayName || '',
+        isConfigured: true,
+        isAnonymous: false,
+        syncStatusMessage: `Connecté (${res.user.email})`
+      };
+      setConfig(updatedCfg);
+      showToast(language === 'fr' ? `Connecté avec Google (${res.user.email})` : `Signed in as ${res.user.email}`);
+
       const result = await executeBidirectionalSync({
         accounts,
         transactions,
@@ -724,30 +1385,18 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         members,
         outbox,
         syncState,
-        config
+        config: updatedCfg
       });
-
-      if (result.incomingTransactions && result.incomingTransactions.length > 0) {
-        setTransactions(prev => {
-          const map = new Map(prev.map(t => [t.id, t]));
-          for (const inc of result.incomingTransactions!) {
-            map.set(inc.id, inc);
-          }
-          return Array.from(map.values());
-        });
+      applySyncResult(result, { accounts, transactions, categories, budgets, rules, members });
+      if (result.success) {
+        setSessionMode('FIRESTORE');
       }
-
-      setOutbox([]);
-      setSyncState(result.updatedSyncState);
-      showToast(result.message);
-    } catch (err: any) {
-      setSyncState(prev => ({
-        ...prev,
-        lastSyncStatus: 'ERROR',
-        lastSyncMessage: err?.message || 'Sync failed'
-      }));
-      showToast(language === 'fr' ? 'Erreur de synchronisation' : 'Sync error');
+      return { success: result.success, error: result.success ? undefined : result.message };
+    } else if (res.error) {
+      showToast(res.error);
+      return { success: false, error: res.error };
     }
+    return { success: false };
   };
 
   const updateOpenBankingConfig = (patch: Partial<OpenBankingConfig>) => {
@@ -790,6 +1439,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   return (
     <BudgetContext.Provider
       value={{
+        sessionMode,
+        savedByobConfig,
+        authInitialized,
+
         accounts: accounts.filter(a => !a.isDeleted),
         transactions: transactions.filter(t => !t.isDeleted),
         categories: categories.filter(c => !c.isDeleted),
@@ -803,16 +1456,20 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         currency,
         currentScreen,
         activeAccountId,
-        isBiometricLocked,
         toastMessage,
 
         navigateTo,
         setLanguage,
         setCurrency,
         setActiveAccountId,
-        setIsBiometricLocked,
         showToast,
         dismissToast,
+
+        startDemoMode,
+        logout,
+        forgetByobConfig,
+        unlockSavedByobWithBiometrics,
+        loginSavedByobWithGoogle,
 
         addTransaction,
         updateTransaction,
@@ -841,11 +1498,15 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         importCsvTransactions,
         updateConfig,
         syncWithFirebaseNow,
+        connectAndSyncByob,
         resetToMockData,
 
         updateOpenBankingConfig,
         syncOpenBankingNow,
-        testOpenBankingConn
+        testOpenBankingConn,
+
+        firebaseUser,
+        loginWithGoogle
       }}
     >
       {children}
