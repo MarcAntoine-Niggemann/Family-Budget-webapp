@@ -1,4 +1,99 @@
-import { CategoryBudgetEntity } from '../types';
+import { CategoryBudgetEntity, TransactionEntity } from '../types';
+
+export interface SubCategoryActuals {
+  netActual: number;
+  grossExpense: number;
+  grossIncome: number;
+  offsetAmount: number;
+}
+
+export interface PeriodActualTotals {
+  netExpenses: number;
+  netIncome: number;
+  grossExpenses: number;
+  grossIncome: number;
+}
+
+/**
+ * Computes net and gross actuals for a single sub-category budget line.
+ * Opposite-flow transactions (e.g., reimbursements credited to a spending sub-category,
+ * or fees/deductions debited from an income sub-category) offset the net actual.
+ */
+export function computeSubCategoryActuals(
+  budget: CategoryBudgetEntity,
+  transactions: TransactionEntity[]
+): SubCategoryActuals {
+  let grossExpense = 0;
+  let grossIncome = 0;
+
+  for (const tx of transactions) {
+    if (tx.isDeleted || tx.isExcluded || tx.isSplitParent) continue;
+    if (tx.isInternalTransfer || tx.transferType === 'CARD_SETTLEMENT') continue;
+    if (tx.budgetId !== budget.id) continue;
+
+    const absAmt = Math.abs(tx.amount);
+    if (tx.isExpense) {
+      grossExpense += absAmt;
+    } else {
+      grossIncome += absAmt;
+    }
+  }
+
+  const netActual = budget.isExpense
+    ? grossExpense - grossIncome
+    : grossIncome - grossExpense;
+  const offsetAmount = budget.isExpense ? grossIncome : grossExpense;
+
+  return {
+    netActual: Math.round(netActual * 100) / 100,
+    grossExpense: Math.round(grossExpense * 100) / 100,
+    grossIncome: Math.round(grossIncome * 100) / 100,
+    offsetAmount: Math.round(offsetAmount * 100) / 100
+  };
+}
+
+/**
+ * Aggregates period expenses and income while attributing opposite-flow transactions
+ * assigned to a sub-category budget as offsets to that sub-category's declared flow.
+ * Note: netIncome - netExpenses always equals grossIncome - grossExpenses.
+ */
+export function computePeriodActualTotals(
+  transactions: TransactionEntity[],
+  budgetById: Map<number, CategoryBudgetEntity>
+): PeriodActualTotals {
+  let netExpenses = 0;
+  let netIncome = 0;
+  let grossExpenses = 0;
+  let grossIncome = 0;
+
+  for (const tx of transactions) {
+    if (tx.isDeleted || tx.isExcluded || tx.isSplitParent) continue;
+    if (tx.isInternalTransfer || tx.transferType === 'CARD_SETTLEMENT') continue;
+
+    const absAmt = Math.abs(tx.amount);
+    if (tx.isExpense) {
+      grossExpenses += absAmt;
+    } else {
+      grossIncome += absAmt;
+    }
+
+    const budget = tx.budgetId ? budgetById.get(tx.budgetId) : undefined;
+    const targetIsExpense = budget ? budget.isExpense : tx.isExpense;
+
+    if (targetIsExpense) {
+      netExpenses += tx.isExpense ? absAmt : -absAmt;
+    } else {
+      netIncome += !tx.isExpense ? absAmt : -absAmt;
+    }
+  }
+
+  return {
+    netExpenses: Math.round(netExpenses * 100) / 100,
+    netIncome: Math.round(netIncome * 100) / 100,
+    grossExpenses: Math.round(grossExpenses * 100) / 100,
+    grossIncome: Math.round(grossIncome * 100) / 100
+  };
+}
 
 export function getDaysInMonth(year: number, month1to12: number): number {
   return new Date(year, month1to12, 0).getDate();

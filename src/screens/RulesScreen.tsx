@@ -467,7 +467,7 @@ export const RulesScreen: React.FC = () => {
                     </option>
                     {targetCategoryBudgets.map(b => (
                       <option key={b.id} value={b.id}>
-                        {b.title}
+                        {b.title} ({b.isExpense ? (isFr ? 'Dépense' : 'Spending') : isFr ? 'Revenu' : 'Income'})
                       </option>
                     ))}
                   </select>

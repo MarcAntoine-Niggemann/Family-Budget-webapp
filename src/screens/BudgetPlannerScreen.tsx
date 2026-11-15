@@ -14,6 +14,8 @@ import { useBudget } from '../context/BudgetContext';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { CategoryBudgetEntity, CategoryEntity } from '../types';
 import {
+  computePeriodActualTotals,
+  computeSubCategoryActuals,
   formatBudgetScheduleLabel,
   formatBudgetWindowLabel,
   getBudgetActiveMonthsInYear,
@@ -45,6 +47,7 @@ export const BudgetPlannerScreen: React.FC = () => {
   const activeCategories = categories.filter(c => !c.isDeleted);
   const activeCategoryIds = new Set(activeCategories.map(c => c.id));
   const activeBudgets = budgets.filter(b => !b.isDeleted && activeCategoryIds.has(b.categoryId));
+  const activeBudgetById = useMemo(() => new Map(activeBudgets.map(b => [b.id, b])), [activeBudgets]);
 
   // View mode (Month-by-month vs Global Year), Selected Month & Year (defaults to current)
   const now = new Date();
@@ -133,20 +136,20 @@ export const BudgetPlannerScreen: React.FC = () => {
         .filter(b => !b.isExpense)
         .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, selectedYear, month1), 0);
 
-      const mTx = yearAllTx.filter(tx => tx.date >= mStart && tx.date <= mEnd);
-      const mExpTx = mTx.filter(
-        tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT'
+      const mTx = yearAllTx.filter(
+        tx =>
+          tx.date >= mStart &&
+          tx.date <= mEnd &&
+          !tx.isInternalTransfer &&
+          tx.transferType !== 'CARD_SETTLEMENT'
       );
-      const mIncTx = mTx.filter(tx => !tx.isExpense && !tx.isInternalTransfer);
-
-      const actualExpense = mExpTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-      const actualIncome = mIncTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-      const hasActualTx = mExpTx.length > 0 || mIncTx.length > 0;
+      const mTotals = computePeriodActualTotals(mTx, activeBudgetById);
+      const hasActualTx = mTx.length > 0;
 
       const roundedPlannedExp = Math.round(plannedExpense * 100) / 100;
       const roundedPlannedInc = Math.round(plannedIncome * 100) / 100;
-      const roundedActualExp = Math.round(actualExpense * 100) / 100;
-      const roundedActualInc = Math.round(actualIncome * 100) / 100;
+      const roundedActualExp = mTotals.netExpenses;
+      const roundedActualInc = mTotals.netIncome;
 
       return {
         monthIndex: mIdx,
@@ -162,7 +165,7 @@ export const BudgetPlannerScreen: React.FC = () => {
         hasActualTx
       };
     });
-  }, [transactions, activeBudgets, selectedYear, yearStartDate, yearEndDate, language]);
+  }, [transactions, activeBudgets, activeBudgetById, selectedYear, yearStartDate, yearEndDate, language]);
 
   // Open Category wrapper modal
   const handleOpenCatModal = (cat?: CategoryEntity) => {
@@ -315,21 +318,19 @@ export const BudgetPlannerScreen: React.FC = () => {
       ? getBudgetMonthlyAmount(b, selectedYear, selectedMonth1)
       : getBudgetAnnualAmount(b, selectedYear);
 
+  const periodTotals = computePeriodActualTotals(periodTx, activeBudgetById);
+
   const totalExpenseBudget = activeBudgets
     .filter(b => b.isExpense)
     .reduce((sum, b) => sum + getLinePeriodBudget(b), 0);
 
-  const totalActualExpenses = periodTx
-    .filter(tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT')
-    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const totalActualExpenses = periodTotals.netExpenses;
 
   const totalIncomeBudget = activeBudgets
     .filter(b => !b.isExpense)
     .reduce((sum, b) => sum + getLinePeriodBudget(b), 0);
 
-  const totalActualIncome = periodTx
-    .filter(tx => !tx.isExpense && !tx.isInternalTransfer)
-    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const totalActualIncome = periodTotals.netIncome;
 
   const projectedPeriodNet = totalIncomeBudget - totalExpenseBudget;
   const actualPeriodNet = totalActualIncome - totalActualExpenses;
@@ -999,20 +1000,11 @@ export const BudgetPlannerScreen: React.FC = () => {
       <div className="space-y-4">
         {activeCategories.map(cat => {
           const catBudgets = activeBudgets.filter(b => b.categoryId === cat.id);
+          const catTx = periodTx.filter(tx => tx.categoryId === cat.id);
+          const catTotals = computePeriodActualTotals(catTx, activeBudgetById);
 
-          const catExpenses = periodTx
-            .filter(
-              tx =>
-                tx.categoryId === cat.id &&
-                tx.isExpense &&
-                !tx.isInternalTransfer &&
-                tx.transferType !== 'CARD_SETTLEMENT'
-            )
-            .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-          const catIncomeActual = periodTx
-            .filter(tx => tx.categoryId === cat.id && !tx.isExpense && !tx.isInternalTransfer)
-            .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+          const catExpenses = catTotals.netExpenses;
+          const catIncomeActual = catTotals.netIncome;
 
           const catExpenseBudget = catBudgets
             .filter(b => b.isExpense)
@@ -1022,11 +1014,11 @@ export const BudgetPlannerScreen: React.FC = () => {
             .filter(b => !b.isExpense)
             .reduce((sum, b) => sum + getLinePeriodBudget(b), 0);
 
-          const hasExpenseLines = catBudgets.some(b => b.isExpense) || catExpenses > 0;
-          const hasIncomeLines = catBudgets.some(b => !b.isExpense) || catIncomeActual > 0;
+          const hasExpenseLines = catBudgets.some(b => b.isExpense) || catExpenses !== 0;
+          const hasIncomeLines = catBudgets.some(b => !b.isExpense) || catIncomeActual !== 0;
 
           const percentUsed =
-            catExpenseBudget > 0 ? Math.min(100, Math.round((catExpenses / catExpenseBudget) * 100)) : 0;
+            catExpenseBudget > 0 ? Math.max(0, Math.min(100, Math.round((catExpenses / catExpenseBudget) * 100))) : 0;
           const isOver = catExpenses > catExpenseBudget && catExpenseBudget > 0;
 
           return (
@@ -1180,15 +1172,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                       const periodBudgeted = getLinePeriodBudget(b);
                       const windowLabel = formatBudgetWindowLabel(b, language);
 
-                      const actualForSubCat = periodTx
-                        .filter(
-                          tx =>
-                            tx.budgetId === b.id &&
-                            tx.isExpense === b.isExpense &&
-                            !tx.isInternalTransfer &&
-                            tx.transferType !== 'CARD_SETTLEMENT'
-                        )
-                        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+                      const subActuals = computeSubCategoryActuals(b, catTx);
+                      const actualForSubCat = subActuals.netActual;
 
                       const isActiveInPeriod =
                         viewMode === 'MONTH' ? activeInSelectedMonth : activeMonthsInYear > 0;
@@ -1286,12 +1271,31 @@ export const BudgetPlannerScreen: React.FC = () => {
                                   </>
                                 )}
                             </div>
+                            {subActuals.offsetAmount > 0 && (
+                              <div className="text-[11px] text-teal-300/90 font-mono tabular-nums">
+                                {b.isExpense
+                                  ? isFr
+                                    ? `Dépenses ${subActuals.grossExpense.toLocaleString(undefined, { maximumFractionDigits: 2 })} − Crédits ${subActuals.grossIncome.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`
+                                    : `Spent ${subActuals.grossExpense.toLocaleString(undefined, { maximumFractionDigits: 2 })} − Credits ${subActuals.grossIncome.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`
+                                  : isFr
+                                  ? `Reçus ${subActuals.grossIncome.toLocaleString(undefined, { maximumFractionDigits: 2 })} − Débits ${subActuals.grossExpense.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`
+                                  : `Income ${subActuals.grossIncome.toLocaleString(undefined, { maximumFractionDigits: 2 })} − Debits ${subActuals.grossExpense.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`}
+                              </div>
+                            )}
                           </div>
 
                           <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 tabular-nums">
                             <div className="text-right">
                               <div className="font-mono font-bold text-slate-100">
-                                <span className={subOver ? 'text-rose-400' : ''}>
+                                <span
+                                  className={
+                                    subOver
+                                      ? 'text-rose-400'
+                                      : b.isExpense && actualForSubCat < 0
+                                      ? 'text-emerald-400'
+                                      : ''
+                                  }
+                                >
                                   {actualForSubCat.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                 </span>
                                 <span className="text-slate-500 font-normal"> / </span>
@@ -1461,29 +1465,36 @@ export const BudgetPlannerScreen: React.FC = () => {
 
             <form onSubmit={handleSaveBudget} className="space-y-4">
               {/* Expense vs Income */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setBudgetIsExpense(true)}
-                  className={`py-2 rounded-lg transition ${
-                    budgetIsExpense
-                      ? 'bg-rose-500 text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {isFr ? 'Dépense / Débit' : 'Spending / Expense'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBudgetIsExpense(false)}
-                  className={`py-2 rounded-lg transition ${
-                    !budgetIsExpense
-                      ? 'bg-emerald-500 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {isFr ? 'Revenu / Crédit' : 'Income / Salary'}
-                </button>
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setBudgetIsExpense(true)}
+                    className={`py-2 rounded-lg transition ${
+                      budgetIsExpense
+                        ? 'bg-rose-500 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isFr ? 'Dépense / Débit' : 'Spending / Expense'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBudgetIsExpense(false)}
+                    className={`py-2 rounded-lg transition ${
+                      !budgetIsExpense
+                        ? 'bg-emerald-500 text-slate-950 shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isFr ? 'Revenu / Crédit' : 'Income / Salary'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {isFr
+                    ? 'Définit le sens de l’objectif budgétaire (les opérations de sens opposé, comme un remboursement ou un loyer perçu, viendront en déduction du net).'
+                    : 'Sets the budget goal direction (opposite-flow transactions like reimbursements or rent offsets will reduce the net actual).'}
+                </p>
               </div>
 
               {/* Title & Amount */}

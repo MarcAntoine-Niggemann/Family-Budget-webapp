@@ -9,7 +9,9 @@ import {
   getBudgetAnnualAmount,
   getBudgetMonthlyAmount,
   clampDayToMonth,
-  isBudgetScheduledInMonth
+  isBudgetScheduledInMonth,
+  computeSubCategoryActuals,
+  computePeriodActualTotals
 } from './budgetEngine';
 
 export interface SubCategoryReportItem {
@@ -18,6 +20,9 @@ export interface SubCategoryReportItem {
   isExpense: boolean;
   budgetAmount: number;
   actualAmount: number;
+  grossExpense: number;
+  grossIncome: number;
+  offsetAmount: number;
   difference: number;
   percentageUsed: number;
   isOverBudget: boolean;
@@ -88,6 +93,9 @@ export interface YearlySubCategoryItem {
   isExpense: boolean;
   annualBudget: number;
   annualActual: number;
+  grossExpense: number;
+  grossIncome: number;
+  offsetAmount: number;
   percentageUsed: number;
 }
 
@@ -173,24 +181,28 @@ export function computeMonthlyReport(
   const isCurrentMonth = year === nowYear && monthIndex === nowMonth;
 
   const monthTx = transactions.filter(
-    tx => !tx.isDeleted && !tx.isExcluded && !tx.isSplitParent && tx.date >= startDate && tx.date <= endDate
+    tx =>
+      !tx.isDeleted &&
+      !tx.isExcluded &&
+      !tx.isSplitParent &&
+      !tx.isInternalTransfer &&
+      tx.transferType !== 'CARD_SETTLEMENT' &&
+      tx.date >= startDate &&
+      tx.date <= endDate
   );
 
-  // Filter out internal transfers and credit card settlement debits to avoid double counting
-  const expenseTx = monthTx.filter(
-    tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT'
-  );
-  const incomeTx = monthTx.filter(tx => !tx.isExpense && !tx.isInternalTransfer);
+  const activeBudgetById = new Map(budgets.filter(b => !b.isDeleted).map(b => [b.id, b]));
+  const periodTotals = computePeriodActualTotals(monthTx, activeBudgetById);
 
-  const totalActualExpenses = expenseTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-  const totalActualIncome = incomeTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const totalActualExpenses = periodTotals.netExpenses;
+  const totalActualIncome = periodTotals.netIncome;
 
   const activeCategoryIds = new Set(categories.filter(c => !c.isDeleted).map(c => c.id));
-  const unassignedExpenses = expenseTx
-    .filter(tx => !tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId)
+  const unassignedExpenses = monthTx
+    .filter(tx => tx.isExpense && (!tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId))
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-  const unassignedIncome = incomeTx
-    .filter(tx => !tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId)
+  const unassignedIncome = monthTx
+    .filter(tx => !tx.isExpense && (!tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId))
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   // Category wrapper aggregation from sub-category budget lines
@@ -198,17 +210,16 @@ export function computeMonthlyReport(
     .filter(c => !c.isDeleted)
     .map(cat => {
       const catBudgets = budgets.filter(b => !b.isDeleted && b.categoryId === cat.id);
+      const catTx = monthTx.filter(tx => tx.categoryId === cat.id);
+      const catTotals = computePeriodActualTotals(catTx, activeBudgetById);
 
       const subCategories: SubCategoryReportItem[] = catBudgets.map(b => {
         const budgetAmount = Math.round(getBudgetMonthlyAmount(b, year, month1to12) * 100) / 100;
-        const matchingTx = b.isExpense
-          ? expenseTx.filter(tx => tx.budgetId === b.id)
-          : incomeTx.filter(tx => tx.budgetId === b.id);
-        const actualAmount =
-          Math.round(matchingTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) * 100) / 100;
+        const subActuals = computeSubCategoryActuals(b, catTx);
+        const actualAmount = subActuals.netActual;
         const difference = Math.round((budgetAmount - actualAmount) * 100) / 100;
         const percentageUsed =
-          budgetAmount > 0 ? Math.min(100, Math.round((actualAmount / budgetAmount) * 100)) : 0;
+          budgetAmount > 0 ? Math.max(0, Math.min(100, Math.round((actualAmount / budgetAmount) * 100))) : 0;
 
         return {
           budgetId: b.id,
@@ -216,6 +227,9 @@ export function computeMonthlyReport(
           isExpense: b.isExpense,
           budgetAmount,
           actualAmount,
+          grossExpense: subActuals.grossExpense,
+          grossIncome: subActuals.grossIncome,
+          offsetAmount: subActuals.offsetAmount,
           difference,
           percentageUsed,
           isOverBudget: b.isExpense && actualAmount > budgetAmount && budgetAmount > 0
@@ -230,17 +244,12 @@ export function computeMonthlyReport(
         .filter(b => !b.isExpense)
         .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, year, month1to12), 0);
 
-      const actualSpent = expenseTx
-        .filter(tx => tx.categoryId === cat.id)
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-      const actualIncome = incomeTx
-        .filter(tx => tx.categoryId === cat.id)
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      const actualSpent = catTotals.netExpenses;
+      const actualIncome = catTotals.netIncome;
 
       const difference = Math.round((budgetExpense - actualSpent) * 100) / 100;
       const percentageUsed =
-        budgetExpense > 0 ? Math.min(100, Math.round((actualSpent / budgetExpense) * 100)) : 0;
+        budgetExpense > 0 ? Math.max(0, Math.min(100, Math.round((actualSpent / budgetExpense) * 100))) : 0;
 
       return {
         categoryId: cat.id,
@@ -248,12 +257,12 @@ export function computeMonthlyReport(
         categoryIcon: cat.icon,
         categoryColor: cat.color,
         budgetExpense: Math.round(budgetExpense * 100) / 100,
-        actualSpent: Math.round(actualSpent * 100) / 100,
+        actualSpent,
         difference,
         percentageUsed,
         isOverBudget: actualSpent > budgetExpense && budgetExpense > 0,
         budgetIncome: Math.round(budgetIncome * 100) / 100,
-        actualIncome: Math.round(actualIncome * 100) / 100,
+        actualIncome,
         subCategories
       };
     });
@@ -261,16 +270,27 @@ export function computeMonthlyReport(
   const totalExpenseBudget = catItems.reduce((sum, c) => sum + c.budgetExpense, 0);
   const totalIncomeBudget = catItems.reduce((sum, c) => sum + c.budgetIncome, 0);
 
-  // Spending by member
+  // Net spending by member (reimbursements credited to expense sub-categories reduce member spending)
   const memberSpendingMap = new Map<string, number>();
-  for (const tx of expenseTx) {
+  for (const tx of monthTx) {
+    const budget = tx.budgetId ? activeBudgetById.get(tx.budgetId) : undefined;
+    const targetIsExpense = budget ? budget.isExpense : tx.isExpense;
+    if (!targetIsExpense) continue;
     const memId = tx.familyMemberId || 'primary';
-    memberSpendingMap.set(memId, (memberSpendingMap.get(memId) || 0) + Math.abs(tx.amount));
+    const delta = tx.isExpense ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+    memberSpendingMap.set(memId, (memberSpendingMap.get(memId) || 0) + delta);
   }
 
+  const positiveMemberTotal = Array.from(memberSpendingMap.values()).reduce(
+    (sum, v) => sum + Math.max(0, v),
+    0
+  );
+
   const memberItems: MemberSpendingItem[] = members.map(m => {
-    const amount = Math.round((memberSpendingMap.get(m.id) || 0) * 100) / 100;
-    const percentage = totalActualExpenses > 0 ? Math.round((amount / totalActualExpenses) * 100) : 0;
+    const rawAmount = Math.round((memberSpendingMap.get(m.id) || 0) * 100) / 100;
+    const amount = rawAmount;
+    const percentage =
+      positiveMemberTotal > 0 ? Math.max(0, Math.round((Math.max(0, amount) / positiveMemberTotal) * 100)) : 0;
     return {
       memberId: m.id,
       memberName: m.name,
@@ -316,16 +336,17 @@ export function computeMonthlyReport(
 
   const actualExpenseByDay = new Array<number>(daysInMonth + 1).fill(0);
   const actualIncomeByDay = new Array<number>(daysInMonth + 1).fill(0);
-  for (const tx of expenseTx) {
+  for (const tx of monthTx) {
     const d = new Date(tx.date).getDate();
-    if (d >= 1 && d <= daysInMonth) {
-      actualExpenseByDay[d] += Math.abs(tx.amount);
-    }
-  }
-  for (const tx of incomeTx) {
-    const d = new Date(tx.date).getDate();
-    if (d >= 1 && d <= daysInMonth) {
-      actualIncomeByDay[d] += Math.abs(tx.amount);
+    if (d < 1 || d > daysInMonth) continue;
+    const absAmt = Math.abs(tx.amount);
+    const budget = tx.budgetId ? activeBudgetById.get(tx.budgetId) : undefined;
+    const targetIsExpense = budget ? budget.isExpense : tx.isExpense;
+
+    if (targetIsExpense) {
+      actualExpenseByDay[d] += tx.isExpense ? absAmt : -absAmt;
+    } else {
+      actualIncomeByDay[d] += !tx.isExpense ? absAmt : -absAmt;
     }
   }
 
@@ -422,20 +443,25 @@ export function computeYearlyReport(
   const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999).getTime();
 
   const yearTx = transactions.filter(
-    tx => !tx.isDeleted && !tx.isExcluded && !tx.isSplitParent && tx.date >= startOfYear && tx.date <= endOfYear
+    tx =>
+      !tx.isDeleted &&
+      !tx.isExcluded &&
+      !tx.isSplitParent &&
+      !tx.isInternalTransfer &&
+      tx.transferType !== 'CARD_SETTLEMENT' &&
+      tx.date >= startOfYear &&
+      tx.date <= endOfYear
   );
 
-  const expenseTx = yearTx.filter(
-    tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT'
-  );
-  const incomeTx = yearTx.filter(tx => !tx.isExpense && !tx.isInternalTransfer);
+  const activeBudgetById = new Map(budgets.filter(b => !b.isDeleted).map(b => [b.id, b]));
+  const yearTotals = computePeriodActualTotals(yearTx, activeBudgetById);
 
-  const totalAnnualSpent = expenseTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-  const totalAnnualIncome = incomeTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const totalAnnualSpent = yearTotals.netExpenses;
+  const totalAnnualIncome = yearTotals.netIncome;
 
   const activeCategoryIds = new Set(categories.filter(c => !c.isDeleted).map(c => c.id));
-  const unassignedExpenses = expenseTx
-    .filter(tx => !tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId)
+  const unassignedExpenses = yearTx
+    .filter(tx => tx.isExpense && (!tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId))
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   // Total annual budget computed month-by-month across active sub-category lines
@@ -452,13 +478,8 @@ export function computeYearlyReport(
     const mStart = new Date(year, mIdx, 1, 0, 0, 0, 0).getTime();
     const mEnd = new Date(year, mIdx + 1, 0, 23, 59, 59, 999).getTime();
 
-    const mExpense = expenseTx
-      .filter(tx => tx.date >= mStart && tx.date <= mEnd)
-      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-    const mIncome = incomeTx
-      .filter(tx => tx.date >= mStart && tx.date <= mEnd)
-      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+    const mTx = yearTx.filter(tx => tx.date >= mStart && tx.date <= mEnd);
+    const mTotals = computePeriodActualTotals(mTx, activeBudgetById);
 
     const plannedExpenses = activeExpenseBudgets.reduce(
       (sum, b) => sum + getBudgetMonthlyAmount(b, year, mIdx + 1),
@@ -471,10 +492,10 @@ export function computeYearlyReport(
     return {
       monthIndex: mIdx,
       monthName,
-      income: Math.round(mIncome * 100) / 100,
-      expenses: Math.round(mExpense * 100) / 100,
+      income: mTotals.netIncome,
+      expenses: mTotals.netExpenses,
       plannedExpenses: Math.round(plannedExpenses * 100) / 100,
-      savings: Math.round((mIncome - mExpense) * 100) / 100
+      savings: Math.round((mTotals.netIncome - mTotals.netExpenses) * 100) / 100
     };
   });
 
@@ -483,15 +504,15 @@ export function computeYearlyReport(
     .filter(c => !c.isDeleted)
     .map(cat => {
       const catBudgets = budgets.filter(b => !b.isDeleted && b.categoryId === cat.id && b.isExpense);
+      const catYearTx = yearTx.filter(tx => tx.categoryId === cat.id);
+      const catTotals = computePeriodActualTotals(catYearTx, activeBudgetById);
+
       const subCategories: YearlySubCategoryItem[] = catBudgets.map(b => {
         const annualBudget = getBudgetAnnualAmount(b, year);
-        const annualActual = Math.round(
-          expenseTx
-            .filter(tx => tx.budgetId === b.id)
-            .reduce((sum, tx) => sum + Math.abs(tx.amount), 0) * 100
-        ) / 100;
+        const subActuals = computeSubCategoryActuals(b, catYearTx);
+        const annualActual = subActuals.netActual;
         const percentageUsed =
-          annualBudget > 0 ? Math.min(100, Math.round((annualActual / annualBudget) * 100)) : 0;
+          annualBudget > 0 ? Math.max(0, Math.min(100, Math.round((annualActual / annualBudget) * 100))) : 0;
 
         return {
           budgetId: b.id,
@@ -499,24 +520,25 @@ export function computeYearlyReport(
           isExpense: b.isExpense,
           annualBudget,
           annualActual,
+          grossExpense: subActuals.grossExpense,
+          grossIncome: subActuals.grossIncome,
+          offsetAmount: subActuals.offsetAmount,
           percentageUsed
         };
       });
 
       const annualBudget = catBudgets.reduce((sum, b) => sum + getBudgetAnnualAmount(b, year), 0);
-      const annualSpent = expenseTx
-        .filter(tx => tx.categoryId === cat.id)
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      const annualSpent = catTotals.netExpenses;
 
       const percentageUsed =
-        annualBudget > 0 ? Math.min(100, Math.round((annualSpent / annualBudget) * 100)) : 0;
+        annualBudget > 0 ? Math.max(0, Math.min(100, Math.round((annualSpent / annualBudget) * 100))) : 0;
 
       return {
         categoryId: cat.id,
         categoryName: cat.name,
         categoryColor: cat.color,
         annualBudget: Math.round(annualBudget * 100) / 100,
-        annualSpent: Math.round(annualSpent * 100) / 100,
+        annualSpent,
         percentageUsed,
         subCategories
       };

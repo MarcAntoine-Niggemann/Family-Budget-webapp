@@ -203,13 +203,39 @@ export function categorizeLabel(
   };
 }
 
+function splitCsvLine(line: string, delimiter: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === delimiter && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result.map(t => t.replace(/^["']|["']$/g, '').trim());
+}
+
 export function parseBankStatementCsv(
   csvContent: string,
   rules: CategorizationRuleEntity[],
   categories: CategoryEntity[],
   budgets: CategoryBudgetEntity[]
 ): CsvParseResult {
-  const lines = csvContent
+  const cleanedContent = csvContent.replace(/^\uFEFF/, '');
+  const lines = cleanedContent
     .split(/\r?\n/)
     .map(l => l.trim())
     .filter(l => l.length > 0);
@@ -238,11 +264,11 @@ export function parseBankStatementCsv(
   let headers: string[] = [];
 
   for (let i = 0; i < Math.min(10, lines.length); i++) {
-    const rawTokens = lines[i].split(delimiter).map(t => t.replace(/^["']|["']$/g, '').trim());
+    const rawTokens = splitCsvLine(lines[i], delimiter);
     const normTokens = rawTokens.map(normalizeText);
 
     const dIdx = normTokens.findIndex(t => /DATE|OPERATION_DATE|DATE_OPERATION|VALEUR/.test(t));
-    const lIdx = normTokens.findIndex(t => /LIBELL|DESCRIPTION|LABEL|DETAIL|OPERATION|MERCHANT/.test(t));
+    const lIdx = normTokens.findIndex(t => /LIBELL|DESCRIPTION|LABEL|DETAIL|OPERATION|MERCHANT|PAYEE|MEMO|NARRATIVE/.test(t));
     const aIdx = normTokens.findIndex(t => /MONTANT|AMOUNT|TOTAL|VALEUR_EUR/.test(t));
     const debIdx = normTokens.findIndex(t => /DEBIT|DEPENSE|SORTIE/.test(t));
     const credIdx = normTokens.findIndex(t => /CREDIT|RECETTE|ENTREE/.test(t));
@@ -268,7 +294,7 @@ export function parseBankStatementCsv(
   // If header not found through standard aliases, fallback to assuming row 0 is header with col 0=Date, 1=Label, 2=Amount
   if (headerIndex === -1) {
     headerIndex = 0;
-    headers = lines[0].split(delimiter).map(t => t.replace(/^["']|["']$/g, '').trim());
+    headers = splitCsvLine(lines[0], delimiter);
     dateColIdx = 0;
     labelColIdx = 1;
     amountColIdx = 2;
@@ -278,7 +304,7 @@ export function parseBankStatementCsv(
   const errors: string[] = [];
 
   for (let i = headerIndex + 1; i < lines.length; i++) {
-    const rawTokens = lines[i].split(delimiter).map(t => t.replace(/^["']|["']$/g, '').trim());
+    const rawTokens = splitCsvLine(lines[i], delimiter);
     if (rawTokens.length <= Math.max(dateColIdx, labelColIdx)) continue;
 
     const rawDate = rawTokens[dateColIdx];

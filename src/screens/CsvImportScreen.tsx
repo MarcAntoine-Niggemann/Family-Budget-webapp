@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Upload,
   FileText,
@@ -50,9 +50,13 @@ export const CsvImportScreen: React.FC = () => {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   // CSV States
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [rawCsvText, setRawCsvText] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(activeAccounts[0]?.id || 'acc_main_checking');
   const [parseResult, setParseResult] = useState<CsvParseResult | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const sampleCsvCheckingFr = `Date;Libelle;Montant;Solde
 12/11/2026;CARREFOUR MARKET ST MARTIN;-85.40;4164.60
@@ -88,16 +92,85 @@ export const CsvImportScreen: React.FC = () => {
     setParseResult(res);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processSelectedFile = (file: File) => {
+    setFileError(null);
+
+    const lowerName = file.name.toLowerCase();
+    const unsupportedExtensions = ['.xlsx', '.xls', '.pdf', '.png', '.jpg', '.jpeg', '.zip', '.doc', '.docx'];
+    if (unsupportedExtensions.some(ext => lowerName.endsWith(ext))) {
+      setFileError(
+        isFr
+          ? `Format non pris en charge (${file.name}). Veuillez exporter votre relevé au format .csv, .tsv ou .txt.`
+          : `Unsupported file format (${file.name}). Please export your bank statement as .csv, .tsv, or .txt.`
+      );
+      return;
+    }
+
+    if (file.size === 0) {
+      setFileError(isFr ? 'Le fichier sélectionné est vide.' : 'The selected file is empty.');
+      return;
+    }
+
+    const applyContent = (content: string) => {
+      const cleaned = content.replace(/^\uFEFF/, '');
+      setSelectedFileName(file.name);
+      handleParse(cleaned);
+    };
 
     const reader = new FileReader();
     reader.onload = evt => {
-      const content = evt.target?.result as string;
-      handleParse(content);
+      const content = typeof evt.target?.result === 'string' ? evt.target.result : '';
+      // Fallback for French/European bank CSVs encoded in ISO-8859-1 / Windows-1252
+      if (content.includes('\uFFFD')) {
+        const fallbackReader = new FileReader();
+        fallbackReader.onload = fallbackEvt => {
+          const fallbackContent = typeof fallbackEvt.target?.result === 'string' ? fallbackEvt.target.result : content;
+          applyContent(fallbackContent);
+        };
+        fallbackReader.onerror = () => applyContent(content);
+        fallbackReader.readAsText(file, 'windows-1252');
+        return;
+      }
+      applyContent(content);
     };
-    reader.readAsText(file);
+    reader.onerror = () => {
+      setFileError(
+        isFr
+          ? 'Impossible de lire ce fichier depuis votre appareil. Essayez de copier-coller le contenu.'
+          : 'Could not read this file from your device. Try copying and pasting its text.'
+      );
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset input value so selecting the same file again still triggers onChange
+    e.target.value = '';
+    if (!file) return;
+    processSelectedFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processSelectedFile(file);
+    }
   };
 
   const handleCommitImport = () => {
@@ -105,6 +178,8 @@ export const CsvImportScreen: React.FC = () => {
     importCsvTransactions(parseResult.parsedRecords, selectedAccountId);
     setParseResult(null);
     setRawCsvText('');
+    setSelectedFileName(null);
+    setFileError(null);
     navigateTo('TRANSACTIONS');
   };
 
@@ -217,7 +292,25 @@ export const CsvImportScreen: React.FC = () => {
 
             {/* Dropzone & Text Area */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="border-2 border-dashed border-slate-800 hover:border-teal-500/60 rounded-2xl p-6 text-center transition flex flex-col items-center justify-center bg-slate-950/50">
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                className={`cursor-pointer border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center bg-slate-950/50 ${
+                  isDragging
+                    ? 'border-teal-400 bg-teal-500/10'
+                    : 'border-slate-800 hover:border-teal-500/60'
+                }`}
+              >
                 <Upload className="w-8 h-8 text-teal-400 mb-2" />
                 <h3 className="text-xs font-bold text-white mb-1">
                   {isFr ? 'Importer un fichier .csv ou .tsv' : 'Upload CSV / TSV File'}
@@ -227,15 +320,35 @@ export const CsvImportScreen: React.FC = () => {
                     ? 'Glissez-déposez le fichier de votre banque ou parcourez'
                     : 'Drag & drop bank export statement here'}
                 </p>
-                <label className="cursor-pointer px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-md transition active:scale-95">
-                  <span>{isFr ? 'Choisir un fichier' : 'Select File'}</span>
-                  <input
-                    type="file"
-                    accept=".csv,.txt,.tsv"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileUpload}
+                  className="sr-only"
+                  aria-label={isFr ? 'Choisir un fichier CSV' : 'Select CSV File'}
+                />
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                  className="cursor-pointer px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-md transition active:scale-95"
+                >
+                  {isFr ? 'Choisir un fichier' : 'Select File'}
+                </button>
+                {selectedFileName && (
+                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-teal-300 font-medium">
+                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate max-w-[220px]">{selectedFileName}</span>
+                  </div>
+                )}
+                {fileError && (
+                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-rose-400 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{fileError}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col">
@@ -245,7 +358,12 @@ export const CsvImportScreen: React.FC = () => {
                   </span>
                   {rawCsvText && (
                     <button
-                      onClick={() => handleParse('')}
+                      type="button"
+                      onClick={() => {
+                        setSelectedFileName(null);
+                        setFileError(null);
+                        handleParse('');
+                      }}
                       className="text-[10px] text-slate-500 hover:text-slate-300 transition"
                     >
                       {isFr ? 'Effacer' : 'Clear'}
@@ -254,7 +372,11 @@ export const CsvImportScreen: React.FC = () => {
                 </div>
                 <textarea
                   value={rawCsvText}
-                  onChange={e => handleParse(e.target.value)}
+                  onChange={e => {
+                    setSelectedFileName(null);
+                    setFileError(null);
+                    handleParse(e.target.value);
+                  }}
                   placeholder="Date;Libellé;Montant&#10;12/11/2026;CARREFOUR;-85.40"
                   rows={5}
                   className="w-full flex-1 bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500 resize-none"

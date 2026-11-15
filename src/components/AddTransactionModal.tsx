@@ -36,19 +36,22 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
   const [paymentMethod, setPaymentMethod] = useState(isFr ? 'Carte Bancaire' : 'Card');
   const [notes, setNotes] = useState('');
 
-  const filteredBudgets = useMemo(
-    () => activeBudgets.filter(b => b.categoryId === selectedCategoryId && b.isExpense === isExpense),
-    [activeBudgets, selectedCategoryId, isExpense]
-  );
+  const filteredBudgets = useMemo(() => {
+    const list = activeBudgets.filter(b => b.categoryId === selectedCategoryId);
+    return [...list].sort((a, b) => Number(b.isExpense === isExpense) - Number(a.isExpense === isExpense));
+  }, [activeBudgets, selectedCategoryId, isExpense]);
 
   // Initialize defaults when modal opens
   useEffect(() => {
     if (!isOpen) return;
     const defaultCat =
       activeCategories.find(c => activeBudgets.some(b => b.categoryId === c.id && b.isExpense === isExpense)) ||
+      activeCategories.find(c => activeBudgets.some(b => b.categoryId === c.id)) ||
       activeCategories[0];
     const catId = defaultCat?.id || 0;
-    const firstBudget = activeBudgets.find(b => b.categoryId === catId && b.isExpense === isExpense);
+    const firstBudget =
+      activeBudgets.find(b => b.categoryId === catId && b.isExpense === isExpense) ||
+      activeBudgets.find(b => b.categoryId === catId);
     setSelectedAccountId(prev => (activeAccounts.some(a => a.id === prev) ? prev : activeAccounts[0]?.id || ''));
     setSelectedCategoryId(catId);
     setSelectedBudgetId(firstBudget?.id || 0);
@@ -59,7 +62,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
     setNotes('');
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep sub-category aligned with selected category + flow direction
+  // Keep sub-category aligned with selected category
   useEffect(() => {
     if (!filteredBudgets.some(b => b.id === selectedBudgetId)) {
       setSelectedBudgetId(filteredBudgets[0]?.id || 0);
@@ -74,22 +77,20 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
 
   const handleDirectionChange = (nextIsExpense: boolean) => {
     setIsExpense(nextIsExpense);
-    const currentHasMatch = activeBudgets.some(
-      b => b.categoryId === selectedCategoryId && b.isExpense === nextIsExpense
-    );
-    if (!currentHasMatch) {
-      const catWithMatch = activeCategories.find(c =>
-        activeBudgets.some(b => b.categoryId === c.id && b.isExpense === nextIsExpense)
-      );
+    const currentHasAnySub = activeBudgets.some(b => b.categoryId === selectedCategoryId);
+    if (!currentHasAnySub) {
+      const catWithMatch =
+        activeCategories.find(c =>
+          activeBudgets.some(b => b.categoryId === c.id && b.isExpense === nextIsExpense)
+        ) || activeCategories.find(c => activeBudgets.some(b => b.categoryId === c.id));
       if (catWithMatch) {
         setSelectedCategoryId(catWithMatch.id);
-        const firstSub = activeBudgets.find(b => b.categoryId === catWithMatch.id && b.isExpense === nextIsExpense);
+        const firstSub =
+          activeBudgets.find(b => b.categoryId === catWithMatch.id && b.isExpense === nextIsExpense) ||
+          activeBudgets.find(b => b.categoryId === catWithMatch.id);
         setSelectedBudgetId(firstSub?.id || 0);
-        return;
       }
     }
-    const firstSub = activeBudgets.find(b => b.categoryId === selectedCategoryId && b.isExpense === nextIsExpense);
-    setSelectedBudgetId(firstSub?.id || 0);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -260,9 +261,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
                 onChange={e => {
                   const newCatId = parseInt(e.target.value, 10);
                   setSelectedCategoryId(newCatId);
-                  const firstBudget = activeBudgets.find(
-                    b => b.categoryId === newCatId && b.isExpense === isExpense
-                  );
+                  const firstBudget =
+                    activeBudgets.find(b => b.categoryId === newCatId && b.isExpense === isExpense) ||
+                    activeBudgets.find(b => b.categoryId === newCatId);
                   setSelectedBudgetId(firstBudget?.id || 0);
                 }}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
@@ -292,7 +293,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
                 ) : (
                   filteredBudgets.map(b => (
                     <option key={b.id} value={b.id}>
-                      {b.title} ({b.amount} {currency})
+                      {b.title}
+                      {b.isExpense !== isExpense
+                        ? ` (${b.isExpense ? (isFr ? 'Budget dépense' : 'Spending') : isFr ? 'Budget revenu' : 'Income'})`
+                        : ''}{' '}
+                      ({b.amount} {currency})
                     </option>
                   ))
                 )}
@@ -300,15 +305,28 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
             </div>
           </div>
 
-          {/* Blocking notice when selected category lacks a matching sub-category */}
+          {/* Informational note when offsetting an opposite-direction budget */}
+          {selectedBudget && selectedBudget.isExpense !== isExpense && (
+            <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/25 text-[11px] text-teal-200">
+              {!isExpense && selectedBudget.isExpense
+                ? isFr
+                  ? `Remboursement / crédit : ce revenu réduira le net dépensé de « ${selectedBudget.title} ».`
+                  : `Reimbursement / credit: this income will offset net spending in "${selectedBudget.title}".`
+                : isFr
+                ? `Déduction : cette dépense réduira le net reçu de la sous-catégorie « ${selectedBudget.title} ».`
+                : `Deduction: this expense will offset net income in "${selectedBudget.title}".`}
+            </div>
+          )}
+
+          {/* Blocking notice when selected category lacks any sub-category */}
           {filteredBudgets.length === 0 && (
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
                   {isFr
-                    ? `Cette catégorie n’a aucune sous-catégorie de type ${isExpense ? 'Dépense' : 'Revenu'}. Créez-en une dans le Planificateur de Budget pour continuer.`
-                    : `This category has no ${isExpense ? 'Expense' : 'Income'} sub-categories. Create one in Budget Planner before saving.`}
+                    ? 'Cette catégorie n’a aucune sous-catégorie. Créez-en une dans le Planificateur de Budget pour continuer.'
+                    : 'This category has no sub-categories. Create one in Budget Planner before saving.'}
                 </span>
               </div>
               <button

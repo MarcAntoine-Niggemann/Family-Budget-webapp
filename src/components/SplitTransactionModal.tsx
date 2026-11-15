@@ -39,15 +39,19 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     const firstCat =
       activeCategories.find(c => c.id === transaction.categoryId) ||
       activeCategories.find(c => matchingFlowBudgets.some(b => b.categoryId === c.id)) ||
+      activeCategories.find(c => activeBudgets.some(b => b.categoryId === c.id)) ||
       activeCategories[0];
     const firstBudget =
-      matchingFlowBudgets.find(b => b.id === transaction.budgetId) ||
-      matchingFlowBudgets.find(b => b.categoryId === (firstCat?.id || 0));
+      activeBudgets.find(b => b.id === transaction.budgetId) ||
+      matchingFlowBudgets.find(b => b.categoryId === (firstCat?.id || 0)) ||
+      activeBudgets.find(b => b.categoryId === (firstCat?.id || 0));
 
     const secondCat =
-      activeCategories.find(c => c.id !== firstCat?.id && matchingFlowBudgets.some(b => b.categoryId === c.id)) ||
+      activeCategories.find(c => c.id !== firstCat?.id && activeBudgets.some(b => b.categoryId === c.id)) ||
       firstCat;
-    const secondBudget = matchingFlowBudgets.find(b => b.categoryId === (secondCat?.id || 0));
+    const secondBudget =
+      matchingFlowBudgets.find(b => b.categoryId === (secondCat?.id || 0)) ||
+      activeBudgets.find(b => b.categoryId === (secondCat?.id || 0));
 
     const half = Math.round((totalAbsAmount / 2) * 100) / 100;
     const rest = Math.round((totalAbsAmount - half) * 100) / 100;
@@ -84,10 +88,12 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     const defaultCat =
       activeCategories.find(c =>
         activeBudgets.some(b => b.categoryId === c.id && b.isExpense === transaction.isExpense)
-      ) || activeCategories[0];
-    const defaultBudget = activeBudgets.find(
-      b => b.categoryId === (defaultCat?.id || 0) && b.isExpense === transaction.isExpense
-    );
+      ) ||
+      activeCategories.find(c => activeBudgets.some(b => b.categoryId === c.id)) ||
+      activeCategories[0];
+    const defaultBudget =
+      activeBudgets.find(b => b.categoryId === (defaultCat?.id || 0) && b.isExpense === transaction.isExpense) ||
+      activeBudgets.find(b => b.categoryId === (defaultCat?.id || 0));
     setSplits(prev => [
       ...prev,
       {
@@ -182,9 +188,9 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         <form onSubmit={handleSave} className="mt-4 space-y-4">
           <div className="space-y-3">
             {splits.map((split, idx) => {
-              const catBudgets = activeBudgets.filter(
-                b => b.categoryId === split.categoryId && b.isExpense === transaction.isExpense
-              );
+              const catBudgets = activeBudgets
+                .filter(b => b.categoryId === split.categoryId)
+                .sort((a, b) => Number(b.isExpense === transaction.isExpense) - Number(a.isExpense === transaction.isExpense));
 
               return (
                 <div
@@ -234,9 +240,9 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                         onChange={e => {
                           const catId = parseInt(e.target.value, 10);
                           const cat = activeCategories.find(c => c.id === catId);
-                          const firstBudget = activeBudgets.find(
-                            b => b.categoryId === catId && b.isExpense === transaction.isExpense
-                          );
+                          const firstBudget =
+                            activeBudgets.find(b => b.categoryId === catId && b.isExpense === transaction.isExpense) ||
+                            activeBudgets.find(b => b.categoryId === catId);
                           setSplits(prev =>
                             prev.map((s, i) =>
                               i === idx
@@ -287,6 +293,9 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                           catBudgets.map(b => (
                             <option key={b.id} value={b.id}>
                               {b.title}
+                              {b.isExpense !== transaction.isExpense
+                                ? ` (${b.isExpense ? (isFr ? 'Dépense' : 'Spending') : isFr ? 'Revenu' : 'Income'})`
+                                : ''}
                             </option>
                           ))
                         )}

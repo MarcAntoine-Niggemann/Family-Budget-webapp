@@ -176,6 +176,7 @@ export function computeCashFlowForecast(
     : [];
 
   const activeBudgets = budgets.filter(b => !b.isDeleted && b.isActive);
+  const allBudgetById = new Map(budgets.filter(b => !b.isDeleted).map(b => [b.id, b]));
 
   // Track already-booked transactions per scheduled budget ID in the current month (only when starting from today)
   const actualExpenseByBudgetId = new Map<number, number>();
@@ -203,18 +204,30 @@ export function computeCashFlowForecast(
   );
 
   // Spread (non-fixed-day) expense & income budgets for the starting month
+  // Opposite-direction transactions assigned to spread sub-categories offset their net actuals
   const variableMonthlyBudget = computeMonthSpreadBudget(activeBudgets, startYear, startMonth1, true);
-  const variableSpentSoFar = !isCustomStartDate
-    ? currentMonthTx
-        .filter(
-          tx =>
-            tx.isExpense &&
-            !tx.isInternalTransfer &&
-            tx.transferType !== 'CARD_SETTLEMENT' &&
-            !scheduledExpenseIdsInStartMonth.has(tx.budgetId)
-        )
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
-    : 0;
+  let netVariableSpent = 0;
+  let netSpreadIncome = 0;
+
+  if (!isCustomStartDate) {
+    for (const tx of currentMonthTx) {
+      if (tx.isInternalTransfer || tx.transferType === 'CARD_SETTLEMENT') continue;
+      if (scheduledExpenseIdsInStartMonth.has(tx.budgetId) || scheduledIncomeIdsInStartMonth.has(tx.budgetId)) {
+        continue;
+      }
+      const budget = tx.budgetId ? allBudgetById.get(tx.budgetId) : undefined;
+      const targetIsExpense = budget ? budget.isExpense : tx.isExpense;
+      const absAmt = Math.abs(tx.amount);
+
+      if (targetIsExpense) {
+        netVariableSpent += tx.isExpense ? absAmt : -absAmt;
+      } else {
+        netSpreadIncome += !tx.isExpense ? absAmt : -absAmt;
+      }
+    }
+  }
+
+  const variableSpentSoFar = Math.max(0, netVariableSpent);
 
   const remainingVariableBudget = Math.max(0, variableMonthlyBudget - variableSpentSoFar);
   const dailyBurnRate = !isCustomStartDate
@@ -224,16 +237,7 @@ export function computeCashFlowForecast(
     : variableMonthlyBudget / daysInStartMonth;
 
   const spreadIncomeMonthlyBudget = computeMonthSpreadBudget(activeBudgets, startYear, startMonth1, false);
-  const spreadIncomeReceivedSoFar = !isCustomStartDate
-    ? currentMonthTx
-        .filter(
-          tx =>
-            !tx.isExpense &&
-            !tx.isInternalTransfer &&
-            !scheduledIncomeIdsInStartMonth.has(tx.budgetId)
-        )
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
-    : 0;
+  const spreadIncomeReceivedSoFar = Math.max(0, netSpreadIncome);
 
   const remainingSpreadIncome = Math.max(0, spreadIncomeMonthlyBudget - spreadIncomeReceivedSoFar);
   const dailySpreadIncomeRate = !isCustomStartDate

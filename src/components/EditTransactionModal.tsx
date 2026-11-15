@@ -63,10 +63,10 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     setCreditCardPeriod(transaction.creditCardPeriod || '');
   }, [isOpen, transaction]);
 
-  const filteredBudgets = useMemo(
-    () => activeBudgets.filter(b => b.categoryId === selectedCategoryId && b.isExpense === isExpense),
-    [activeBudgets, selectedCategoryId, isExpense]
-  );
+  const filteredBudgets = useMemo(() => {
+    const list = activeBudgets.filter(b => b.categoryId === selectedCategoryId);
+    return [...list].sort((a, b) => Number(b.isExpense === isExpense) - Number(a.isExpense === isExpense));
+  }, [activeBudgets, selectedCategoryId, isExpense]);
 
   if (!isOpen || !transaction) return null;
 
@@ -183,10 +183,15 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 onChange={e => {
                   const nextIsExpense = e.target.value === 'EXPENSE';
                   setIsExpense(nextIsExpense);
-                  const firstMatch = activeBudgets.find(
-                    b => b.categoryId === selectedCategoryId && b.isExpense === nextIsExpense
+                  const stillValid = activeBudgets.some(
+                    b => b.id === selectedBudgetId && b.categoryId === selectedCategoryId
                   );
-                  setSelectedBudgetId(firstMatch?.id || 0);
+                  if (!stillValid) {
+                    const firstMatch =
+                      activeBudgets.find(b => b.categoryId === selectedCategoryId && b.isExpense === nextIsExpense) ||
+                      activeBudgets.find(b => b.categoryId === selectedCategoryId);
+                    setSelectedBudgetId(firstMatch?.id || 0);
+                  }
                 }}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
@@ -222,9 +227,9 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 onChange={e => {
                   const newCatId = parseInt(e.target.value, 10);
                   setSelectedCategoryId(newCatId);
-                  const firstBudget = activeBudgets.find(
-                    b => b.categoryId === newCatId && b.isExpense === isExpense
-                  );
+                  const firstBudget =
+                    activeBudgets.find(b => b.categoryId === newCatId && b.isExpense === isExpense) ||
+                    activeBudgets.find(b => b.categoryId === newCatId);
                   setSelectedBudgetId(firstBudget?.id || 0);
                 }}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
@@ -266,11 +271,26 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 {filteredBudgets.map(b => (
                   <option key={b.id} value={b.id}>
                     {b.title}
+                    {b.isExpense !== isExpense
+                      ? ` (${b.isExpense ? (isFr ? 'Budget dépense' : 'Spending') : isFr ? 'Budget revenu' : 'Income'})`
+                      : ''}
                   </option>
                 ))}
               </select>
             </div>
           </div>
+
+          {selectedBudget && selectedBudget.isExpense !== isExpense && (
+            <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/25 text-[11px] text-teal-200">
+              {!isExpense && selectedBudget.isExpense
+                ? isFr
+                  ? `Remboursement / crédit : ce revenu réduira le net dépensé de « ${selectedBudget.title} ».`
+                  : `Reimbursement / credit: this income will offset net spending in "${selectedBudget.title}".`
+                : isFr
+                ? `Déduction : cette dépense réduira le net reçu de la sous-catégorie « ${selectedBudget.title} ».`
+                : `Deduction: this expense will offset net income in "${selectedBudget.title}".`}
+            </div>
+          )}
 
           {selectedCategoryId > 0 && filteredBudgets.length === 0 && (
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
@@ -278,8 +298,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
                   {isFr
-                    ? `Aucune sous-catégorie de type ${isExpense ? 'Dépense' : 'Revenu'} dans cette catégorie. Créez-en une dans le Planificateur.`
-                    : `No ${isExpense ? 'Expense' : 'Income'} sub-categories in this category. Create one in Budget Planner first.`}
+                    ? 'Aucune sous-catégorie dans cette catégorie. Créez-en une dans le Planificateur.'
+                    : 'No sub-categories in this category. Create one in Budget Planner first.'}
                 </span>
               </div>
               <button

@@ -647,7 +647,11 @@ export const ReportsScreen: React.FC = () => {
                 {monthlyReport.categories.map(cat => {
                   const isExpanded = expandedMonthlyCats[cat.categoryId] ?? true;
                   const visibleSubs = cat.subCategories.filter(
-                    sub => sub.budgetAmount > 0 || sub.actualAmount > 0
+                    sub =>
+                      sub.budgetAmount > 0 ||
+                      sub.actualAmount !== 0 ||
+                      sub.grossExpense > 0 ||
+                      sub.grossIncome > 0
                   );
 
                   return (
@@ -763,32 +767,45 @@ export const ReportsScreen: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
-                                  <span
-                                    className={
-                                      sub.isExpense
-                                        ? 'font-semibold text-slate-200'
-                                        : 'font-semibold text-emerald-400'
-                                    }
-                                  >
-                                    {sub.actualAmount.toLocaleString()} {currency}
-                                  </span>
-                                  <span className="text-slate-500">
-                                    / {sub.budgetAmount.toLocaleString()} {currency}
-                                  </span>
-                                  <span
-                                    className={
-                                      sub.isExpense
-                                        ? sub.isOverBudget
-                                          ? 'text-rose-400'
-                                          : 'text-teal-400'
-                                        : 'text-emerald-400'
-                                    }
-                                  >
-                                    {sub.percentageUsed}%
-                                  </span>
+                                  <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
+                                    <span
+                                      className={
+                                        sub.isExpense
+                                          ? sub.actualAmount < 0
+                                            ? 'font-semibold text-emerald-400'
+                                            : 'font-semibold text-slate-200'
+                                          : 'font-semibold text-emerald-400'
+                                      }
+                                    >
+                                      {sub.actualAmount.toLocaleString()} {currency}
+                                    </span>
+                                    <span className="text-slate-500">
+                                      / {sub.budgetAmount.toLocaleString()} {currency}
+                                    </span>
+                                    <span
+                                      className={
+                                        sub.isExpense
+                                          ? sub.isOverBudget
+                                            ? 'text-rose-400'
+                                            : 'text-teal-400'
+                                          : 'text-emerald-400'
+                                      }
+                                    >
+                                      {sub.percentageUsed}%
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
+                                {sub.offsetAmount > 0 && (
+                                  <div className="text-[10px] font-mono tabular-nums text-teal-300/80">
+                                    {sub.isExpense
+                                      ? isFr
+                                        ? `Dép. ${sub.grossExpense.toLocaleString()} − Crédits ${sub.grossIncome.toLocaleString()} ${currency}`
+                                        : `Spent ${sub.grossExpense.toLocaleString()} − Credits ${sub.grossIncome.toLocaleString()} ${currency}`
+                                      : isFr
+                                      ? `Reçus ${sub.grossIncome.toLocaleString()} − Débits ${sub.grossExpense.toLocaleString()} ${currency}`
+                                      : `Income ${sub.grossIncome.toLocaleString()} − Debits ${sub.grossExpense.toLocaleString()} ${currency}`}
+                                  </div>
+                                )}
                               <div className="w-full h-1 rounded-full bg-slate-900 overflow-hidden">
                                 <div
                                   className={`h-full rounded-full ${
@@ -1102,10 +1119,19 @@ export const ReportsScreen: React.FC = () => {
                                 <span className="text-slate-300 group-hover/sub:text-teal-300 transition truncate">
                                   {sub.title}
                                 </span>
+                                {sub.offsetAmount > 0 && (
+                                  <span className="text-[10px] font-mono tabular-nums text-teal-300/80 truncate">
+                                    ({sub.grossExpense.toLocaleString()} − {sub.grossIncome.toLocaleString()})
+                                  </span>
+                                )}
                                 <ArrowUpRight className="w-3 h-3 text-slate-600 group-hover/sub:text-teal-300 transition shrink-0" />
                               </span>
                               <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
-                                <span className="font-semibold text-slate-200">
+                                <span
+                                  className={`font-semibold ${
+                                    sub.annualActual < 0 ? 'text-emerald-400' : 'text-slate-200'
+                                  }`}
+                                >
                                   {sub.annualActual.toLocaleString()} {currency}
                                 </span>
                                 <span className="text-slate-500">
