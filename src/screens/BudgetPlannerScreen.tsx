@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Plus,
   Edit2,
@@ -7,7 +7,8 @@ import {
   ChevronUp,
   Calendar,
   PauseCircle,
-  ArrowUpRight
+  ArrowUpRight,
+  BarChart3
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { CategoryIcon } from '../components/CategoryIcon';
@@ -15,6 +16,8 @@ import { CategoryBudgetEntity, CategoryEntity } from '../types';
 import {
   formatBudgetScheduleLabel,
   formatBudgetWindowLabel,
+  getBudgetActiveMonthsInYear,
+  getBudgetAnnualAmount,
   getBudgetMonthlyAmount,
   getMonthLongName,
   getMonthShortName,
@@ -40,11 +43,16 @@ export const BudgetPlannerScreen: React.FC = () => {
   const isFr = language === 'fr';
 
   const activeCategories = categories.filter(c => !c.isDeleted);
-  const activeBudgets = budgets.filter(b => !b.isDeleted);
+  const activeCategoryIds = new Set(activeCategories.map(c => c.id));
+  const activeBudgets = budgets.filter(b => !b.isDeleted && activeCategoryIds.has(b.categoryId));
 
-  // Selected Month & Year (defaults to current)
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth()); // 0..11
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  // View mode (Month-by-month vs Global Year), Selected Month & Year (defaults to current)
+  const now = new Date();
+  const [viewMode, setViewMode] = useState<'MONTH' | 'YEAR'>('MONTH');
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0..11
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [graphSeriesMode, setGraphSeriesMode] = useState<'BOTH' | 'PLANNED' | 'ACTUAL'>('BOTH');
+  const [inspectedMonthIdx, setInspectedMonthIdx] = useState<number>(now.getMonth()); // 0..11
   const selectedMonth1 = selectedMonth + 1; // 1..12
 
   // Category modal state (pure color/icon wrapper)
@@ -74,18 +82,87 @@ export const BudgetPlannerScreen: React.FC = () => {
   const [budgetNotes, setBudgetNotes] = useState<string>('');
   const [budgetIsActive, setBudgetIsActive] = useState<boolean>(true);
 
-  // Time bounds for selected month
-  const startDate = new Date(selectedYear, selectedMonth, 1, 0, 0, 0, 0).getTime();
-  const endDate = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59, 999).getTime();
+  // Time bounds for selected month & selected year
   const pad2 = (n: number) => String(n).padStart(2, '0');
+  const monthStartDate = new Date(selectedYear, selectedMonth, 1, 0, 0, 0, 0).getTime();
+  const monthEndDate = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59, 999).getTime();
   const monthDateFrom = `${selectedYear}-${pad2(selectedMonth + 1)}-01`;
   const monthLastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const monthDateTo = `${selectedYear}-${pad2(selectedMonth + 1)}-${pad2(monthLastDay)}`;
 
-  // Active transactions in selected month
-  const monthTx = transactions.filter(
-    tx => !tx.isDeleted && !tx.isExcluded && !tx.isSplitParent && tx.date >= startDate && tx.date <= endDate
+  const yearStartDate = new Date(selectedYear, 0, 1, 0, 0, 0, 0).getTime();
+  const yearEndDate = new Date(selectedYear, 11, 31, 23, 59, 59, 999).getTime();
+  const yearDateFrom = `${selectedYear}-01-01`;
+  const yearDateTo = `${selectedYear}-12-31`;
+
+  const periodStartDate = viewMode === 'MONTH' ? monthStartDate : yearStartDate;
+  const periodEndDate = viewMode === 'MONTH' ? monthEndDate : yearEndDate;
+  const periodDateFrom = viewMode === 'MONTH' ? monthDateFrom : yearDateFrom;
+  const periodDateTo = viewMode === 'MONTH' ? monthDateTo : yearDateTo;
+
+  // Active transactions in selected period (Month or Year)
+  const periodTx = transactions.filter(
+    tx =>
+      !tx.isDeleted &&
+      !tx.isExcluded &&
+      !tx.isSplitParent &&
+      tx.date >= periodStartDate &&
+      tx.date <= periodEndDate
   );
+
+  // 12-month series for Year Graph (monthly net values: planned vs actual)
+  const yearlyMonthlySeries = useMemo(() => {
+    const yearAllTx = transactions.filter(
+      tx =>
+        !tx.isDeleted &&
+        !tx.isExcluded &&
+        !tx.isSplitParent &&
+        tx.date >= yearStartDate &&
+        tx.date <= yearEndDate
+    );
+
+    return Array.from({ length: 12 }, (_, mIdx) => {
+      const month1 = mIdx + 1;
+      const mStart = new Date(selectedYear, mIdx, 1, 0, 0, 0, 0).getTime();
+      const mEnd = new Date(selectedYear, mIdx + 1, 0, 23, 59, 59, 999).getTime();
+
+      const plannedExpense = activeBudgets
+        .filter(b => b.isExpense)
+        .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, selectedYear, month1), 0);
+      const plannedIncome = activeBudgets
+        .filter(b => !b.isExpense)
+        .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, selectedYear, month1), 0);
+
+      const mTx = yearAllTx.filter(tx => tx.date >= mStart && tx.date <= mEnd);
+      const mExpTx = mTx.filter(
+        tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT'
+      );
+      const mIncTx = mTx.filter(tx => !tx.isExpense && !tx.isInternalTransfer);
+
+      const actualExpense = mExpTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      const actualIncome = mIncTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+      const hasActualTx = mExpTx.length > 0 || mIncTx.length > 0;
+
+      const roundedPlannedExp = Math.round(plannedExpense * 100) / 100;
+      const roundedPlannedInc = Math.round(plannedIncome * 100) / 100;
+      const roundedActualExp = Math.round(actualExpense * 100) / 100;
+      const roundedActualInc = Math.round(actualIncome * 100) / 100;
+
+      return {
+        monthIndex: mIdx,
+        month1,
+        shortName: getMonthShortName(month1, language),
+        longName: getMonthLongName(month1, language),
+        plannedIncome: roundedPlannedInc,
+        plannedExpense: roundedPlannedExp,
+        plannedNet: Math.round((roundedPlannedInc - roundedPlannedExp) * 100) / 100,
+        actualIncome: roundedActualInc,
+        actualExpense: roundedActualExp,
+        actualNet: Math.round((roundedActualInc - roundedActualExp) * 100) / 100,
+        hasActualTx
+      };
+    });
+  }, [transactions, activeBudgets, selectedYear, yearStartDate, yearEndDate, language]);
 
   // Open Category wrapper modal
   const handleOpenCatModal = (cat?: CategoryEntity) => {
@@ -232,75 +309,155 @@ export const BudgetPlannerScreen: React.FC = () => {
     year: 'numeric'
   });
 
-  // Totals for selected month using shared budget engine
+  // Totals for selected period (Month or Year) using shared budget engine
+  const getLinePeriodBudget = (b: CategoryBudgetEntity) =>
+    viewMode === 'MONTH'
+      ? getBudgetMonthlyAmount(b, selectedYear, selectedMonth1)
+      : getBudgetAnnualAmount(b, selectedYear);
+
   const totalExpenseBudget = activeBudgets
     .filter(b => b.isExpense)
-    .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, selectedYear, selectedMonth1), 0);
+    .reduce((sum, b) => sum + getLinePeriodBudget(b), 0);
 
-  const totalActualExpenses = monthTx
+  const totalActualExpenses = periodTx
     .filter(tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT')
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   const totalIncomeBudget = activeBudgets
     .filter(b => !b.isExpense)
-    .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, selectedYear, selectedMonth1), 0);
+    .reduce((sum, b) => sum + getLinePeriodBudget(b), 0);
 
-  const totalActualIncome = monthTx
+  const totalActualIncome = periodTx
     .filter(tx => !tx.isExpense && !tx.isInternalTransfer)
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
+  const projectedPeriodNet = totalIncomeBudget - totalExpenseBudget;
+  const actualPeriodNet = totalActualIncome - totalActualExpenses;
+
+  const formatCompactNet = (val: number) => {
+    const abs = Math.abs(val);
+    const sign = val > 0 ? '+' : val < 0 ? '-' : '';
+    if (abs >= 10000) {
+      return `${sign}${(abs / 1000).toFixed(1)}k`;
+    }
+    return `${sign}${Math.round(abs).toLocaleString()}`;
+  };
+
   return (
     <div className="space-y-6 pb-12">
-      {/* Month Navigation & Action Header */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      {/* Month/Year Navigation & Action Header */}
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-white tracking-tight">
             {isFr ? 'Planificateur de Budget' : 'Budget Planner'}
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            {isFr
-              ? 'Catégories (groupes visuels) et sous-catégories budgétaires (mensuelles, annuelles, réparties ou datées)'
-              : 'Category wrappers and sub-category budget lines (monthly, yearly, spread, or scheduled)'}
+            {viewMode === 'MONTH'
+              ? isFr
+                ? 'Catégories et sous-catégories budgétaires mois par mois'
+                : 'Month-by-month category wrappers and sub-category budget lines'
+              : isFr
+              ? `Vue annuelle globale ${selectedYear} et évolution mensuelle du solde net`
+              : `Global ${selectedYear} annual budgets and monthly net balance overview`}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Month Switcher */}
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Month / Year Mode Switcher */}
+          <div
+            className="grid grid-cols-2 p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-semibold"
+            role="group"
+            aria-label={isFr ? 'Période budgétaire' : 'Budget period mode'}
+          >
             <button
-              onClick={() => {
-                if (selectedMonth === 0) {
-                  setSelectedMonth(11);
-                  setSelectedYear(y => y - 1);
-                } else {
-                  setSelectedMonth(m => m - 1);
-                }
-              }}
-              className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800"
-              aria-label={isFr ? 'Mois précédent' : 'Previous month'}
+              type="button"
+              onClick={() => setViewMode('MONTH')}
+              className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
+                viewMode === 'MONTH'
+                  ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              ←
+              {isFr ? 'Mois' : 'Month'}
             </button>
-            <span className="px-3 font-semibold text-slate-200 capitalize whitespace-nowrap">{monthLabel}</span>
             <button
-              onClick={() => {
-                if (selectedMonth === 11) {
-                  setSelectedMonth(0);
-                  setSelectedYear(y => y + 1);
-                } else {
-                  setSelectedMonth(m => m + 1);
-                }
-              }}
-              className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800"
-              aria-label={isFr ? 'Mois suivant' : 'Next month'}
+              type="button"
+              onClick={() => setViewMode('YEAR')}
+              className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
+                viewMode === 'YEAR'
+                  ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              →
+              {isFr ? 'Année' : 'Year'}
             </button>
           </div>
 
+          {/* Period Switcher (Month or Year) */}
+          {viewMode === 'MONTH' ? (
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedMonth === 0) {
+                    setSelectedMonth(11);
+                    setSelectedYear(y => y - 1);
+                  } else {
+                    setSelectedMonth(m => m - 1);
+                  }
+                }}
+                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                aria-label={isFr ? 'Mois précédent' : 'Previous month'}
+              >
+                ←
+              </button>
+              <span className="px-3 font-semibold text-slate-200 capitalize whitespace-nowrap">
+                {monthLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedMonth === 11) {
+                    setSelectedMonth(0);
+                    setSelectedYear(y => y + 1);
+                  } else {
+                    setSelectedMonth(m => m + 1);
+                  }
+                }}
+                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                aria-label={isFr ? 'Mois suivant' : 'Next month'}
+              >
+                →
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setSelectedYear(y => y - 1)}
+                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                aria-label={isFr ? 'Année précédente' : 'Previous year'}
+              >
+                ←
+              </button>
+              <span className="px-3 font-semibold text-slate-200 font-mono tabular-nums whitespace-nowrap">
+                {selectedYear}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedYear(y => y + 1)}
+                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                aria-label={isFr ? 'Année suivante' : 'Next year'}
+              >
+                →
+              </button>
+            </div>
+          )}
+
           <button
+            type="button"
             onClick={() => handleOpenCatModal()}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>{isFr ? 'Nouvelle Catégorie' : 'New Category'}</span>
@@ -312,7 +469,13 @@ export const BudgetPlannerScreen: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
           <span className="text-xs font-semibold text-slate-400 block">
-            {isFr ? 'Dépenses du mois (Réalisé / Prévu)' : 'Monthly Expenses (Actual / Budget)'}
+            {viewMode === 'MONTH'
+              ? isFr
+                ? 'Dépenses du mois (Réalisé / Prévu)'
+                : 'Monthly Expenses (Actual / Budget)'
+              : isFr
+              ? `Dépenses ${selectedYear} (Réalisé / Prévu)`
+              : `${selectedYear} Expenses (Actual / Budget)`}
           </span>
           <div className="mt-2 flex items-baseline gap-2 tabular-nums">
             <span className="text-2xl font-bold text-white font-mono">
@@ -339,7 +502,13 @@ export const BudgetPlannerScreen: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
           <span className="text-xs font-semibold text-slate-400 block">
-            {isFr ? 'Revenus du mois (Reçus / Attendus)' : 'Monthly Income (Received / Target)'}
+            {viewMode === 'MONTH'
+              ? isFr
+                ? 'Revenus du mois (Reçus / Attendus)'
+                : 'Monthly Income (Received / Target)'
+              : isFr
+              ? `Revenus ${selectedYear} (Reçus / Attendus)`
+              : `${selectedYear} Income (Received / Target)`}
           </span>
           <div className="mt-2 flex items-baseline gap-2 tabular-nums">
             <span className="text-2xl font-bold text-emerald-400 font-mono">
@@ -361,32 +530,477 @@ export const BudgetPlannerScreen: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
           <span className="text-xs font-semibold text-slate-400 block">
-            {isFr ? 'Solde Budgétaire Prévu' : 'Projected Monthly Net'}
+            {viewMode === 'MONTH'
+              ? isFr
+                ? 'Solde Budgétaire Prévu'
+                : 'Projected Monthly Net'
+              : isFr
+              ? `Solde Budgétaire Annuel (${selectedYear})`
+              : `Projected Annual Net (${selectedYear})`}
           </span>
           <div className="mt-2 flex items-baseline gap-2 tabular-nums">
             <span
               className={`text-2xl font-bold font-mono ${
-                totalIncomeBudget - totalExpenseBudget >= 0 ? 'text-indigo-400' : 'text-rose-400'
+                projectedPeriodNet >= 0 ? 'text-indigo-400' : 'text-rose-400'
               }`}
             >
-              {(totalIncomeBudget - totalExpenseBudget).toLocaleString(undefined, {
+              {projectedPeriodNet >= 0 ? '+' : ''}
+              {projectedPeriodNet.toLocaleString(undefined, {
                 maximumFractionDigits: 2
               })}
             </span>
             <span className="text-xs text-slate-400">{currency}</span>
           </div>
-          <div className="mt-2 text-xs text-slate-400">
-            {isFr ? 'Revenus prévus moins dépenses prévues' : 'Planned income minus planned expenses'}
+          <div className="mt-2 text-xs font-medium flex items-center justify-between tabular-nums">
+            <span className="text-slate-400">{isFr ? 'Solde réel constaté' : 'Actual net so far'}</span>
+            <span
+              className={`font-mono ${actualPeriodNet >= 0 ? 'text-teal-400' : 'text-rose-400'}`}
+            >
+              {actualPeriodNet >= 0 ? '+' : ''}
+              {actualPeriodNet.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}
+            </span>
           </div>
         </div>
       </div>
+
+      {/* Year Graph with Monthly Net Values (Year Mode Only) */}
+      {viewMode === 'YEAR' && (
+        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-lg space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-teal-400 shrink-0" />
+                <h2 className="text-sm font-bold text-white">
+                  {isFr
+                    ? `Solde Net Mensuel — ${selectedYear}`
+                    : `Monthly Net Values — ${selectedYear}`}
+                </h2>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {isFr
+                  ? 'Revenus moins dépenses pour chaque mois (budget prévu vs réalisé). Cliquez sur un mois pour l’inspecter.'
+                  : 'Income minus expenses for each month (planned budget vs. actual). Click any month to inspect or open.'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Series Filter */}
+              <div className="grid grid-cols-3 p-1 bg-slate-950 border border-slate-800 rounded-xl text-[11px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setGraphSeriesMode('BOTH')}
+                  className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
+                    graphSeriesMode === 'BOTH'
+                      ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {isFr ? 'Prévu & Réel' : 'Both'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGraphSeriesMode('PLANNED')}
+                  className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
+                    graphSeriesMode === 'PLANNED'
+                      ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {isFr ? 'Prévu' : 'Planned'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGraphSeriesMode('ACTUAL')}
+                  className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
+                    graphSeriesMode === 'ACTUAL'
+                      ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {isFr ? 'Réalisé' : 'Actual'}
+                </button>
+              </div>
+
+              {/* Legend */}
+              <div className="flex items-center gap-3 text-[11px] text-slate-400">
+                {graphSeriesMode !== 'ACTUAL' && (
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-indigo-400 inline-block" />
+                    {isFr ? 'Net prévu' : 'Planned net'}
+                  </span>
+                )}
+                {graphSeriesMode !== 'PLANNED' && (
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-teal-400 inline-block" />
+                    {isFr ? 'Net réel' : 'Actual net'}
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" />
+                  {isFr ? 'Déficit' : 'Deficit'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {(() => {
+            const valuesForScale: number[] = [0];
+            for (const m of yearlyMonthlySeries) {
+              if (graphSeriesMode !== 'ACTUAL') valuesForScale.push(m.plannedNet);
+              if (graphSeriesMode !== 'PLANNED' && (m.hasActualTx || m.actualNet !== 0)) {
+                valuesForScale.push(m.actualNet);
+              }
+            }
+
+            const rawMin = Math.min(...valuesForScale);
+            const rawMax = Math.max(...valuesForScale);
+            const rawSpan = rawMax - rawMin || 100;
+            const maxVal = rawMax > 0 ? rawMax + rawSpan * 0.14 : rawSpan * 0.1;
+            const minVal = rawMin < 0 ? rawMin - rawSpan * 0.14 : 0;
+            const range = maxVal - minVal || 1;
+
+            const width = 840;
+            const height = 210;
+            const padX = 10;
+            const padY = 18;
+            const plotH = height - 2 * padY;
+            const colW = (width - 2 * padX) / 12;
+
+            const toY = (val: number) => height - padY - ((val - minVal) / range) * plotH;
+            const zeroY = toY(0);
+
+            const activeMonthData = yearlyMonthlySeries[inspectedMonthIdx] || yearlyMonthlySeries[0];
+            const activeVariance = activeMonthData.hasActualTx
+              ? Math.round((activeMonthData.actualNet - activeMonthData.plannedNet) * 100) / 100
+              : null;
+
+            return (
+              <div className="space-y-3">
+                {/* Diverging Bar SVG */}
+                <div className="flex gap-2 items-stretch">
+                  {/* Y-Axis Labels */}
+                  <div className="flex flex-col justify-between text-[10px] font-mono tabular-nums text-slate-500 py-2 text-right min-w-[60px] shrink-0">
+                    <span>
+                      {maxVal > 0 ? `+${Math.round(maxVal).toLocaleString()}` : '0'} {currency}
+                    </span>
+                    {minVal < 0 && maxVal > 0 && <span>0 {currency}</span>}
+                    <span>
+                      {minVal < 0 ? Math.round(minVal).toLocaleString() : '0'} {currency}
+                    </span>
+                  </div>
+
+                  {/* Chart Area */}
+                  <div className="relative h-52 flex-1 select-none min-w-0">
+                    <svg
+                      className="w-full h-full overflow-visible"
+                      preserveAspectRatio="none"
+                      viewBox={`0 0 ${width} ${height}`}
+                    >
+                      {/* Reference horizontal grid lines */}
+                      <line
+                        x1={padX}
+                        y1={padY + plotH * 0.25}
+                        x2={width - padX}
+                        y2={padY + plotH * 0.25}
+                        stroke="#1e293b"
+                        strokeDasharray="3 3"
+                      />
+                      <line
+                        x1={padX}
+                        y1={padY + plotH * 0.5}
+                        x2={width - padX}
+                        y2={padY + plotH * 0.5}
+                        stroke="#1e293b"
+                        strokeDasharray="3 3"
+                      />
+                      <line
+                        x1={padX}
+                        y1={padY + plotH * 0.75}
+                        x2={width - padX}
+                        y2={padY + plotH * 0.75}
+                        stroke="#1e293b"
+                        strokeDasharray="3 3"
+                      />
+
+                      {/* Zero baseline */}
+                      <line
+                        x1={padX}
+                        y1={zeroY}
+                        x2={width - padX}
+                        y2={zeroY}
+                        stroke="#475569"
+                        strokeWidth="1.4"
+                      />
+
+                      {yearlyMonthlySeries.map((m, idx) => {
+                        const x0 = padX + idx * colW;
+                        const centerX = x0 + colW / 2;
+                        const isInspected = inspectedMonthIdx === idx;
+
+                        const showPlanned = graphSeriesMode !== 'ACTUAL';
+                        const showActual = graphSeriesMode !== 'PLANNED' && m.hasActualTx;
+
+                        const barWidth = graphSeriesMode === 'BOTH' ? Math.min(20, colW * 0.32) : Math.min(34, colW * 0.52);
+                        const pairGap = graphSeriesMode === 'BOTH' ? 4 : 0;
+
+                        const plannedX =
+                          graphSeriesMode === 'BOTH'
+                            ? centerX - barWidth - pairGap / 2
+                            : centerX - barWidth / 2;
+                        const actualX =
+                          graphSeriesMode === 'BOTH'
+                            ? centerX + pairGap / 2
+                            : centerX - barWidth / 2;
+
+                        const plannedYTop = m.plannedNet >= 0 ? toY(m.plannedNet) : zeroY;
+                        const plannedH = Math.max(
+                          m.plannedNet !== 0 ? 2 : 0,
+                          Math.abs(toY(m.plannedNet) - zeroY)
+                        );
+
+                        const actualYTop = m.actualNet >= 0 ? toY(m.actualNet) : zeroY;
+                        const actualH = Math.max(
+                          m.hasActualTx ? 2 : 0,
+                          Math.abs(toY(m.actualNet) - zeroY)
+                        );
+
+                        const singleBarVal =
+                          graphSeriesMode === 'PLANNED'
+                            ? m.plannedNet
+                            : graphSeriesMode === 'ACTUAL' && m.hasActualTx
+                            ? m.actualNet
+                            : null;
+
+                        return (
+                          <g key={m.monthIndex}>
+                            {isInspected && (
+                              <rect
+                                x={x0 + 2}
+                                y={padY - 6}
+                                width={Math.max(4, colW - 4)}
+                                height={plotH + 12}
+                                rx={6}
+                                fill="#1e293b"
+                                fillOpacity="0.55"
+                              />
+                            )}
+
+                            {/* Planned Net Bar */}
+                            {showPlanned && plannedH > 0 && (
+                              <rect
+                                x={plannedX}
+                                y={plannedYTop}
+                                width={barWidth}
+                                height={plannedH}
+                                rx={3}
+                                fill={m.plannedNet >= 0 ? '#818cf8' : '#f59e0b'}
+                                fillOpacity={isInspected ? 0.95 : 0.78}
+                              />
+                            )}
+
+                            {/* Actual Net Bar */}
+                            {showActual && actualH > 0 && (
+                              <rect
+                                x={actualX}
+                                y={actualYTop}
+                                width={barWidth}
+                                height={actualH}
+                                rx={3}
+                                fill={m.actualNet >= 0 ? '#2dd4bf' : '#f43f5e'}
+                                fillOpacity={isInspected ? 1 : 0.85}
+                              />
+                            )}
+
+                            {/* Single-series inline value label */}
+                            {singleBarVal !== null && (
+                              <text
+                                x={centerX}
+                                y={
+                                  singleBarVal >= 0
+                                    ? Math.max(11, toY(singleBarVal) - 5)
+                                    : Math.min(height - 3, toY(singleBarVal) + 12)
+                                }
+                                textAnchor="middle"
+                                fontSize="10"
+                                fontFamily="JetBrains Mono, monospace"
+                                fill={
+                                  singleBarVal >= 0
+                                    ? graphSeriesMode === 'PLANNED'
+                                      ? '#a5b4fc'
+                                      : '#5eead4'
+                                    : '#fda4af'
+                                }
+                              >
+                                {formatCompactNet(singleBarVal)}
+                              </text>
+                            )}
+
+                            {/* Interactive column hit box */}
+                            <rect
+                              x={x0}
+                              y={0}
+                              width={colW}
+                              height={height}
+                              fill="transparent"
+                              className="cursor-pointer"
+                              onMouseEnter={() => setInspectedMonthIdx(idx)}
+                              onClick={() => setInspectedMonthIdx(idx)}
+                            />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                </div>
+
+                {/* 12-Month Net Strip (every month's exact net value visible at a glance) */}
+                <div className="overflow-x-auto pb-1">
+                  <div className="grid grid-cols-12 gap-1 min-w-[660px] pl-16">
+                    {yearlyMonthlySeries.map((m, idx) => {
+                      const isInspected = inspectedMonthIdx === idx;
+                      const isCurrentCalendarMonth =
+                        selectedYear === now.getFullYear() && idx === now.getMonth();
+
+                      return (
+                        <button
+                          key={m.monthIndex}
+                          type="button"
+                          onClick={() => setInspectedMonthIdx(idx)}
+                          className={`px-1 py-1.5 rounded-lg text-center transition cursor-pointer border ${
+                            isInspected
+                              ? 'bg-slate-800 border-teal-500/50'
+                              : 'bg-slate-950/40 border-transparent hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <div
+                            className={`text-[10px] font-semibold capitalize truncate ${
+                              isCurrentCalendarMonth
+                                ? 'text-teal-400'
+                                : isInspected
+                                ? 'text-white'
+                                : 'text-slate-400'
+                            }`}
+                          >
+                            {m.shortName}
+                          </div>
+                          {graphSeriesMode !== 'ACTUAL' && (
+                            <div
+                              className={`text-[10px] font-mono tabular-nums mt-0.5 ${
+                                m.plannedNet >= 0 ? 'text-indigo-300' : 'text-amber-400'
+                              }`}
+                              title={isFr ? 'Net prévu' : 'Planned net'}
+                            >
+                              {formatCompactNet(m.plannedNet)}
+                            </div>
+                          )}
+                          {graphSeriesMode !== 'PLANNED' && (
+                            <div
+                              className={`text-[10px] font-mono tabular-nums ${
+                                !m.hasActualTx
+                                  ? 'text-slate-600'
+                                  : m.actualNet >= 0
+                                  ? 'text-teal-400'
+                                  : 'text-rose-400'
+                              }`}
+                              title={isFr ? 'Net réel' : 'Actual net'}
+                            >
+                              {m.hasActualTx ? formatCompactNet(m.actualNet) : '—'}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Inspected Month Detail Bar */}
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 tabular-nums">
+                    <span className="font-semibold text-white capitalize">
+                      {activeMonthData.longName} {selectedYear}
+                    </span>
+
+                    <span className="text-slate-400 font-mono">
+                      <span className="font-sans">{isFr ? 'Prévu :' : 'Planned:'}</span>{' '}
+                      <strong
+                        className={
+                          activeMonthData.plannedNet >= 0 ? 'text-indigo-300' : 'text-amber-400'
+                        }
+                      >
+                        {activeMonthData.plannedNet >= 0 ? '+' : ''}
+                        {activeMonthData.plannedNet.toLocaleString(undefined, {
+                          maximumFractionDigits: 2
+                        })}{' '}
+                        {currency}
+                      </strong>{' '}
+                      <span className="text-[11px] text-slate-500">
+                        (+{activeMonthData.plannedIncome.toLocaleString()} / -
+                        {activeMonthData.plannedExpense.toLocaleString()})
+                      </span>
+                    </span>
+
+                    {activeMonthData.hasActualTx ? (
+                      <span className="text-slate-400 font-mono">
+                        <span className="font-sans">{isFr ? 'Réel :' : 'Actual:'}</span>{' '}
+                        <strong
+                          className={
+                            activeMonthData.actualNet >= 0 ? 'text-teal-300' : 'text-rose-400'
+                          }
+                        >
+                          {activeMonthData.actualNet >= 0 ? '+' : ''}
+                          {activeMonthData.actualNet.toLocaleString(undefined, {
+                            maximumFractionDigits: 2
+                          })}{' '}
+                          {currency}
+                        </strong>{' '}
+                        <span className="text-[11px] text-slate-500">
+                          (+{activeMonthData.actualIncome.toLocaleString()} / -
+                          {activeMonthData.actualExpense.toLocaleString()})
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 italic">
+                        {isFr ? 'Aucune opération enregistrée' : 'No recorded transactions'}
+                      </span>
+                    )}
+
+                    {activeVariance !== null && (
+                      <span
+                        className={`font-mono font-semibold ${
+                          activeVariance >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        }`}
+                      >
+                        ({activeVariance >= 0 ? '+' : ''}
+                        {activeVariance.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+                        {currency})
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMonth(activeMonthData.monthIndex);
+                      setViewMode('MONTH');
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer self-start lg:self-auto"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>{isFr ? 'Ouvrir ce mois' : 'Open Month'}</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Category Wrappers & Sub-Category Budget Lines */}
       <div className="space-y-4">
         {activeCategories.map(cat => {
           const catBudgets = activeBudgets.filter(b => b.categoryId === cat.id);
 
-          const catExpenses = monthTx
+          const catExpenses = periodTx
             .filter(
               tx =>
                 tx.categoryId === cat.id &&
@@ -396,17 +1010,17 @@ export const BudgetPlannerScreen: React.FC = () => {
             )
             .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
-          const catIncomeActual = monthTx
+          const catIncomeActual = periodTx
             .filter(tx => tx.categoryId === cat.id && !tx.isExpense && !tx.isInternalTransfer)
             .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
           const catExpenseBudget = catBudgets
             .filter(b => b.isExpense)
-            .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, selectedYear, selectedMonth1), 0);
+            .reduce((sum, b) => sum + getLinePeriodBudget(b), 0);
 
           const catIncomeBudget = catBudgets
             .filter(b => !b.isExpense)
-            .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, selectedYear, selectedMonth1), 0);
+            .reduce((sum, b) => sum + getLinePeriodBudget(b), 0);
 
           const hasExpenseLines = catBudgets.some(b => b.isExpense) || catExpenses > 0;
           const hasIncomeLines = catBudgets.some(b => !b.isExpense) || catIncomeActual > 0;
@@ -426,16 +1040,20 @@ export const BudgetPlannerScreen: React.FC = () => {
                   type="button"
                   onClick={() =>
                     drillDownToTransactions({
-                      dateFrom: monthDateFrom,
-                      dateTo: monthDateTo,
+                      dateFrom: periodDateFrom,
+                      dateTo: periodDateTo,
                       categoryId: cat.id,
                       budgetId: 'ALL'
                     })
                   }
                   title={
-                    isFr
-                      ? 'Voir les transactions de cette catégorie pour ce mois'
-                      : 'View transactions for this category in selected month'
+                    viewMode === 'MONTH'
+                      ? isFr
+                        ? 'Voir les transactions de cette catégorie pour ce mois'
+                        : 'View transactions for this category in selected month'
+                      : isFr
+                      ? `Voir les transactions de cette catégorie en ${selectedYear}`
+                      : `View transactions for this category in ${selectedYear}`
                   }
                   className="flex items-center gap-3 text-left group/cat cursor-pointer min-w-0"
                 >
@@ -558,10 +1176,11 @@ export const BudgetPlannerScreen: React.FC = () => {
                   <div className="divide-y divide-slate-800/60 rounded-xl bg-slate-950/50 border border-slate-800/80">
                     {catBudgets.map(b => {
                       const activeInSelectedMonth = isBudgetActiveInMonth(b, selectedYear, selectedMonth1);
-                      const monthlyBudgeted = getBudgetMonthlyAmount(b, selectedYear, selectedMonth1);
+                      const activeMonthsInYear = getBudgetActiveMonthsInYear(b, selectedYear);
+                      const periodBudgeted = getLinePeriodBudget(b);
                       const windowLabel = formatBudgetWindowLabel(b, language);
 
-                      const actualForSubCat = monthTx
+                      const actualForSubCat = periodTx
                         .filter(
                           tx =>
                             tx.budgetId === b.id &&
@@ -571,24 +1190,30 @@ export const BudgetPlannerScreen: React.FC = () => {
                         )
                         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
+                      const isActiveInPeriod =
+                        viewMode === 'MONTH' ? activeInSelectedMonth : activeMonthsInYear > 0;
                       const subOver =
-                        b.isExpense && activeInSelectedMonth && monthlyBudgeted > 0 && actualForSubCat > monthlyBudgeted;
+                        b.isExpense && isActiveInPeriod && periodBudgeted > 0 && actualForSubCat > periodBudgeted;
 
                       return (
                         <div
                           key={b.id}
                           onClick={() =>
                             drillDownToTransactions({
-                              dateFrom: monthDateFrom,
-                              dateTo: monthDateTo,
+                              dateFrom: periodDateFrom,
+                              dateTo: periodDateTo,
                               categoryId: cat.id,
                               budgetId: b.id
                             })
                           }
                           title={
-                            isFr
-                              ? 'Voir les transactions de cette sous-catégorie pour ce mois'
-                              : 'View transactions for this sub-category in selected month'
+                            viewMode === 'MONTH'
+                              ? isFr
+                                ? 'Voir les transactions de cette sous-catégorie pour ce mois'
+                                : 'View transactions for this sub-category in selected month'
+                              : isFr
+                              ? `Voir les transactions de cette sous-catégorie en ${selectedYear}`
+                              : `View transactions for this sub-category in ${selectedYear}`
                           }
                           className={`px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-900/70 transition cursor-pointer group/sub ${
                             !b.isActive ? 'opacity-55' : ''
@@ -616,7 +1241,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                                   <span className="text-slate-500">{windowLabel}</span>
                                 </>
                               )}
-                              {b.isActive &&
+                              {viewMode === 'MONTH' &&
+                                b.isActive &&
                                 b.frequency === 'YEARLY' &&
                                 b.month != null &&
                                 b.month !== selectedMonth1 && (
@@ -629,7 +1255,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                                     </span>
                                   </>
                                 )}
-                              {b.isActive && !activeInSelectedMonth && (
+                              {viewMode === 'MONTH' && b.isActive && !activeInSelectedMonth && (
                                 <>
                                   <span aria-hidden="true">·</span>
                                   <span className="text-slate-500">
@@ -637,6 +1263,28 @@ export const BudgetPlannerScreen: React.FC = () => {
                                   </span>
                                 </>
                               )}
+                              {viewMode === 'YEAR' && b.isActive && activeMonthsInYear === 0 && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="text-slate-500">
+                                    {isFr ? `Hors période en ${selectedYear}` : `Outside window in ${selectedYear}`}
+                                  </span>
+                                </>
+                              )}
+                              {viewMode === 'YEAR' &&
+                                b.isActive &&
+                                b.frequency === 'MONTHLY' &&
+                                activeMonthsInYear > 0 &&
+                                activeMonthsInYear < 12 && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span className="text-indigo-300">
+                                      {isFr
+                                        ? `${activeMonthsInYear}/12 mois actifs`
+                                        : `${activeMonthsInYear}/12 active months`}
+                                    </span>
+                                  </>
+                                )}
                             </div>
                           </div>
 
@@ -648,13 +1296,19 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 </span>
                                 <span className="text-slate-500 font-normal"> / </span>
                                 <span className={b.isExpense ? 'text-slate-100' : 'text-emerald-400'}>
-                                  {monthlyBudgeted.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+                                  {periodBudgeted.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
                                   {currency}
                                 </span>
                               </div>
-                              {b.frequency === 'YEARLY' && (
+                              {viewMode === 'MONTH' && b.frequency === 'YEARLY' && (
                                 <span className="text-[10px] text-slate-500 font-mono">
                                   {isFr ? 'Annuel :' : 'Annual:'}{' '}
+                                  {b.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}
+                                </span>
+                              )}
+                              {viewMode === 'YEAR' && b.frequency === 'MONTHLY' && (
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {isFr ? 'Mensuel :' : 'Monthly:'}{' '}
                                   {b.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}
                                 </span>
                               )}

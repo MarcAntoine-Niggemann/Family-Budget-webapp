@@ -84,6 +84,19 @@ export function getBudgetAnnualAmount(b: CategoryBudgetEntity, year: number): nu
 }
 
 /**
+ * Returns the number of months (0..12) in the given year during which this budget line is active.
+ */
+export function getBudgetActiveMonthsInYear(b: CategoryBudgetEntity, year: number): number {
+  let count = 0;
+  for (let m = 1; m <= 12; m++) {
+    if (isBudgetActiveInMonth(b, year, m)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
  * True when this sub-category budget line is a scheduled fixed-day item
  * during the given (year, month1to12) rather than a spread allowance.
  */
