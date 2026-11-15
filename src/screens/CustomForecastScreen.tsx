@@ -20,7 +20,7 @@ export const CustomForecastScreen: React.FC = () => {
   const [horizonDays, setHorizonDays] = useState<number>(30);
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
 
-  const forecast = computeCashFlowForecast(accounts, transactions, budgets, horizonDays);
+  const forecast = computeCashFlowForecast(accounts, transactions, budgets, horizonDays, language);
   const timeline = forecast.timeline;
 
   const activePoint: CashFlowPoint | null =
@@ -38,8 +38,8 @@ export const CustomForecastScreen: React.FC = () => {
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             {isFr
-              ? 'Simulation jour par jour intégrant salaires, loyers, prélèvements et cartes à débit différé'
-              : 'Day-by-day cash flow simulation factoring recurring salaries, bills, and card settlements'}
+              ? 'Simulation jour par jour sur les comptes inclus dans la prévision selon vos budgets planifiés et répartis'
+              : 'Day-by-day simulation across forecast-included accounts based on your scheduled and spread budgets'}
           </p>
         </div>
 
@@ -50,7 +50,7 @@ export const CustomForecastScreen: React.FC = () => {
               setHorizonDays(30);
               setSelectedPointIndex(null);
             }}
-            className={`px-3 py-1.5 rounded-lg transition ${
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
               horizonDays === 30
                 ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
                 : 'text-slate-400 hover:text-slate-200'
@@ -63,7 +63,7 @@ export const CustomForecastScreen: React.FC = () => {
               setHorizonDays(60);
               setSelectedPointIndex(null);
             }}
-            className={`px-3 py-1.5 rounded-lg transition ${
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
               horizonDays === 60
                 ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
                 : 'text-slate-400 hover:text-slate-200'
@@ -76,7 +76,7 @@ export const CustomForecastScreen: React.FC = () => {
               setHorizonDays(90);
               setSelectedPointIndex(null);
             }}
-            className={`px-3 py-1.5 rounded-lg transition ${
+            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
               horizonDays === 90
                 ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
                 : 'text-slate-400 hover:text-slate-200'
@@ -93,12 +93,12 @@ export const CustomForecastScreen: React.FC = () => {
           <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
           <div>
             <h2 className="font-bold text-sm text-rose-200">
-              {isFr ? 'Risque de Découvert Bancaire Détecté !' : 'Overdraft Warning Detected!'}
+              {isFr ? 'Risque de Solde Négatif Détecté !' : 'Projected Negative Balance Warning!'}
             </h2>
-            <p className="text-xs text-rose-300/90 mt-0.5">
+            <p className="text-xs text-rose-300/90 mt-0.5 font-mono tabular-nums">
               {isFr
-                ? `Votre solde prévisionnel plonge à ${forecast.lowestBalance} ${currency} autour du ${forecast.lowestBalanceDate}. Ajustez vos dépenses ou effectuez un virement depuis votre épargne.`
-                : `Your projected balance drops to ${forecast.lowestBalance} ${currency} around ${forecast.lowestBalanceDate}. Reduce discretionary spending or transfer funds from savings.`}
+                ? `Votre disponible prévisionnel plonge à ${forecast.lowestBalance.toLocaleString()} ${currency} autour du ${forecast.lowestBalanceDate}. Ajustez vos dépenses prévues.`
+                : `Your projected balance drops to ${forecast.lowestBalance.toLocaleString()} ${currency} around ${forecast.lowestBalanceDate}. Adjust planned spending.`}
             </p>
           </div>
         </div>
@@ -107,65 +107,26 @@ export const CustomForecastScreen: React.FC = () => {
           <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div>
             <h2 className="font-bold text-sm text-amber-200">
-              {isFr ? 'Zone de Trésorerie Basse (< 500 €)' : 'Low Cash Buffer Warning (< 500 €)'}
+              {isFr ? 'Zone de Trésorerie Basse (< 500)' : 'Low Cash Buffer Warning (< 500)'}
             </h2>
-            <p className="text-xs text-amber-300/90 mt-0.5">
+            <p className="text-xs text-amber-300/90 mt-0.5 font-mono tabular-nums">
               {isFr
-                ? `Point bas estimé à ${forecast.lowestBalance} ${currency} le ${forecast.lowestBalanceDate}. Restez vigilant sur les dépenses non planifiées.`
-                : `Lowest point estimated at ${forecast.lowestBalance} ${currency} on ${forecast.lowestBalanceDate}. Stay cautious on unbudgeted expenses.`}
+                ? `Minimum prévu à ${forecast.lowestBalance.toLocaleString()} ${currency} le ${forecast.lowestBalanceDate}.`
+                : `Minimum projected at ${forecast.lowestBalance.toLocaleString()} ${currency} on ${forecast.lowestBalanceDate}.`}
             </p>
           </div>
         </div>
       ) : null}
 
-      {/* Safe to Spend Now & Simulation Highlights */}
+      {/* Forecast Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        {/* Safe to Spend Now */}
+        {/* Minimum Projected Balance (primary liquidity floor) */}
         <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            {isFr ? 'Dépensable Sans Risque' : 'Safe to Spend Now'}
-          </span>
-          <div className="mt-2 text-2xl font-bold text-emerald-400">
-            {forecast.safeToSpendNow.toLocaleString()} {currency}
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block">
-            {isFr ? 'Après déduction des factures à venir' : 'After reserving for upcoming bills'}
-          </span>
-        </div>
-
-        {/* Current Liquid Balance */}
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            {isFr ? 'Solde Liquide Actuel' : 'Current Liquid Balance'}
-          </span>
-          <div className="mt-2 text-2xl font-bold text-white">
-            {forecast.currentLiquidBalance.toLocaleString()} {currency}
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block">
-            {isFr ? 'Comptes courants inclus' : 'Included checking accounts'}
-          </span>
-        </div>
-
-        {/* Upcoming Bills */}
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            {isFr ? 'Factures & Débits Prévus' : 'Upcoming Bills & Debits'}
-          </span>
-          <div className="mt-2 text-2xl font-bold text-rose-400">
-            -{forecast.upcomingBillsTotal.toLocaleString()} {currency}
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block">
-            {isFr ? 'Échéances fixes programmées' : 'Scheduled recurring debits'}
-          </span>
-        </div>
-
-        {/* Lowest Point */}
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-            {isFr ? 'Creux de Trésorerie Estimé' : 'Lowest Projected Dip'}
+          <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            {isFr ? 'Minimum Prévu sur la Période' : 'Minimum Projected Balance'}
           </span>
           <div
-            className={`mt-2 text-2xl font-bold ${
+            className={`mt-2 text-2xl font-bold font-mono tabular-nums ${
               forecast.lowestBalance >= 500
                 ? 'text-teal-400'
                 : forecast.lowestBalance >= 0
@@ -176,7 +137,48 @@ export const CustomForecastScreen: React.FC = () => {
             {forecast.lowestBalance.toLocaleString()} {currency}
           </div>
           <span className="text-[11px] text-slate-400 mt-1 block">
-            {isFr ? `Estimé le ${forecast.lowestBalanceDate}` : `Projected on ${forecast.lowestBalanceDate}`}
+            {isFr ? `Point bas atteint le ${forecast.lowestBalanceDate}` : `Lowest point on ${forecast.lowestBalanceDate}`}
+          </span>
+        </div>
+
+        {/* Current Forecast Balance across included accounts */}
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
+          <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            {isFr ? 'Solde Initial Prévisionnel' : 'Forecast Starting Balance'}
+          </span>
+          <div className="mt-2 text-2xl font-bold text-white font-mono tabular-nums">
+            {forecast.currentTotalBalance.toLocaleString()} {currency}
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            {isFr
+              ? `Comptes inclus (${forecast.accountCount})`
+              : `Included accounts (${forecast.accountCount})`}
+          </span>
+        </div>
+
+        {/* Upcoming Scheduled Bills */}
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
+          <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            {isFr ? 'Échéances Dépenses Prévues' : 'Upcoming Scheduled Bills'}
+          </span>
+          <div className="mt-2 text-2xl font-bold text-rose-400 font-mono tabular-nums">
+            -{forecast.upcomingBillsTotal.toLocaleString()} {currency}
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            {isFr ? 'Prélèvements datés restants' : 'Remaining dated debits'}
+          </span>
+        </div>
+
+        {/* Upcoming Scheduled Income */}
+        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
+          <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            {isFr ? 'Revenus Datés Attendus' : 'Upcoming Scheduled Income'}
+          </span>
+          <div className="mt-2 text-2xl font-bold text-emerald-400 font-mono tabular-nums">
+            +{forecast.upcomingIncomeTotal.toLocaleString()} {currency}
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            {isFr ? 'Crédits datés à venir' : 'Remaining dated credits'}
           </span>
         </div>
       </div>
@@ -185,7 +187,7 @@ export const CustomForecastScreen: React.FC = () => {
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-bold text-white text-sm">
-            {isFr ? 'Courbe d’Évolution de Trésorerie' : 'Cash Flow Trajectory Chart'}
+            {isFr ? 'Courbe d’Évolution de Trésorerie' : 'Cash Flow Trajectory'}
           </h2>
           <span className="text-xs text-slate-400">
             {isFr
@@ -195,13 +197,14 @@ export const CustomForecastScreen: React.FC = () => {
         </div>
 
         {/* SVG Interactive Graph */}
-        <div className="relative h-64 w-full select-none">
-          {(() => {
-            if (timeline.length < 2) return null;
-
+        <div className="flex gap-2 items-stretch select-none">
+          {timeline.length >= 2 && (() => {
             const balances = timeline.map(t => t.balance);
-            const minBal = Math.min(...balances, 0);
-            const maxBal = Math.max(...balances, 1000);
+            const rawMin = Math.min(...balances);
+            const rawMax = Math.max(...balances);
+            const span = rawMax - rawMin || 500;
+            const minBal = rawMin < 0 ? rawMin - span * 0.08 : Math.max(0, rawMin - span * 0.15);
+            const maxBal = rawMax + span * 0.08;
             const range = maxBal - minBal || 1;
 
             const width = 800;
@@ -227,6 +230,13 @@ export const CustomForecastScreen: React.FC = () => {
             const zeroY = height - padding - ((0 - minBal) / range) * (height - 2 * padding);
 
             return (
+              <>
+                <div className="flex flex-col justify-between text-[10px] font-mono tabular-nums text-slate-500 py-3 text-right min-w-[60px] shrink-0">
+                  <span>{Math.round(maxBal).toLocaleString()} {currency}</span>
+                  {minBal < 0 && maxBal > 0 && <span>0 {currency}</span>}
+                  <span>{Math.round(minBal).toLocaleString()} {currency}</span>
+                </div>
+                <div className="relative h-64 flex-1">
               <svg
                 className="w-full h-full overflow-visible"
                 viewBox={`0 0 ${width} ${height}`}
@@ -325,6 +335,8 @@ export const CustomForecastScreen: React.FC = () => {
                   );
                 })}
               </svg>
+                </div>
+              </>
             );
           })()}
         </div>
@@ -342,7 +354,7 @@ export const CustomForecastScreen: React.FC = () => {
                   {isFr ? 'Solde prévisionnel :' : 'Projected balance:'}
                 </span>
                 <span
-                  className={`text-sm font-bold ${
+                  className={`text-sm font-bold font-mono tabular-nums ${
                     activePoint.balance >= 0 ? 'text-teal-300' : 'text-rose-400'
                   }`}
                 >

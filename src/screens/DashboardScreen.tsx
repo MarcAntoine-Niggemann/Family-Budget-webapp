@@ -49,7 +49,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const isFr = language === 'fr';
 
   const netWorth = computeNetWorth(accounts);
-  const forecast = computeCashFlowForecast(accounts, transactions, budgets, 30);
+  const forecast = computeCashFlowForecast(accounts, transactions, budgets, 30, language);
 
   const now = new Date();
   const monthlyReport = computeMonthlyReport(
@@ -82,11 +82,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     <div className="space-y-6 pb-12">
       {/* Hero Financial Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Total Liquid Checking Card */}
+        {/* Forecast Included Balance + 30d Minimum Forecast Card */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 p-5 shadow-xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              {isFr ? 'Solde Disponible (Courant)' : 'Liquid Balance'}
+              {isFr ? 'Trésorerie Prévisionnelle' : 'Forecast Balance'}
             </span>
             <div className="w-8 h-8 rounded-lg bg-teal-500/10 text-teal-400 flex items-center justify-center">
               <Landmark className="w-4 h-4" />
@@ -94,20 +94,24 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-3xl font-extrabold text-white tracking-tight font-mono tabular-nums">
-              {netWorth.liquidChecking.toLocaleString()}
+              {forecast.currentTotalBalance.toLocaleString()}
             </span>
             <span className="text-lg font-bold text-teal-400">{currency}</span>
           </div>
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+          <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2">
             <span className="text-slate-400">
-              {isFr ? 'Dépensable sans risque :' : 'Safe to spend now:'}
+              {isFr ? 'Minimum prévu (30j) :' : '30d forecast min:'}
             </span>
             <span
               className={`font-bold font-mono tabular-nums ${
-                forecast.safeToSpendNow >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                forecast.lowestBalance >= 500
+                  ? 'text-emerald-400'
+                  : forecast.lowestBalance >= 0
+                  ? 'text-amber-400'
+                  : 'text-rose-400'
               }`}
             >
-              {forecast.safeToSpendNow.toLocaleString()} {currency}
+              {forecast.lowestBalance.toLocaleString()} {currency} ({forecast.lowestBalanceDate})
             </span>
           </div>
         </div>

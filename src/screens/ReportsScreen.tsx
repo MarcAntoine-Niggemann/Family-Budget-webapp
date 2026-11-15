@@ -11,19 +11,30 @@ import {
   Award,
   ChevronDown,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  ArrowUpRight
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { computeMonthlyReport, computeYearlyReport } from '../utils/reportEngine';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 export const ReportsScreen: React.FC = () => {
-  const { transactions, categories, budgets, members, currency, language } = useBudget();
+  const {
+    transactions,
+    categories,
+    budgets,
+    members,
+    currency,
+    language,
+    drillDownToTransactions
+  } = useBudget();
   const isFr = language === 'fr';
 
   const [activeTab, setActiveTab] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [burnDownMode, setBurnDownMode] = useState<'EXPENSE' | 'NET'>('EXPENSE');
+  const [selectedBurnDay, setSelectedBurnDay] = useState<number | null>(null);
   const [expandedMonthlyCats, setExpandedMonthlyCats] = useState<Record<number, boolean>>({});
   const [expandedYearlyCats, setExpandedYearlyCats] = useState<Record<number, boolean>>({});
 
@@ -53,6 +64,13 @@ export const ReportsScreen: React.FC = () => {
 
   const yearlyReport = computeYearlyReport(selectedYear, transactions, categories, budgets, language);
 
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const monthDateFrom = `${selectedYear}-${pad2(selectedMonth + 1)}-01`;
+  const monthLastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+  const monthDateTo = `${selectedYear}-${pad2(selectedMonth + 1)}-${pad2(monthLastDay)}`;
+  const yearDateFrom = `${selectedYear}-01-01`;
+  const yearDateTo = `${selectedYear}-12-31`;
+
   return (
     <div className="space-y-6 pb-12">
       {/* Top Controls Header */}
@@ -73,7 +91,7 @@ export const ReportsScreen: React.FC = () => {
           <div className="grid grid-cols-2 p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-semibold">
             <button
               onClick={() => setActiveTab('MONTHLY')}
-              className={`px-3 py-1.5 rounded-lg transition ${
+              className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 activeTab === 'MONTHLY'
                   ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -83,7 +101,7 @@ export const ReportsScreen: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('YEARLY')}
-              className={`px-3 py-1.5 rounded-lg transition ${
+              className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 activeTab === 'YEARLY'
                   ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
                   : 'text-slate-400 hover:text-slate-200'
@@ -97,6 +115,7 @@ export const ReportsScreen: React.FC = () => {
             <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
               <button
                 onClick={() => {
+                  setSelectedBurnDay(null);
                   if (selectedMonth === 0) {
                     setSelectedMonth(11);
                     setSelectedYear(y => y - 1);
@@ -108,11 +127,12 @@ export const ReportsScreen: React.FC = () => {
               >
                 ←
               </button>
-              <span className="px-2 font-semibold text-slate-200 capitalize">
+              <span className="px-2 font-semibold text-slate-200 capitalize whitespace-nowrap">
                 {monthlyReport.monthName}
               </span>
               <button
                 onClick={() => {
+                  setSelectedBurnDay(null);
                   if (selectedMonth === 11) {
                     setSelectedMonth(0);
                     setSelectedYear(y => y + 1);
@@ -220,85 +240,394 @@ export const ReportsScreen: React.FC = () => {
           </div>
 
           {/* Burn Down Curve Card */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Flame className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-white text-sm">
-                  {isFr
-                    ? 'Courbe d’Épuisement Budgétaire (Burn-Down)'
-                    : 'Budget Burn-Down Curve'}
-                </h3>
+          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Flame className="w-4 h-4 text-amber-400 shrink-0" />
+                  <h3 className="font-bold text-white text-sm">
+                    {burnDownMode === 'EXPENSE'
+                      ? isFr
+                        ? 'Courbe d’Épuisement Budgétaire (Burn-Down)'
+                        : 'Budget Burn-Down Curve (Remaining)'
+                      : isFr
+                      ? 'Trajectoire Budgétaire Nette (Revenus − Dépenses)'
+                      : 'Net Budget Trajectory (Income vs. Spending)'}
+                  </h3>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {burnDownMode === 'EXPENSE'
+                    ? isFr
+                      ? 'Reste budgétaire de 100 % vers 0 selon les échéances datées et allocations réparties du mois'
+                      : 'Remaining allowance from 100% down to zero, factoring due dates and spread monthly budgets'
+                    : isFr
+                    ? 'Solde cumulé du mois intégrant le calendrier des revenus et des dépenses prévues'
+                    : 'Cumulative monthly net position factoring scheduled income and spending dates'}
+                </p>
               </div>
-              <div className="flex items-center gap-4 text-xs font-medium">
-                <span className="flex items-center gap-1.5 text-slate-400">
-                  <span className="w-3 h-0.5 bg-slate-600 border-dashed" />
-                  {isFr ? 'Idéal (Linéaire)' : 'Ideal'}
-                </span>
-                <span className="flex items-center gap-1.5 text-teal-400">
-                  <span className="w-3 h-0.5 bg-teal-400" />
-                  {isFr ? 'Dépenses réelles' : 'Actual Spent'}
-                </span>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Mode Toggle: Expense Burn-Down vs Net (Income vs Spending) */}
+                <div className="grid grid-cols-2 p-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setBurnDownMode('EXPENSE')}
+                    className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
+                      burnDownMode === 'EXPENSE'
+                        ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isFr ? 'Dépenses' : 'Expenses'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBurnDownMode('NET')}
+                    className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
+                      burnDownMode === 'NET'
+                        ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {isFr ? 'Net (Rev. − Dép.)' : 'Net (Inc. − Exp.)'}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-4 text-xs font-medium">
+                  <span className="flex items-center gap-1.5 text-slate-400">
+                    <span className="w-4 border-t-2 border-dashed border-slate-400" />
+                    {isFr ? 'Idéal planifié' : 'Planned Ideal'}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-teal-400">
+                    <span className="w-4 h-0.5 bg-teal-400" />
+                    {isFr ? 'Réalisé' : 'Actual'}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* SVG Burn Down Chart */}
-            <div className="h-44 w-full pt-2">
-              <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 300 100">
-                <defs>
-                  <linearGradient id="actualBurnGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2dd4bf" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#2dd4bf" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
+            {(() => {
+              const pts = monthlyReport.burnDownPoints;
+              if (pts.length < 2) return null;
 
-                {/* Grid horizontal lines */}
-                <line x1="0" y1="20" x2="300" y2="20" stroke="#1e293b" strokeDasharray="3 3" />
-                <line x1="0" y1="50" x2="300" y2="50" stroke="#1e293b" strokeDasharray="3 3" />
-                <line x1="0" y1="80" x2="300" y2="80" stroke="#1e293b" strokeDasharray="3 3" />
+              const hasAnyBudget =
+                monthlyReport.totalExpenseBudget > 0 || monthlyReport.totalIncomeBudget > 0;
 
-                {(() => {
-                  const pts = monthlyReport.burnDownPoints;
-                  if (pts.length < 2) return null;
-                  const maxBudget = Math.max(
-                    monthlyReport.totalExpenseBudget,
-                    monthlyReport.totalActualExpenses,
-                    100
-                  );
+              if (!hasAnyBudget && monthlyReport.totalActualExpenses === 0 && monthlyReport.totalActualIncome === 0) {
+                return (
+                  <div className="py-10 text-center text-xs text-slate-500">
+                    {isFr
+                      ? 'Aucun budget actif ou transaction enregistrée sur cette période.'
+                      : 'No active budgets or recorded transactions for this period.'}
+                  </div>
+                );
+              }
 
-                  // Ideal linear line from (0, 100) to (300, 0)
-                  const idealPath = `M 0,100 L 300,${100 - (monthlyReport.totalExpenseBudget / maxBudget) * 90}`;
+              const getIdeal = (p: (typeof pts)[number]) =>
+                burnDownMode === 'EXPENSE' ? p.idealExpense : p.idealNet;
+              const getActual = (p: (typeof pts)[number]) =>
+                burnDownMode === 'EXPENSE' ? p.actualExpense : p.actualNet;
 
-                  // Actual curve up to current day
-                  const activePts = pts.filter(p => p.actual > 0);
-                  if (activePts.length < 1) return null;
+              const allValues: number[] = [];
+              for (const p of pts) {
+                allValues.push(getIdeal(p));
+                const act = getActual(p);
+                if (act !== null) allValues.push(act);
+              }
+              allValues.push(0);
 
-                  const actualCoords = activePts.map(p => {
-                    const x = ((p.day - 1) / (pts.length - 1)) * 300;
-                    const y = 100 - (p.actual / maxBudget) * 90;
-                    return `${x},${y}`;
-                  });
+              const rawMin = Math.min(...allValues);
+              const rawMax = Math.max(...allValues);
+              const span = rawMax - rawMin || 100;
+              const minVal = rawMin < 0 ? rawMin - span * 0.05 : 0;
+              const maxVal = rawMax + span * 0.05;
+              const range = maxVal - minVal || 1;
 
-                  const actualPath = `M 0,100 L ` + actualCoords.join(' L ');
-                  const lastCoord = actualCoords[actualCoords.length - 1].split(',');
-                  const lastX = lastCoord[0];
-                  const actualArea = `${actualPath} L ${lastX},100 Z`;
+              const width = 760;
+              const height = 200;
+              const padX = 12;
+              const padY = 14;
 
-                  return (
-                    <>
-                      {/* Ideal line */}
-                      <path d={idealPath} stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 4" fill="none" />
-                      {/* Actual area */}
-                      <path d={actualArea} fill="url(#actualBurnGrad)" />
-                      {/* Actual line */}
-                      <path d={actualPath} stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" fill="none" />
-                      {/* Point node on current day */}
-                      <circle cx={lastCoord[0]} cy={lastCoord[1]} r="4" fill="#2dd4bf" />
-                    </>
-                  );
-                })()}
-              </svg>
-            </div>
+              const toX = (idx: number) =>
+                padX + (idx / Math.max(1, pts.length - 1)) * (width - 2 * padX);
+              const toY = (val: number) =>
+                height - padY - ((val - minVal) / range) * (height - 2 * padY);
+
+              const idealCoords = pts.map((p, idx) => ({
+                x: toX(idx),
+                y: toY(getIdeal(p)),
+                p,
+                idx
+              }));
+
+              const idealPath =
+                `M ${idealCoords[0].x},${idealCoords[0].y} ` +
+                idealCoords
+                  .slice(1)
+                  .map(c => `L ${c.x},${c.y}`)
+                  .join(' ');
+
+              const actualPoints = pts
+                .map((p, idx) => {
+                  const val = getActual(p);
+                  if (val === null) return null;
+                  return { x: toX(idx), y: toY(val), val, p, idx };
+                })
+                .filter((x): x is NonNullable<typeof x> => x !== null);
+
+              const actualPath =
+                actualPoints.length >= 1
+                  ? `M ${actualPoints[0].x},${actualPoints[0].y} ` +
+                    actualPoints
+                      .slice(1)
+                      .map(c => `L ${c.x},${c.y}`)
+                      .join(' ')
+                  : '';
+
+              const zeroY = toY(0);
+              const actualArea =
+                actualPoints.length >= 2
+                  ? `${actualPath} L ${actualPoints[actualPoints.length - 1].x},${zeroY} L ${actualPoints[0].x},${zeroY} Z`
+                  : '';
+
+              const lastActual = actualPoints[actualPoints.length - 1] || null;
+              const activeDayIdx =
+                selectedBurnDay !== null && pts[selectedBurnDay]
+                  ? selectedBurnDay
+                  : lastActual
+                  ? lastActual.idx
+                  : pts.length - 1;
+              const activePt = pts[activeDayIdx];
+              const activeIdealVal = getIdeal(activePt);
+              const activeActualVal = getActual(activePt);
+              const activeVariance =
+                activeActualVal !== null
+                  ? Math.round((activeActualVal - activeIdealVal) * 100) / 100
+                  : null;
+
+              const stepW = (width - 2 * padX) / Math.max(1, pts.length - 1);
+
+              return (
+                <div className="space-y-3">
+                  <div className="flex gap-2 items-stretch">
+                    {/* Y-Axis Scale Labels */}
+                    <div className="flex flex-col justify-between text-[10px] font-mono tabular-nums text-slate-500 py-2 text-right min-w-[56px] shrink-0">
+                      <span>
+                        {Math.round(maxVal).toLocaleString()} {currency}
+                      </span>
+                      {minVal < 0 && <span>0 {currency}</span>}
+                      <span>
+                        {Math.round(minVal).toLocaleString()} {currency}
+                      </span>
+                    </div>
+
+                    {/* SVG Chart */}
+                    <div className="relative h-48 flex-1 select-none">
+                      <svg
+                        className="w-full h-full overflow-visible"
+                        preserveAspectRatio="none"
+                        viewBox={`0 0 ${width} ${height}`}
+                      >
+                        <defs>
+                          <linearGradient id="actualBurnGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#2dd4bf" stopOpacity="0.28" />
+                            <stop offset="100%" stopColor="#2dd4bf" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+
+                        {/* Reference grid lines */}
+                        <line
+                          x1={padX}
+                          y1={height * 0.25}
+                          x2={width - padX}
+                          y2={height * 0.25}
+                          stroke="#1e293b"
+                          strokeDasharray="3 3"
+                        />
+                        <line
+                          x1={padX}
+                          y1={height * 0.5}
+                          x2={width - padX}
+                          y2={height * 0.5}
+                          stroke="#1e293b"
+                          strokeDasharray="3 3"
+                        />
+                        <line
+                          x1={padX}
+                          y1={height * 0.75}
+                          x2={width - padX}
+                          y2={height * 0.75}
+                          stroke="#1e293b"
+                          strokeDasharray="3 3"
+                        />
+
+                        {/* Zero baseline */}
+                        {zeroY >= padY - 2 && zeroY <= height - padY + 2 && (
+                          <line
+                            x1={padX}
+                            y1={zeroY}
+                            x2={width - padX}
+                            y2={zeroY}
+                            stroke={minVal < 0 ? '#f43f5e' : '#334155'}
+                            strokeWidth="1.2"
+                            strokeDasharray="4 4"
+                          />
+                        )}
+
+                        {/* Actual area & curve */}
+                        {actualArea && <path d={actualArea} fill="url(#actualBurnGrad)" />}
+                        {/* Schedule-aware ideal line */}
+                        <path
+                          d={idealPath}
+                          stroke="#94a3b8"
+                          strokeWidth="1.75"
+                          strokeDasharray="5 4"
+                          fill="none"
+                        />
+                        {actualPath && (
+                          <path
+                            d={actualPath}
+                            stroke="#2dd4bf"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            fill="none"
+                          />
+                        )}
+
+                        {/* Scheduled budget milestone dots on ideal curve */}
+                        {idealCoords.map(c => {
+                          if (c.p.scheduledEvents.length === 0) return null;
+                          const hasIncome = c.p.scheduledEvents.some(e => !e.isExpense);
+                          const hasExpense = c.p.scheduledEvents.some(e => e.isExpense);
+                          if (burnDownMode === 'EXPENSE' && !hasExpense) return null;
+                          return (
+                            <circle
+                              key={`ev_${c.idx}`}
+                              cx={c.x}
+                              cy={c.y}
+                              r="3.2"
+                              fill={hasIncome && burnDownMode === 'NET' ? '#10b981' : '#f59e0b'}
+                              stroke="#0f172a"
+                              strokeWidth="1.5"
+                            />
+                          );
+                        })}
+
+                        {/* Current tracked actual point */}
+                        {lastActual && (
+                          <circle
+                            cx={lastActual.x}
+                            cy={lastActual.y}
+                            r="4.2"
+                            fill="#2dd4bf"
+                            stroke="#0f172a"
+                            strokeWidth="1.5"
+                          />
+                        )}
+
+                        {/* Active scrubber highlight */}
+                        {idealCoords[activeDayIdx] && (
+                          <line
+                            x1={idealCoords[activeDayIdx].x}
+                            y1={padY}
+                            x2={idealCoords[activeDayIdx].x}
+                            y2={height - padY}
+                            stroke="#38bdf8"
+                            strokeWidth="1.2"
+                            strokeDasharray="2 2"
+                          />
+                        )}
+
+                        {/* Interactive hover/tap columns */}
+                        {idealCoords.map(c => (
+                          <rect
+                            key={`hit_${c.idx}`}
+                            x={c.x - stepW / 2}
+                            y={0}
+                            width={Math.max(8, stepW)}
+                            height={height}
+                            fill="transparent"
+                            className="cursor-pointer"
+                            onMouseEnter={() => setSelectedBurnDay(c.idx)}
+                            onClick={() => setSelectedBurnDay(c.idx)}
+                          />
+                        ))}
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* X-Axis Day Markers */}
+                  <div className="flex justify-between text-[10px] font-mono tabular-nums text-slate-500 pl-16">
+                    <span>{isFr ? 'Début' : 'Start'}</span>
+                    <span>{isFr ? 'J10' : 'Day 10'}</span>
+                    <span>{isFr ? 'J20' : 'Day 20'}</span>
+                    <span>
+                      {isFr ? `J${pts[pts.length - 1].day}` : `Day ${pts[pts.length - 1].day}`}
+                    </span>
+                  </div>
+
+                  {/* Inspected Day Readout Bar */}
+                  <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono tabular-nums">
+                      <span className="font-sans font-semibold text-white">
+                        {activePt.day === 0
+                          ? isFr
+                            ? 'Début du mois'
+                            : 'Start of month'
+                          : isFr
+                          ? `Jour ${activePt.day}`
+                          : `Day ${activePt.day}`}
+                      </span>
+                      <span className="text-slate-400">
+                        {isFr ? 'Idéal :' : 'Ideal:'}{' '}
+                        <strong className="text-slate-200">
+                          {activeIdealVal.toLocaleString()} {currency}
+                        </strong>
+                      </span>
+                      {activeActualVal !== null && (
+                        <span className="text-slate-400">
+                          {isFr ? 'Réel :' : 'Actual:'}{' '}
+                          <strong
+                            className={
+                              activeActualVal >= 0 ? 'text-teal-300' : 'text-rose-400'
+                            }
+                          >
+                            {activeActualVal.toLocaleString()} {currency}
+                          </strong>
+                        </span>
+                      )}
+                      {activeVariance !== null && (
+                        <span
+                          className={`font-semibold ${
+                            activeVariance >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          ({activeVariance >= 0 ? '+' : ''}
+                          {activeVariance.toLocaleString()} {currency})
+                        </span>
+                      )}
+                    </div>
+
+                    {activePt.scheduledEvents.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+                        {activePt.scheduledEvents
+                          .filter(ev => (burnDownMode === 'EXPENSE' ? ev.isExpense : true))
+                          .map((ev, eIdx) => (
+                            <span key={eIdx} className="font-mono tabular-nums">
+                              <span className="font-sans text-slate-400">{ev.title}:</span>{' '}
+                              <span className={ev.isExpense ? 'text-amber-300' : 'text-emerald-400'}>
+                                {ev.amount > 0 ? '+' : ''}
+                                {ev.amount.toLocaleString()} {currency}
+                              </span>
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Category Breakdown & Member Share Grid */}
@@ -310,7 +639,7 @@ export const ReportsScreen: React.FC = () => {
                   {isFr ? 'Répartition par Catégorie & Sous-catégorie' : 'Category & Sub-Category Breakdown'}
                 </h3>
                 <span className="text-[11px] text-slate-500">
-                  {isFr ? 'Cliquer pour déplier' : 'Click to expand'}
+                  {isFr ? 'Cliquer pour déplier ou filtrer' : 'Click to expand or drill down'}
                 </span>
               </div>
 
@@ -326,66 +655,108 @@ export const ReportsScreen: React.FC = () => {
                       key={cat.categoryId}
                       className="rounded-xl bg-slate-950/50 border border-slate-800/70 p-3 space-y-2"
                     >
-                      <button
-                        type="button"
-                        onClick={() => toggleMonthlyCat(cat.categoryId)}
-                        className="w-full text-left space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between text-xs gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {visibleSubs.length > 0 ? (
-                              isExpanded ? (
-                                <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleMonthlyCat(cat.categoryId)}
+                          className="flex-1 min-w-0 text-left space-y-1.5 cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between text-xs gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {visibleSubs.length > 0 ? (
+                                isExpanded ? (
+                                  <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                )
                               ) : (
-                                <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                              )
-                            ) : (
-                              <span className="w-3.5 shrink-0" />
-                            )}
-                            <CategoryIcon name={cat.categoryIcon} className="w-4 h-4 text-slate-300 shrink-0" />
-                            <span className="font-semibold text-slate-100 truncate">
-                              {cat.categoryName}
-                            </span>
-                            {cat.actualIncome > 0 && (
-                              <span className="text-[10px] font-mono tabular-nums text-emerald-400">
-                                +{cat.actualIncome.toLocaleString()} {currency}
+                                <span className="w-3.5 shrink-0" />
+                              )}
+                              <CategoryIcon name={cat.categoryIcon} className="w-4 h-4 text-slate-300 shrink-0" />
+                              <span className="font-semibold text-slate-100 truncate">
+                                {cat.categoryName}
                               </span>
-                            )}
+                              {cat.actualIncome > 0 && (
+                                <span className="text-[10px] font-mono tabular-nums text-emerald-400">
+                                  +{cat.actualIncome.toLocaleString()} {currency}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
+                              <span className="font-bold text-white">
+                                {cat.actualSpent.toLocaleString()} {currency}
+                              </span>
+                              <span className="text-slate-500">
+                                / {cat.budgetExpense.toLocaleString()} {currency}
+                              </span>
+                              <span
+                                className={`font-semibold text-[11px] ${
+                                  cat.isOverBudget ? 'text-rose-400' : 'text-teal-400'
+                                }`}
+                              >
+                                ({cat.percentageUsed}%)
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
-                            <span className="font-bold text-white">
-                              {cat.actualSpent.toLocaleString()} {currency}
-                            </span>
-                            <span className="text-slate-500">
-                              / {cat.budgetExpense.toLocaleString()} {currency}
-                            </span>
-                            <span
-                              className={`font-semibold text-[11px] ${
-                                cat.isOverBudget ? 'text-rose-400' : 'text-teal-400'
-                              }`}
-                            >
-                              ({cat.percentageUsed}%)
-                            </span>
-                          </div>
-                        </div>
 
-                        <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              cat.isOverBudget ? 'bg-rose-500' : 'bg-teal-500'
-                            }`}
-                            style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
-                          />
-                        </div>
-                      </button>
+                          <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                cat.isOverBudget ? 'bg-rose-500' : 'bg-teal-500'
+                              }`}
+                              style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
+                            />
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            drillDownToTransactions({
+                              dateFrom: monthDateFrom,
+                              dateTo: monthDateTo,
+                              categoryId: cat.categoryId,
+                              budgetId: 'ALL'
+                            })
+                          }
+                          title={
+                            isFr
+                              ? 'Voir les opérations de cette catégorie'
+                              : 'View transactions for this category'
+                          }
+                          className="p-1 rounded-lg text-slate-400 hover:text-teal-300 hover:bg-slate-800/80 transition shrink-0 cursor-pointer"
+                        >
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
                       {isExpanded && visibleSubs.length > 0 && (
                         <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-800/60">
                           {visibleSubs.map(sub => (
-                            <div key={sub.budgetId} className="space-y-1">
+                            <button
+                              key={sub.budgetId}
+                              type="button"
+                              onClick={() =>
+                                drillDownToTransactions({
+                                  dateFrom: monthDateFrom,
+                                  dateTo: monthDateTo,
+                                  categoryId: cat.categoryId,
+                                  budgetId: sub.budgetId
+                                })
+                              }
+                              title={
+                                isFr
+                                  ? 'Voir les opérations de cette sous-catégorie'
+                                  : 'View transactions for this sub-category'
+                              }
+                              className="w-full text-left space-y-1 rounded-lg px-2 py-1 -mx-2 hover:bg-slate-800/60 transition cursor-pointer group/sub"
+                            >
                               <div className="flex items-center justify-between text-[11px] gap-2">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-slate-300 truncate">{sub.title}</span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-slate-300 group-hover/sub:text-teal-300 transition truncate">
+                                    {sub.title}
+                                  </span>
+                                  <ArrowUpRight className="w-3 h-3 text-slate-600 group-hover/sub:text-teal-300 transition shrink-0" />
                                   {!sub.isExpense && (
                                     <span className="text-[10px] font-semibold text-emerald-400 uppercase">
                                       {isFr ? 'Revenu' : 'Income'}
@@ -430,7 +801,7 @@ export const ReportsScreen: React.FC = () => {
                                   style={{ width: `${Math.min(100, sub.percentageUsed)}%` }}
                                 />
                               </div>
-                            </div>
+                            </button>
                           ))}
                         </div>
                       )}
@@ -440,7 +811,18 @@ export const ReportsScreen: React.FC = () => {
               </div>
 
               {(monthlyReport.unassignedExpenses > 0 || monthlyReport.unassignedIncome > 0) && (
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300">
+                <button
+                  type="button"
+                  onClick={() =>
+                    drillDownToTransactions({
+                      dateFrom: monthDateFrom,
+                      dateTo: monthDateTo,
+                      categoryId: 'UNASSIGNED',
+                      budgetId: 'ALL'
+                    })
+                  }
+                  className="w-full pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300 hover:text-amber-200 transition cursor-pointer"
+                >
                   <span className="flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>
@@ -448,6 +830,7 @@ export const ReportsScreen: React.FC = () => {
                         ? 'Opérations non catégorisées sur la période'
                         : 'Unassigned transactions in period'}
                     </span>
+                    <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
                   </span>
                   <span className="font-mono tabular-nums font-semibold">
                     {monthlyReport.unassignedExpenses > 0 &&
@@ -456,7 +839,7 @@ export const ReportsScreen: React.FC = () => {
                     {monthlyReport.unassignedIncome > 0 &&
                       `+${monthlyReport.unassignedIncome.toLocaleString()} ${currency}`}
                   </span>
-                </div>
+                </button>
               )}
             </div>
 
@@ -604,7 +987,7 @@ export const ReportsScreen: React.FC = () => {
                   : `Annual Category & Sub-Category Breakdown (${selectedYear})`}
               </h3>
               <span className="text-[11px] text-slate-500">
-                {isFr ? 'Cliquer pour déplier' : 'Click to expand'}
+                {isFr ? 'Cliquer pour déplier ou filtrer' : 'Click to expand or drill down'}
               </span>
             </div>
 
@@ -617,69 +1000,110 @@ export const ReportsScreen: React.FC = () => {
                     key={cat.categoryId}
                     className="rounded-xl bg-slate-950/50 border border-slate-800/70 p-3 space-y-2"
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleYearlyCat(cat.categoryId)}
-                      className="w-full text-left space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between text-xs gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {cat.subCategories.length > 0 ? (
-                            isExpanded ? (
-                              <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleYearlyCat(cat.categoryId)}
+                        className="flex-1 min-w-0 text-left space-y-1.5 cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between text-xs gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {cat.subCategories.length > 0 ? (
+                              isExpanded ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              )
                             ) : (
-                              <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            )
-                          ) : (
-                            <span className="w-3.5 shrink-0" />
-                          )}
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: `#${cat.categoryColor.toString(16).slice(-6)}` }}
-                          />
-                          <span className="font-semibold text-slate-100 truncate">
-                            {cat.categoryName}
-                          </span>
-                          <span className="text-[11px] text-slate-500 shrink-0">
-                            ({cat.subCategories.length}{' '}
-                            {isFr ? 'sous-cat.' : 'sub-cat.'})
-                          </span>
+                              <span className="w-3.5 shrink-0" />
+                            )}
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: `#${cat.categoryColor.toString(16).slice(-6)}` }}
+                            />
+                            <span className="font-semibold text-slate-100 truncate">
+                              {cat.categoryName}
+                            </span>
+                            <span className="text-[11px] text-slate-500 shrink-0">
+                              ({cat.subCategories.length}{' '}
+                              {isFr ? 'sous-cat.' : 'sub-cat.'})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
+                            <span className="font-bold text-white">
+                              {cat.annualSpent.toLocaleString()} {currency}
+                            </span>
+                            <span className="text-slate-500">
+                              / {cat.annualBudget.toLocaleString()} {currency}
+                            </span>
+                            <span
+                              className={`font-semibold text-[11px] ${
+                                isOver ? 'text-rose-400' : 'text-teal-400'
+                              }`}
+                            >
+                              ({cat.percentageUsed}%)
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
-                          <span className="font-bold text-white">
-                            {cat.annualSpent.toLocaleString()} {currency}
-                          </span>
-                          <span className="text-slate-500">
-                            / {cat.annualBudget.toLocaleString()} {currency}
-                          </span>
-                          <span
-                            className={`font-semibold text-[11px] ${
-                              isOver ? 'text-rose-400' : 'text-teal-400'
-                            }`}
-                          >
-                            ({cat.percentageUsed}%)
-                          </span>
-                        </div>
-                      </div>
 
-                      <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${isOver ? 'bg-rose-500' : 'bg-teal-500'}`}
-                          style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
-                        />
-                      </div>
-                    </button>
+                        <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${isOver ? 'bg-rose-500' : 'bg-teal-500'}`}
+                            style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
+                          />
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          drillDownToTransactions({
+                            dateFrom: yearDateFrom,
+                            dateTo: yearDateTo,
+                            categoryId: cat.categoryId,
+                            budgetId: 'ALL'
+                          })
+                        }
+                        title={
+                          isFr
+                            ? 'Voir les opérations annuelles de cette catégorie'
+                            : 'View annual transactions for this category'
+                        }
+                        className="p-1 rounded-lg text-slate-400 hover:text-teal-300 hover:bg-slate-800/80 transition shrink-0 cursor-pointer"
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
                     {isExpanded && cat.subCategories.length > 0 && (
                       <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-800/60">
                         {cat.subCategories.map(sub => {
                           const subOver = sub.annualActual > sub.annualBudget && sub.annualBudget > 0;
                           return (
-                            <div
+                            <button
                               key={sub.budgetId}
-                              className="flex items-center justify-between text-[11px] gap-2"
+                              type="button"
+                              onClick={() =>
+                                drillDownToTransactions({
+                                  dateFrom: yearDateFrom,
+                                  dateTo: yearDateTo,
+                                  categoryId: cat.categoryId,
+                                  budgetId: sub.budgetId
+                                })
+                              }
+                              title={
+                                isFr
+                                  ? 'Voir les opérations annuelles de cette sous-catégorie'
+                                  : 'View annual transactions for this sub-category'
+                              }
+                              className="w-full flex items-center justify-between text-[11px] gap-2 rounded-lg px-2 py-1 -mx-2 hover:bg-slate-800/60 transition cursor-pointer group/sub"
                             >
-                              <span className="text-slate-300 truncate">{sub.title}</span>
+                              <span className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-slate-300 group-hover/sub:text-teal-300 transition truncate">
+                                  {sub.title}
+                                </span>
+                                <ArrowUpRight className="w-3 h-3 text-slate-600 group-hover/sub:text-teal-300 transition shrink-0" />
+                              </span>
                               <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
                                 <span className="font-semibold text-slate-200">
                                   {sub.annualActual.toLocaleString()} {currency}
@@ -691,7 +1115,7 @@ export const ReportsScreen: React.FC = () => {
                                   {sub.percentageUsed}%
                                 </span>
                               </div>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>
@@ -702,7 +1126,18 @@ export const ReportsScreen: React.FC = () => {
             </div>
 
             {yearlyReport.unassignedExpenses > 0 && (
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300">
+              <button
+                type="button"
+                onClick={() =>
+                  drillDownToTransactions({
+                    dateFrom: yearDateFrom,
+                    dateTo: yearDateTo,
+                    categoryId: 'UNASSIGNED',
+                    budgetId: 'ALL'
+                  })
+                }
+                className="w-full pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300 hover:text-amber-200 transition cursor-pointer"
+              >
                 <span className="flex items-center gap-1.5">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span>
@@ -710,11 +1145,12 @@ export const ReportsScreen: React.FC = () => {
                       ? 'Dépenses non catégorisées sur l’année'
                       : 'Unassigned expenses in year'}
                   </span>
+                  <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
                 </span>
                 <span className="font-mono tabular-nums font-semibold">
                   -{yearlyReport.unassignedExpenses.toLocaleString()} {currency}
                 </span>
-              </div>
+              </button>
             )}
           </div>
         </div>

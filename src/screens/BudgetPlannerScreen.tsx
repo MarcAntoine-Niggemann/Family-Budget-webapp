@@ -6,7 +6,8 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
-  PauseCircle
+  PauseCircle,
+  ArrowUpRight
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { CategoryIcon } from '../components/CategoryIcon';
@@ -32,7 +33,8 @@ export const BudgetPlannerScreen: React.FC = () => {
     deleteCategory,
     addBudget,
     updateBudget,
-    deleteBudget
+    deleteBudget,
+    drillDownToTransactions
   } = useBudget();
 
   const isFr = language === 'fr';
@@ -75,6 +77,10 @@ export const BudgetPlannerScreen: React.FC = () => {
   // Time bounds for selected month
   const startDate = new Date(selectedYear, selectedMonth, 1, 0, 0, 0, 0).getTime();
   const endDate = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59, 999).getTime();
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const monthDateFrom = `${selectedYear}-${pad2(selectedMonth + 1)}-01`;
+  const monthLastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+  const monthDateTo = `${selectedYear}-${pad2(selectedMonth + 1)}-${pad2(monthLastDay)}`;
 
   // Active transactions in selected month
   const monthTx = transactions.filter(
@@ -416,15 +422,36 @@ export const BudgetPlannerScreen: React.FC = () => {
             >
               {/* Category Wrapper Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    drillDownToTransactions({
+                      dateFrom: monthDateFrom,
+                      dateTo: monthDateTo,
+                      categoryId: cat.id,
+                      budgetId: 'ALL'
+                    })
+                  }
+                  title={
+                    isFr
+                      ? 'Voir les transactions de cette catégorie pour ce mois'
+                      : 'View transactions for this category in selected month'
+                  }
+                  className="flex items-center gap-3 text-left group/cat cursor-pointer min-w-0"
+                >
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
                     style={{ backgroundColor: `#${cat.color.toString(16).padStart(6, '0').slice(-6)}` }}
                   >
                     <CategoryIcon name={cat.icon || cat.name} className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-base text-white">{cat.name}</h3>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-bold text-base text-white group-hover/cat:text-teal-300 transition truncate">
+                        {cat.name}
+                      </h3>
+                      <ArrowUpRight className="w-3.5 h-3.5 text-slate-500 group-hover/cat:text-teal-300 transition shrink-0" />
+                    </div>
                     <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 tabular-nums">
                       {hasExpenseLines && (
                         <span>
@@ -455,7 +482,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                       )}
                     </div>
                   </div>
-                </div>
+                </button>
 
                 <div className="flex items-center gap-2 self-end sm:self-center">
                   {hasExpenseLines && catExpenseBudget > 0 && (
@@ -550,13 +577,29 @@ export const BudgetPlannerScreen: React.FC = () => {
                       return (
                         <div
                           key={b.id}
-                          className={`px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-900/50 transition ${
+                          onClick={() =>
+                            drillDownToTransactions({
+                              dateFrom: monthDateFrom,
+                              dateTo: monthDateTo,
+                              categoryId: cat.id,
+                              budgetId: b.id
+                            })
+                          }
+                          title={
+                            isFr
+                              ? 'Voir les transactions de cette sous-catégorie pour ce mois'
+                              : 'View transactions for this sub-category in selected month'
+                          }
+                          className={`px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-900/70 transition cursor-pointer group/sub ${
                             !b.isActive ? 'opacity-55' : ''
                           }`}
                         >
                           <div className="min-w-0 space-y-0.5">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-slate-100">{b.title}</span>
+                              <span className="font-semibold text-slate-100 group-hover/sub:text-teal-300 transition">
+                                {b.title}
+                              </span>
+                              <ArrowUpRight className="w-3 h-3 text-slate-600 group-hover/sub:text-teal-300 transition shrink-0" />
                               {!b.isActive && (
                                 <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-medium">
                                   <PauseCircle className="w-3 h-3" />
@@ -619,14 +662,20 @@ export const BudgetPlannerScreen: React.FC = () => {
 
                             <div className="flex items-center gap-1">
                               <button
-                                onClick={() => handleOpenBudgetModal(cat.id, b)}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  handleOpenBudgetModal(cat.id, b);
+                                }}
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
                                 title={isFr ? 'Modifier sous-catégorie' : 'Edit sub-category'}
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                               <button
-                                onClick={() => deleteBudget(b.id)}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  deleteBudget(b.id);
+                                }}
                                 className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
                                 title={isFr ? 'Supprimer sous-catégorie' : 'Delete sub-category'}
                               >

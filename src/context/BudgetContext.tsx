@@ -11,7 +11,8 @@ import {
   OpenBankingAccountDto,
   SyncOutboxEntity,
   SyncStateEntity,
-  TransactionEntity
+  TransactionEntity,
+  TransactionFilters
 } from '../types';
 import {
   CACHE_STORAGE_KEYS,
@@ -70,6 +71,16 @@ import {
 
 export type SessionMode = 'DEMO' | 'FIRESTORE' | null;
 
+export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
+  dateFrom: '',
+  dateTo: '',
+  categoryId: 'ALL',
+  budgetId: 'ALL',
+  searchTerm: '',
+  filterType: 'ALL',
+  filterStatus: 'ALL'
+};
+
 export interface VaultProtectionInput {
   biometricCredId?: string;
   prfSecret?: ArrayBuffer;
@@ -111,12 +122,16 @@ interface BudgetContextType {
   currency: string;
   currentScreen: AppScreen;
   activeAccountId: string | null;
+  transactionFilters: TransactionFilters;
   toastMessage: string | null;
 
   navigateTo: (screen: AppScreen) => void;
   setLanguage: (lang: 'fr' | 'en') => void;
   setCurrency: (cur: string) => void;
   setActiveAccountId: (id: string | null) => void;
+  setTransactionFilters: React.Dispatch<React.SetStateAction<TransactionFilters>>;
+  resetTransactionFilters: () => void;
+  drillDownToTransactions: (filter: Partial<TransactionFilters>) => void;
   showToast: (msg: string) => void;
   dismissToast: () => void;
 
@@ -219,6 +234,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('DASHBOARD');
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>(DEFAULT_TRANSACTION_FILTERS);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<AuthUserInfo | null>(null);
 
@@ -473,6 +489,18 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const resetTransactionFilters = () => {
+    setTransactionFilters(DEFAULT_TRANSACTION_FILTERS);
+  };
+
+  const drillDownToTransactions = (filter: Partial<TransactionFilters>) => {
+    setTransactionFilters({
+      ...DEFAULT_TRANSACTION_FILTERS,
+      ...filter
+    });
+    navigateTo('TRANSACTIONS');
+  };
+
   const setLanguage = (lang: 'fr' | 'en') => {
     setLangState(lang);
     saveLanguagePreference(lang);
@@ -495,6 +523,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSyncState(data.syncState);
     setOutbox([]);
     setActiveAccountId(null);
+    setTransactionFilters(DEFAULT_TRANSACTION_FILTERS);
     setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
     setSessionMode('DEMO');
     setCurrentScreen('DASHBOARD');
@@ -527,6 +556,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setMembers([]);
     setOutbox([]);
     setActiveAccountId(null);
+    setTransactionFilters(DEFAULT_TRANSACTION_FILTERS);
     setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
     setSyncState(getEmptySyncState());
     setConfig(getEmptyConfig(preservedByob));
@@ -2034,12 +2064,16 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         currency,
         currentScreen,
         activeAccountId,
+        transactionFilters,
         toastMessage,
 
         navigateTo,
         setLanguage,
         setCurrency,
         setActiveAccountId,
+        setTransactionFilters,
+        resetTransactionFilters,
+        drillDownToTransactions,
         showToast,
         dismissToast,
 

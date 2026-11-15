@@ -5,7 +5,12 @@ import {
   FamilyMemberEntity,
   TransactionEntity
 } from '../types';
-import { getBudgetAnnualAmount, getBudgetMonthlyAmount } from './budgetEngine';
+import {
+  getBudgetAnnualAmount,
+  getBudgetMonthlyAmount,
+  clampDayToMonth,
+  isBudgetScheduledInMonth
+} from './budgetEngine';
 
 export interface SubCategoryReportItem {
   budgetId: number;
@@ -41,6 +46,24 @@ export interface MemberSpendingItem {
   percentage: number;
 }
 
+export interface BurnDownEvent {
+  title: string;
+  amount: number; // negative for expense, positive for income
+  isExpense: boolean;
+}
+
+export interface BurnDownPoint {
+  day: number; // 0 = start of month, 1..daysInMonth = end of day d
+  idealExpense: number; // remaining expense budget (totalExpenseBudget -> 0)
+  actualExpense: number | null; // remaining expense budget (totalExpenseBudget - cumulSpend), null for future days
+  idealNet: number; // cumulative planned net (income - expense), starting at 0
+  actualNet: number | null; // cumulative actual net (income - expense), null for future days
+  scheduledEvents: BurnDownEvent[];
+  // Compatibility aliases (expense burn-down)
+  ideal: number;
+  actual: number | null;
+}
+
 export interface MonthlyReportResult {
   monthIndex: number; // 0..11
   year: number;
@@ -56,7 +79,7 @@ export interface MonthlyReportResult {
   savingsRate: number; // (Savings / Income) * 100
   categories: CategoryReportItem[];
   members: MemberSpendingItem[];
-  burnDownPoints: { day: number; ideal: number; actual: number }[];
+  burnDownPoints: BurnDownPoint[];
 }
 
 export interface YearlySubCategoryItem {
@@ -141,8 +164,13 @@ export function computeMonthlyReport(
   const startDate = new Date(year, monthIndex, 1, 0, 0, 0, 0).getTime();
   const endDate = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999).getTime();
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const currentDay = new Date().getDate();
-  const isCurrentMonth = new Date().getFullYear() === year && new Date().getMonth() === monthIndex;
+
+  const now = new Date();
+  const nowYear = now.getFullYear();
+  const nowMonth = now.getMonth();
+  const currentDay = now.getDate();
+  const isPastMonth = year < nowYear || (year === nowYear && monthIndex < nowMonth);
+  const isCurrentMonth = year === nowYear && monthIndex === nowMonth;
 
   const monthTx = transactions.filter(
     tx => !tx.isDeleted && !tx.isExcluded && !tx.isSplitParent && tx.date >= startDate && tx.date <= endDate
@@ -252,24 +280,106 @@ export function computeMonthlyReport(
     };
   });
 
-  // Burn down curve calculation
-  const burnDownPoints: { day: number; ideal: number; actual: number }[] = [];
-  let cumulativeSpend = 0;
-  const maxDayTracked = isCurrentMonth ? currentDay : daysInMonth;
+  // Schedule-aware true burn-down & net cashflow curve calculation
+  const idealExpenseByDay = new Array<number>(daysInMonth + 1).fill(0);
+  const idealIncomeByDay = new Array<number>(daysInMonth + 1).fill(0);
+  const scheduledEventsByDay: BurnDownEvent[][] = Array.from({ length: daysInMonth + 1 }, () => []);
+
+  for (const b of budgets) {
+    if (b.isDeleted || !b.isActive || !activeCategoryIds.has(b.categoryId)) continue;
+    const monthlyAmt = getBudgetMonthlyAmount(b, year, month1to12);
+    if (monthlyAmt <= 0) continue;
+
+    if (isBudgetScheduledInMonth(b, year, month1to12) && b.day != null) {
+      const effDay = clampDayToMonth(b.day, year, month1to12);
+      if (b.isExpense) {
+        idealExpenseByDay[effDay] += monthlyAmt;
+      } else {
+        idealIncomeByDay[effDay] += monthlyAmt;
+      }
+      scheduledEventsByDay[effDay].push({
+        title: b.title || b.categoryName,
+        amount: b.isExpense ? -Math.round(monthlyAmt * 100) / 100 : Math.round(monthlyAmt * 100) / 100,
+        isExpense: b.isExpense
+      });
+    } else {
+      const dailyAmt = monthlyAmt / daysInMonth;
+      for (let d = 1; d <= daysInMonth; d++) {
+        if (b.isExpense) {
+          idealExpenseByDay[d] += dailyAmt;
+        } else {
+          idealIncomeByDay[d] += dailyAmt;
+        }
+      }
+    }
+  }
+
+  const actualExpenseByDay = new Array<number>(daysInMonth + 1).fill(0);
+  const actualIncomeByDay = new Array<number>(daysInMonth + 1).fill(0);
+  for (const tx of expenseTx) {
+    const d = new Date(tx.date).getDate();
+    if (d >= 1 && d <= daysInMonth) {
+      actualExpenseByDay[d] += Math.abs(tx.amount);
+    }
+  }
+  for (const tx of incomeTx) {
+    const d = new Date(tx.date).getDate();
+    if (d >= 1 && d <= daysInMonth) {
+      actualIncomeByDay[d] += Math.abs(tx.amount);
+    }
+  }
+
+  const maxDayTracked = isPastMonth ? daysInMonth : isCurrentMonth ? currentDay : 0;
+  const roundedTotalExpenseBudget = Math.round(totalExpenseBudget * 100) / 100;
+
+  const burnDownPoints: BurnDownPoint[] = [
+    {
+      day: 0,
+      idealExpense: roundedTotalExpenseBudget,
+      actualExpense: maxDayTracked >= 1 ? roundedTotalExpenseBudget : null,
+      idealNet: 0,
+      actualNet: maxDayTracked >= 1 ? 0 : null,
+      scheduledEvents: [],
+      ideal: roundedTotalExpenseBudget,
+      actual: maxDayTracked >= 1 ? roundedTotalExpenseBudget : null
+    }
+  ];
+
+  let cumIdealExp = 0;
+  let cumIdealInc = 0;
+  let cumActualExp = 0;
+  let cumActualInc = 0;
 
   for (let d = 1; d <= daysInMonth; d++) {
-    const ideal = Math.round(((totalExpenseBudget / daysInMonth) * d) * 100) / 100;
-    if (d <= maxDayTracked) {
-      const dayTx = expenseTx.filter(tx => {
-        const txDate = new Date(tx.date);
-        return txDate.getDate() === d;
-      });
-      const daySpent = dayTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-      cumulativeSpend += daySpent;
-      burnDownPoints.push({ day: d, ideal, actual: Math.round(cumulativeSpend * 100) / 100 });
-    } else {
-      burnDownPoints.push({ day: d, ideal, actual: 0 });
+    cumIdealExp += idealExpenseByDay[d];
+    cumIdealInc += idealIncomeByDay[d];
+
+    let idealExpense = Math.round((totalExpenseBudget - cumIdealExp) * 100) / 100;
+    if (d === daysInMonth && Math.abs(idealExpense) < 0.05) {
+      idealExpense = 0;
     }
+    const idealNet = Math.round((cumIdealInc - cumIdealExp) * 100) / 100;
+
+    let actualExpense: number | null = null;
+    let actualNet: number | null = null;
+
+    if (d <= maxDayTracked) {
+      cumActualExp += actualExpenseByDay[d];
+      cumActualInc += actualIncomeByDay[d];
+      actualExpense = Math.round((totalExpenseBudget - cumActualExp) * 100) / 100;
+      actualNet = Math.round((cumActualInc - cumActualExp) * 100) / 100;
+    }
+
+    burnDownPoints.push({
+      day: d,
+      idealExpense,
+      actualExpense,
+      idealNet,
+      actualNet,
+      scheduledEvents: scheduledEventsByDay[d],
+      ideal: idealExpense,
+      actual: actualExpense
+    });
   }
 
   const netSavings = Math.round((totalActualIncome - totalActualExpenses) * 100) / 100;
@@ -286,7 +396,7 @@ export function computeMonthlyReport(
     monthIndex,
     year,
     monthName,
-    totalExpenseBudget: Math.round(totalExpenseBudget * 100) / 100,
+    totalExpenseBudget: roundedTotalExpenseBudget,
     totalActualExpenses: Math.round(totalActualExpenses * 100) / 100,
     totalIncomeBudget: Math.round(totalIncomeBudget * 100) / 100,
     totalActualIncome: Math.round(totalActualIncome * 100) / 100,

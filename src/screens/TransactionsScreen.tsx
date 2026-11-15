@@ -1,21 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   Search,
-  Filter,
   Plus,
-  ArrowDownRight,
-  ArrowUpRight,
-  ArrowRightLeft,
   Calendar,
-  Wallet,
-  Tag,
-  CheckCircle2,
-  Clock,
-  Sparkles,
+  HelpCircle,
+  AlertCircle,
   Split,
   EyeOff,
-  HelpCircle,
-  AlertCircle
+  RotateCcw
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { CategoryIcon } from '../components/CategoryIcon';
@@ -27,6 +19,20 @@ interface TransactionsScreenProps {
   onOpenSplit: (tx: TransactionEntity) => void;
 }
 
+const parseLocalStartOfDay = (ymd: string): number | null => {
+  if (!ymd) return null;
+  const parts = ymd.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  return new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0).getTime();
+};
+
+const parseLocalEndOfDay = (ymd: string): number | null => {
+  if (!ymd) return null;
+  const parts = ymd.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  return new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999).getTime();
+};
+
 export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   onOpenAddTx,
   onSelectTransaction,
@@ -36,8 +42,12 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
     transactions,
     accounts,
     categories,
+    budgets,
     activeAccountId,
     setActiveAccountId,
+    transactionFilters,
+    setTransactionFilters,
+    resetTransactionFilters,
     language,
     currency,
     updateTransaction
@@ -45,14 +55,28 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
   const isFr = language === 'fr';
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCatId, setSelectedCatId] = useState<number | 'ALL' | 'UNASSIGNED'>('ALL');
-  const [filterType, setFilterType] = useState<'ALL' | 'EXPENSE' | 'INCOME' | 'TRANSFER'>('ALL');
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'RECONCILED' | 'VERIFIED'>('ALL');
+  const {
+    dateFrom,
+    dateTo,
+    categoryId: selectedCatId,
+    budgetId: selectedBudgetId,
+    searchTerm,
+    filterType,
+    filterStatus
+  } = transactionFilters;
 
   const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
   const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
+  const activeBudgets = useMemo(() => budgets.filter(b => !b.isDeleted), [budgets]);
   const activeCategoryIds = useMemo(() => new Set(activeCategories.map(c => c.id)), [activeCategories]);
+
+  const subCategoryOptions = useMemo(() => {
+    if (selectedCatId === 'UNASSIGNED') return [];
+    if (typeof selectedCatId === 'number') {
+      return activeBudgets.filter(b => b.categoryId === selectedCatId);
+    }
+    return activeBudgets;
+  }, [activeBudgets, selectedCatId]);
 
   const activeTransactions = useMemo(
     () => transactions.filter(tx => !tx.isDeleted),
@@ -67,10 +91,28 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
     [activeTransactions, activeCategoryIds]
   );
 
+  const isAnyFilterActive = Boolean(
+    dateFrom ||
+      dateTo ||
+      selectedCatId !== 'ALL' ||
+      selectedBudgetId !== 'ALL' ||
+      searchTerm.trim() ||
+      filterType !== 'ALL' ||
+      filterStatus !== 'ALL' ||
+      activeAccountId
+  );
+
   const filteredTransactions = useMemo(() => {
+    const fromMs = parseLocalStartOfDay(dateFrom);
+    const toMs = parseLocalEndOfDay(dateTo);
+
     return activeTransactions.filter(tx => {
       // Account filter
       if (activeAccountId && tx.accountId !== activeAccountId) return false;
+
+      // Date range filter (From / To)
+      if (fromMs !== null && tx.date < fromMs) return false;
+      if (toMs !== null && tx.date > toMs) return false;
 
       // Category / Unassigned filter
       const isTxUnassigned =
@@ -78,6 +120,11 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       if (selectedCatId === 'UNASSIGNED') {
         if (!isTxUnassigned) return false;
       } else if (selectedCatId !== 'ALL' && tx.categoryId !== selectedCatId) {
+        return false;
+      }
+
+      // Sub-category filter
+      if (selectedBudgetId !== 'ALL' && tx.budgetId !== selectedBudgetId) {
         return false;
       }
 
@@ -115,8 +162,11 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   }, [
     activeTransactions,
     activeAccountId,
+    dateFrom,
+    dateTo,
     activeCategoryIds,
     selectedCatId,
+    selectedBudgetId,
     filterType,
     filterStatus,
     searchTerm
@@ -134,6 +184,11 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       ...tx,
       isExcluded: !tx.isExcluded
     });
+  };
+
+  const handleResetAllFilters = () => {
+    resetTransactionFilters();
+    setActiveAccountId(null);
   };
 
   return (
@@ -164,9 +219,13 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                 <button
                   type="button"
                   onClick={() =>
-                    setSelectedCatId(selectedCatId === 'UNASSIGNED' ? 'ALL' : 'UNASSIGNED')
+                    setTransactionFilters(prev => ({
+                      ...prev,
+                      categoryId: prev.categoryId === 'UNASSIGNED' ? 'ALL' : 'UNASSIGNED',
+                      budgetId: 'ALL'
+                    }))
                   }
-                  className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 font-semibold transition"
+                  className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 font-semibold transition cursor-pointer"
                 >
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span className="tabular-nums">
@@ -182,7 +241,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
         <button
           onClick={onOpenAddTx}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>{isFr ? 'Nouvelle Transaction' : 'New Transaction'}</span>
@@ -191,40 +250,70 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
       {/* Filter & Search Bar */}
       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-lg">
-        {/* Search Input */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder={
-              isFr
-                ? 'Rechercher un commerçant, sous-catégorie, libellé, note...'
-                : 'Search merchant, sub-category, bank label, notes...'
-            }
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 transition"
-          />
+        {/* Search Input + Reset button */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder={
+                isFr
+                  ? 'Rechercher un commerçant, sous-catégorie, libellé, note...'
+                  : 'Search merchant, sub-category, bank label, notes...'
+              }
+              value={searchTerm}
+              onChange={e =>
+                setTransactionFilters(prev => ({ ...prev, searchTerm: e.target.value }))
+              }
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 transition"
+            />
+          </div>
+
+          {isAnyFilterActive && (
+            <button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-teal-400" />
+              <span>{isFr ? 'Réinitialiser' : 'Reset filters'}</span>
+            </button>
+          )}
         </div>
 
-        {/* Filter Controls Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-          {/* Account Filter */}
-          <div>
-            <select
-              aria-label="Filter transactions by account"
-              value={activeAccountId || 'ALL'}
-              onChange={e => setActiveAccountId(e.target.value === 'ALL' ? null : e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
-            >
-              <option value="ALL">{isFr ? 'Tous les comptes' : 'All Accounts'}</option>
-              {activeAccounts.map(acc => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Date Range + Category + Sub-category Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+          {/* Date From */}
+          <label className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 focus-within:border-teal-500 transition">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="text-slate-400 shrink-0">{isFr ? 'Du' : 'From'}</span>
+            <input
+              type="date"
+              aria-label={isFr ? 'Date de début' : 'From date'}
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={e =>
+                setTransactionFilters(prev => ({ ...prev, dateFrom: e.target.value }))
+              }
+              className="w-full bg-transparent text-slate-200 focus:outline-none [color-scheme:dark]"
+            />
+          </label>
+
+          {/* Date To */}
+          <label className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 focus-within:border-teal-500 transition">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="text-slate-400 shrink-0">{isFr ? 'Au' : 'To'}</span>
+            <input
+              type="date"
+              aria-label={isFr ? 'Date de fin' : 'To date'}
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e =>
+                setTransactionFilters(prev => ({ ...prev, dateTo: e.target.value }))
+              }
+              className="w-full bg-transparent text-slate-200 focus:outline-none [color-scheme:dark]"
+            />
+          </label>
 
           {/* Category Filter */}
           <div>
@@ -233,9 +322,25 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               value={selectedCatId}
               onChange={e => {
                 const val = e.target.value;
-                setSelectedCatId(
-                  val === 'ALL' || val === 'UNASSIGNED' ? val : parseInt(val, 10)
-                );
+                if (val === 'ALL' || val === 'UNASSIGNED') {
+                  setTransactionFilters(prev => ({
+                    ...prev,
+                    categoryId: val,
+                    budgetId: val === 'UNASSIGNED' ? 'ALL' : prev.budgetId
+                  }));
+                } else {
+                  const nextCatId = parseInt(val, 10);
+                  setTransactionFilters(prev => {
+                    const currentBudgetValid =
+                      prev.budgetId === 'ALL' ||
+                      activeBudgets.some(b => b.id === prev.budgetId && b.categoryId === nextCatId);
+                    return {
+                      ...prev,
+                      categoryId: nextCatId,
+                      budgetId: currentBudgetValid ? prev.budgetId : 'ALL'
+                    };
+                  });
+                }
               }}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
             >
@@ -253,12 +358,69 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             </select>
           </div>
 
+          {/* Sub-Category Filter */}
+          <div>
+            <select
+              aria-label="Filter transactions by sub-category"
+              value={selectedBudgetId}
+              disabled={selectedCatId === 'UNASSIGNED'}
+              onChange={e => {
+                const val = e.target.value;
+                if (val === 'ALL') {
+                  setTransactionFilters(prev => ({ ...prev, budgetId: 'ALL' }));
+                } else {
+                  const nextBudgetId = parseInt(val, 10);
+                  const matchedBudget = activeBudgets.find(b => b.id === nextBudgetId);
+                  setTransactionFilters(prev => ({
+                    ...prev,
+                    budgetId: nextBudgetId,
+                    categoryId: matchedBudget ? matchedBudget.categoryId : prev.categoryId
+                  }));
+                }
+              }}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+            >
+              <option value="ALL">
+                {isFr ? 'Toutes sous-catégories' : 'All Sub-categories'}
+              </option>
+              {subCategoryOptions.map(b => (
+                <option key={b.id} value={b.id}>
+                  {selectedCatId === 'ALL' && b.categoryName
+                    ? `${b.categoryName} › ${b.title}`
+                    : b.title}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Account, Flow Direction, Status Controls Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+          {/* Account Filter */}
+          <div>
+            <select
+              aria-label="Filter transactions by account"
+              value={activeAccountId || 'ALL'}
+              onChange={e => setActiveAccountId(e.target.value === 'ALL' ? null : e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
+            >
+              <option value="ALL">{isFr ? 'Tous les comptes' : 'All Accounts'}</option>
+              {activeAccounts.map(acc => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Flow Direction */}
           <div>
             <select
               aria-label="Filter transactions by flow direction"
               value={filterType}
-              onChange={e => setFilterType(e.target.value as any)}
+              onChange={e =>
+                setTransactionFilters(prev => ({ ...prev, filterType: e.target.value as any }))
+              }
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Tous les flux' : 'All Types'}</option>
@@ -273,7 +435,9 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             <select
               aria-label="Filter transactions by status"
               value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value as any)}
+              onChange={e =>
+                setTransactionFilters(prev => ({ ...prev, filterStatus: e.target.value as any }))
+              }
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Tous les statuts' : 'All Statuses'}</option>

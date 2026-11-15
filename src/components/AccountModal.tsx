@@ -487,12 +487,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
             <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950/70 border border-slate-800 cursor-pointer">
               <div>
                 <span className="text-xs font-semibold text-white block">
-                  {isFr ? 'Inclure dans la trésorerie prévisionnelle' : 'Include in Liquid Cash Flow Forecast'}
+                  {isFr ? 'Inclure dans la trésorerie prévisionnelle' : 'Include in Cash Flow Forecast'}
                 </span>
                 <span className="text-[11px] text-slate-400">
                   {isFr
-                    ? 'Intègre ce solde dans le calcul « Dépensable sans risque »'
-                    : 'Includes this balance in Safe-to-Spend & forecast curves'}
+                    ? 'Intègre ce compte dans la courbe et le minimum prévisionnel'
+                    : 'Includes this account in the cash flow curve and projected minimum'}
                 </span>
               </div>
               <input

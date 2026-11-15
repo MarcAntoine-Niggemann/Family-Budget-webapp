@@ -71,52 +71,22 @@ val yearTransactions = transactions.filter { it.date in startTime..endTime }
 ## 📈 3. Cash Flow Forecast & Projected Balance Graph
 
 ### 🎯 Functional Purpose
-Projects future bank account balances day-by-day over selectable time horizons to predict cash dips (*"Creux de trésorerie"*) and inform users how much money is **Safe to Spend Now** without risking overdrafts on upcoming bills.
-
-### 🖥️ Horizon Selectors
-Users can toggle between three forecast horizons:
-1. **Current Month**: Day-by-day projection from current date to the end of the current month.
-2. **Next 3 Months**: 90-day macro cash flow projection.
-3. **End of Year**: Long-term annual balance projection through December 31st.
-
----
+Projects future liquidity day-by-day over selectable time horizons (30, 60, or 90 days) across all accounts marked `includeInLiquidForecast = true`, factoring every budget's active month/year window, scheduled due dates, and spread daily rates to report the **Minimum Projected Balance** over the selected horizon.
 
 ### 🧮 Cash Flow Forecasting Algorithm (`computeCashFlowForecast`)
 
-#### Step A: Calculate Variable Budget & Fixed Bills
-1. **Upcoming Expected Total ($F_{upcoming}$)**:
-   Sum of active subscription / recurring bill entities (`expected_spends`) that have **not yet** been matched with an actual expense transaction in the current month:
-   $$F_{upcoming} = \sum_{s \in ExpectedSpends, s.isActive, !s.isPaidThisPeriod} |amount_s|$$
+1. **Starting Balance ($Bal_0$)**:
+   Sum of `currentBalance` across all active, non-deleted accounts where `includeInLiquidForecast = true`. If a deferred credit card is excluded (`includeInLiquidForecast = false`) and has a negative balance linked to an included account, its existing balance settles once on its next `settlementDay`. If the card is already included (`includeInLiquidForecast = true`), its negative balance is already reflected in $Bal_0$ and settlements are neutral internal transfers.
+2. **Current-Month Scheduled Items (De-duplicated)**:
+   For scheduled budgets (`MONTHLY` with `day`, `YEARLY` with `month` + `day`, or `ONCE`) triggering on or after today in the current month, already-recorded matching transactions are subtracted so only the unpaid/unreceived remainder triggers on the due date.
+3. **Spread (Non-Dated) Expense & Income Budgets**:
+   - Current month remaining spread expenses/income are prorated evenly across the remaining days after today (`daysInMonth - currentDay`).
+   - Subsequent months apply full monthly/yearly scheduled items on their due days and spread budgets evenly across each month's calendar days.
+4. **Minimum Projected Balance**:
+   Reports $\min(Bal_d)$ and its exact date across the requested horizon without a separate Safe-to-Spend calculation.
 
-2. **Variable Monthly Budget ($B_{variable}$)**:
-   Total monthly category budget minus fixed recurring costs:
-   $$B_{variable} = \max\left(0.0, B_{total} - \sum_{s \in ExpectedSpends} |amount_s|\right)$$
-
-3. **Variable Spent So Far ($E_{variable}$)**:
-   Sum of expense transactions that are not recurring bills:
-   $$E_{variable} = \sum_{tx \in T_{month}, tx.isExpense, tx \notin ExpectedSpends} |amount_{tx}|$$
-
-4. **Remaining Variable Budget ($R_{variable}$)**:
-   $$R_{variable} = \max\left(0.0, B_{variable} - E_{variable}\right)$$
-
-5. **Daily Variable Burn Rate ($R_{daily}$)**:
-   Spreads remaining variable allowance evenly across remaining days in the month:
-   $$R_{daily} = \frac{R_{variable}}{\max(1, DaysInMonth - CurrentDay)}$$
-
-6. **Safe To Spend Now ($S_{safe}$)**:
-   Liquid balance available immediately after reserving funds for all upcoming expected bills and remaining variable day-to-day spending:
-   $$S_{safe} = BankBalance - F_{upcoming} - R_{variable}$$
-
----
-
-#### Step B: Day-by-Day Timeline Simulation
-Starting with current bank balance $Bal_0 = BankBalance$, for each day $d$ from $CurrentDay$ to $MaxDay$:
-
-$$Bal_d = Bal_{d-1} - \sum_{events \in d} amount_{event} - \begin{cases} R_{daily} & \text{if } d > CurrentDay \\ 0 & \text{if } d = CurrentDay \end{cases}$$
-
-* Tracks **Lowest Projected Balance Dip** ($\min(Bal_d)$) and marks the exact date when the dip occurs.
-* If $\min(Bal_d) < 500 €$, an amber warning banner is displayed.
-* If $\min(Bal_d) < 0 €$, a red overdraft alert banner is displayed.
+* If $\min(Bal_d) < 500$, an amber low-buffer warning banner is displayed.
+* If $\min(Bal_d) < 0$, a red negative-balance warning banner is displayed.
 
 ---
 

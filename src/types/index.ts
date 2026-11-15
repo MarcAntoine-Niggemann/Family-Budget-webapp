@@ -226,3 +226,13 @@ export interface OpenBankingTransactionDto {
   currency: string;
 }
 
+export interface TransactionFilters {
+  dateFrom: string; // YYYY-MM-DD or ''
+  dateTo: string; // YYYY-MM-DD or ''
+  categoryId: number | 'ALL' | 'UNASSIGNED';
+  budgetId: number | 'ALL';
+  searchTerm: string;
+  filterType: 'ALL' | 'EXPENSE' | 'INCOME' | 'TRANSFER';
+  filterStatus: 'ALL' | 'PENDING' | 'RECONCILED' | 'VERIFIED';
+}
+
