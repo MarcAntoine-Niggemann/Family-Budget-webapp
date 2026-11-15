@@ -32,6 +32,11 @@ export interface CashFlowPoint {
 export interface CashFlowForecastResult {
   currentTotalBalance: number;
   accountCount: number;
+  startDateMillis: number;
+  endDateMillis: number;
+  totalDays: number;
+  isCustomRange: boolean;
+  isCustomStartDate: boolean;
   upcomingBillsTotal: number;
   upcomingIncomeTotal: number;
   variableMonthlyBudget: number;
@@ -43,6 +48,14 @@ export interface CashFlowForecastResult {
   hasOverdraftRisk: boolean; // lowest < 0
   hasBufferWarning: boolean; // lowest >= 0 && lowest < 500
   timeline: CashFlowPoint[];
+}
+
+export interface CashFlowForecastOptions {
+  horizonDays?: number;
+  startDate?: Date;
+  endDate?: Date;
+  startingBalanceOverride?: number | null;
+  locale?: 'fr' | 'en';
 }
 
 function computeMonthSpreadBudget(
@@ -65,57 +78,106 @@ function computeMonthSpreadBudget(
   return Math.max(0, spreadTotal);
 }
 
+const MAX_FORECAST_DAYS = 1826; // Cap at 5 years to prevent runaway loops
+
 export function computeCashFlowForecast(
   accounts: AccountEntity[],
   transactions: TransactionEntity[],
   budgets: CategoryBudgetEntity[],
-  horizonDays: number = 30,
-  locale: 'fr' | 'en' = 'fr'
+  horizonOrOptions: number | CashFlowForecastOptions = 30,
+  localeArg: 'fr' | 'en' = 'fr'
 ): CashFlowForecastResult {
-  // 1. Starting balance from all active accounts marked includeInLiquidForecast = true
-  const includedAccounts = accounts.filter(a => !a.isDeleted && a.includeInLiquidForecast);
-  const includedAccountIds = new Set(includedAccounts.map(a => a.id));
-  const currentTotalBalance = includedAccounts.reduce((acc, a) => acc + (a.currentBalance || 0), 0);
+  const options: CashFlowForecastOptions =
+    typeof horizonOrOptions === 'number'
+      ? { horizonDays: horizonOrOptions, locale: localeArg }
+      : horizonOrOptions;
 
-  // Deferred cards that are NOT directly included in the forecast starting balance still settle
-  // their current negative balance ONCE on their next settlement day against a linked/included account.
-  const excludedDeferredCards = accounts.filter(
-    a =>
-      !a.isDeleted &&
-      !a.includeInLiquidForecast &&
-      a.type === 'DEFERRED_CARD' &&
-      a.currentBalance < 0 &&
-      a.settlementDay != null &&
-      a.settlementDay >= 1 &&
-      (!a.linkedCheckingAccountId || includedAccountIds.has(a.linkedCheckingAccountId))
-  );
-  const settledCardIds = new Set<string>();
+  const locale = options.locale ?? localeArg ?? 'fr';
 
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0..11
-  const currentMonth1 = currentMonth + 1; // 1..12
-  const currentDay = now.getDate();
+  const todayYear = now.getFullYear();
+  const todayMonth = now.getMonth();
+  const todayDay = now.getDate();
+  const todayMidnight = new Date(todayYear, todayMonth, todayDay);
 
-  const daysInCurrentMonth = getDaysInMonth(currentYear, currentMonth1);
-  // Remaining days AFTER today in the current month (since i = 0 represents today's starting/end-of-day balance)
-  const daysAfterToday = Math.max(0, daysInCurrentMonth - currentDay);
+  const startRef = options.startDate
+    ? new Date(options.startDate.getFullYear(), options.startDate.getMonth(), options.startDate.getDate())
+    : todayMidnight;
 
-  const startOfMonthMillis = new Date(currentYear, currentMonth, 1, 0, 0, 0, 0).getTime();
-  const endOfMonthMillis = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999).getTime();
+  const startYear = startRef.getFullYear();
+  const startMonth = startRef.getMonth(); // 0..11
+  const startMonth1 = startMonth + 1; // 1..12
+  const startDay = startRef.getDate();
 
-  const currentMonthTx = transactions.filter(
-    tx =>
-      !tx.isDeleted &&
-      !tx.isExcluded &&
-      !tx.isSplitParent &&
-      tx.date >= startOfMonthMillis &&
-      tx.date <= endOfMonthMillis
-  );
+  const isCustomStartDate =
+    startYear !== todayYear || startMonth !== todayMonth || startDay !== todayDay;
+
+  let simDays: number;
+  if (options.endDate) {
+    const endRef = new Date(
+      options.endDate.getFullYear(),
+      options.endDate.getMonth(),
+      options.endDate.getDate()
+    );
+    const diffDays = Math.round((endRef.getTime() - startRef.getTime()) / 86_400_000) + 1;
+    simDays = Math.max(1, Math.min(MAX_FORECAST_DAYS, diffDays));
+  } else {
+    simDays = Math.max(1, Math.min(MAX_FORECAST_DAYS, options.horizonDays ?? 30));
+  }
+
+  const endRef = new Date(startYear, startMonth, startDay + simDays - 1);
+
+  // 1. Starting balance: use override if provided, otherwise sum active accounts with includeInLiquidForecast = true
+  const includedAccounts = accounts.filter(a => !a.isDeleted && a.includeInLiquidForecast);
+  const includedAccountIds = new Set(includedAccounts.map(a => a.id));
+  const includedAccountsBalance = includedAccounts.reduce((acc, a) => acc + (a.currentBalance || 0), 0);
+
+  const hasStartingOverride =
+    options.startingBalanceOverride !== undefined &&
+    options.startingBalanceOverride !== null &&
+    Number.isFinite(options.startingBalanceOverride);
+
+  const currentTotalBalance = hasStartingOverride
+    ? (options.startingBalanceOverride as number)
+    : includedAccountsBalance;
+
+  // Deferred cards that are NOT directly included in the forecast starting balance still settle
+  // their current negative balance ONCE on their next settlement day when forecasting from today.
+  const excludedDeferredCards = !isCustomStartDate
+    ? accounts.filter(
+        a =>
+          !a.isDeleted &&
+          !a.includeInLiquidForecast &&
+          a.type === 'DEFERRED_CARD' &&
+          a.currentBalance < 0 &&
+          a.settlementDay != null &&
+          a.settlementDay >= 1 &&
+          (!a.linkedCheckingAccountId || includedAccountIds.has(a.linkedCheckingAccountId))
+      )
+    : [];
+  const settledCardIds = new Set<string>();
+
+  const daysInStartMonth = getDaysInMonth(startYear, startMonth1);
+  // Remaining days AFTER startDay in the starting month (when starting from today)
+  const daysAfterToday = Math.max(0, daysInStartMonth - startDay);
+
+  const startOfTodayMonthMillis = new Date(todayYear, todayMonth, 1, 0, 0, 0, 0).getTime();
+  const endOfTodayMonthMillis = new Date(todayYear, todayMonth + 1, 0, 23, 59, 59, 999).getTime();
+
+  const currentMonthTx = !isCustomStartDate
+    ? transactions.filter(
+        tx =>
+          !tx.isDeleted &&
+          !tx.isExcluded &&
+          !tx.isSplitParent &&
+          tx.date >= startOfTodayMonthMillis &&
+          tx.date <= endOfTodayMonthMillis
+      )
+    : [];
 
   const activeBudgets = budgets.filter(b => !b.isDeleted && b.isActive);
 
-  // Track already-booked transactions per scheduled budget ID in the current month to avoid double-counting
+  // Track already-booked transactions per scheduled budget ID in the current month (only when starting from today)
   const actualExpenseByBudgetId = new Map<number, number>();
   const actualIncomeByBudgetId = new Map<number, number>();
   for (const tx of currentMonthTx) {
@@ -129,51 +191,62 @@ export function computeCashFlowForecast(
     }
   }
 
-  const scheduledExpenseIdsInCurrentMonth = new Set(
+  const scheduledExpenseIdsInStartMonth = new Set(
     activeBudgets
-      .filter(b => b.isExpense && isBudgetScheduledInMonth(b, currentYear, currentMonth1))
+      .filter(b => b.isExpense && isBudgetScheduledInMonth(b, startYear, startMonth1))
       .map(b => b.id)
   );
-  const scheduledIncomeIdsInCurrentMonth = new Set(
+  const scheduledIncomeIdsInStartMonth = new Set(
     activeBudgets
-      .filter(b => !b.isExpense && isBudgetScheduledInMonth(b, currentYear, currentMonth1))
+      .filter(b => !b.isExpense && isBudgetScheduledInMonth(b, startYear, startMonth1))
       .map(b => b.id)
   );
 
-  // Current month spread (non-fixed-day) expense budget & remaining allowance
-  const variableMonthlyBudget = computeMonthSpreadBudget(activeBudgets, currentYear, currentMonth1, true);
-  const variableSpentSoFar = currentMonthTx
-    .filter(
-      tx =>
-        tx.isExpense &&
-        !tx.isInternalTransfer &&
-        tx.transferType !== 'CARD_SETTLEMENT' &&
-        !scheduledExpenseIdsInCurrentMonth.has(tx.budgetId)
-    )
-    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  // Spread (non-fixed-day) expense & income budgets for the starting month
+  const variableMonthlyBudget = computeMonthSpreadBudget(activeBudgets, startYear, startMonth1, true);
+  const variableSpentSoFar = !isCustomStartDate
+    ? currentMonthTx
+        .filter(
+          tx =>
+            tx.isExpense &&
+            !tx.isInternalTransfer &&
+            tx.transferType !== 'CARD_SETTLEMENT' &&
+            !scheduledExpenseIdsInStartMonth.has(tx.budgetId)
+        )
+        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+    : 0;
 
   const remainingVariableBudget = Math.max(0, variableMonthlyBudget - variableSpentSoFar);
-  const dailyBurnRate = daysAfterToday > 0 ? remainingVariableBudget / daysAfterToday : 0;
+  const dailyBurnRate = !isCustomStartDate
+    ? daysAfterToday > 0
+      ? remainingVariableBudget / daysAfterToday
+      : 0
+    : variableMonthlyBudget / daysInStartMonth;
 
-  // Current month spread (non-fixed-day) income budget & remaining expected spread income
-  const spreadIncomeMonthlyBudget = computeMonthSpreadBudget(activeBudgets, currentYear, currentMonth1, false);
-  const spreadIncomeReceivedSoFar = currentMonthTx
-    .filter(
-      tx =>
-        !tx.isExpense &&
-        !tx.isInternalTransfer &&
-        !scheduledIncomeIdsInCurrentMonth.has(tx.budgetId)
-    )
-    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const spreadIncomeMonthlyBudget = computeMonthSpreadBudget(activeBudgets, startYear, startMonth1, false);
+  const spreadIncomeReceivedSoFar = !isCustomStartDate
+    ? currentMonthTx
+        .filter(
+          tx =>
+            !tx.isExpense &&
+            !tx.isInternalTransfer &&
+            !scheduledIncomeIdsInStartMonth.has(tx.budgetId)
+        )
+        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+    : 0;
 
   const remainingSpreadIncome = Math.max(0, spreadIncomeMonthlyBudget - spreadIncomeReceivedSoFar);
-  const dailySpreadIncomeRate = daysAfterToday > 0 ? remainingSpreadIncome / daysAfterToday : 0;
+  const dailySpreadIncomeRate = !isCustomStartDate
+    ? daysAfterToday > 0
+      ? remainingSpreadIncome / daysAfterToday
+      : 0
+    : spreadIncomeMonthlyBudget / daysInStartMonth;
 
   const monthExpenseRateCache = new Map<string, number>();
   const monthIncomeRateCache = new Map<string, number>();
 
   const getDailySpreadExpenseForMonth = (yr: number, mo1: number): number => {
-    if (yr === currentYear && mo1 === currentMonth1) {
+    if (!isCustomStartDate && yr === todayYear && mo1 === todayMonth + 1) {
       return dailyBurnRate;
     }
     const key = `${yr}-${mo1}`;
@@ -186,7 +259,7 @@ export function computeCashFlowForecast(
   };
 
   const getDailySpreadIncomeForMonth = (yr: number, mo1: number): number => {
-    if (yr === currentYear && mo1 === currentMonth1) {
+    if (!isCustomStartDate && yr === todayYear && mo1 === todayMonth + 1) {
       return dailySpreadIncomeRate;
     }
     const key = `${yr}-${mo1}`;
@@ -198,8 +271,7 @@ export function computeCashFlowForecast(
     return monthIncomeRateCache.get(key) || 0;
   };
 
-  // Day-by-day timeline simulation over requested horizonDays
-  const simDays = Math.max(1, horizonDays);
+  // Day-by-day timeline simulation over requested range
   const timeline: CashFlowPoint[] = [];
   let simulatedBalance = currentTotalBalance;
   let lowestBalance = Number.POSITIVE_INFINITY;
@@ -209,21 +281,26 @@ export function computeCashFlowForecast(
   let upcomingIncomeTotal = 0;
 
   const dateLocale = locale === 'fr' ? 'fr-FR' : 'en-US';
+  const spansMultipleYears = startRef.getFullYear() !== endRef.getFullYear() && simDays > 120;
+  const dateFormatOptions: Intl.DateTimeFormatOptions = spansMultipleYears
+    ? { day: 'numeric', month: 'short', year: '2-digit' }
+    : { day: 'numeric', month: 'short' };
 
   for (let i = 0; i < simDays; i++) {
-    const simDate = new Date(currentYear, currentMonth, currentDay + i);
+    const simDate = new Date(startYear, startMonth, startDay + i);
     const simYear = simDate.getFullYear();
     const simMonth1 = simDate.getMonth() + 1;
     const day = simDate.getDate();
-    const dateStr = simDate.toLocaleDateString(dateLocale, { day: 'numeric', month: 'short' });
+    const dateStr = simDate.toLocaleDateString(dateLocale, dateFormatOptions);
     const events: TimelineEvent[] = [];
-    const isInCurrentMonth = simYear === currentYear && simMonth1 === currentMonth1;
+    const shouldDeduplicateCurrentMonth =
+      !isCustomStartDate && simYear === todayYear && simMonth1 === todayMonth + 1;
 
     // 1. Scheduled Income (Monthly or Yearly matching exact day/month)
     for (const b of activeBudgets) {
       if (!b.isExpense && doesBudgetTriggerOnDate(b, simYear, simMonth1, day)) {
         const scheduledAmount = getBudgetMonthlyAmount(b, simYear, simMonth1);
-        const alreadyBooked = isInCurrentMonth ? actualIncomeByBudgetId.get(b.id) || 0 : 0;
+        const alreadyBooked = shouldDeduplicateCurrentMonth ? actualIncomeByBudgetId.get(b.id) || 0 : 0;
         const effectiveAmount = Math.max(0, Math.round((scheduledAmount - alreadyBooked) * 100) / 100);
 
         if (effectiveAmount > 0) {
@@ -243,7 +320,7 @@ export function computeCashFlowForecast(
     for (const b of activeBudgets) {
       if (b.isExpense && doesBudgetTriggerOnDate(b, simYear, simMonth1, day)) {
         const scheduledAmount = getBudgetMonthlyAmount(b, simYear, simMonth1);
-        const alreadyBooked = isInCurrentMonth ? actualExpenseByBudgetId.get(b.id) || 0 : 0;
+        const alreadyBooked = shouldDeduplicateCurrentMonth ? actualExpenseByBudgetId.get(b.id) || 0 : 0;
         const effectiveAmount = Math.max(0, Math.round((scheduledAmount - alreadyBooked) * 100) / 100);
 
         if (effectiveAmount > 0) {
@@ -259,7 +336,7 @@ export function computeCashFlowForecast(
       }
     }
 
-    // 3. One-time settlement for excluded deferred credit cards with existing debt
+    // 3. One-time settlement for excluded deferred credit cards with existing debt (when forecasting from today)
     for (const card of excludedDeferredCards) {
       if (settledCardIds.has(card.id) || card.settlementDay == null) continue;
       const clampedSettlement = clampDayToMonth(card.settlementDay, simYear, simMonth1);
@@ -304,7 +381,7 @@ export function computeCashFlowForecast(
 
   if (!Number.isFinite(lowestBalance)) {
     lowestBalance = Math.round(currentTotalBalance * 100) / 100;
-    lowestBalanceDate = now.toLocaleDateString(dateLocale, { day: 'numeric', month: 'short' });
+    lowestBalanceDate = startRef.toLocaleDateString(dateLocale, dateFormatOptions);
   }
 
   // Mark point(s) with lowest balance
@@ -317,6 +394,11 @@ export function computeCashFlowForecast(
   return {
     currentTotalBalance: Math.round(currentTotalBalance * 100) / 100,
     accountCount: includedAccounts.length,
+    startDateMillis: startRef.getTime(),
+    endDateMillis: endRef.getTime(),
+    totalDays: simDays,
+    isCustomRange: isCustomStartDate || options.endDate !== undefined,
+    isCustomStartDate,
     upcomingBillsTotal: Math.round(upcomingBillsTotal * 100) / 100,
     upcomingIncomeTotal: Math.round(upcomingIncomeTotal * 100) / 100,
     variableMonthlyBudget: Math.round(variableMonthlyBudget * 100) / 100,

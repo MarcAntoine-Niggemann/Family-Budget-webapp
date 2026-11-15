@@ -71,19 +71,20 @@ val yearTransactions = transactions.filter { it.date in startTime..endTime }
 ## 📈 3. Cash Flow Forecast & Projected Balance Graph
 
 ### 🎯 Functional Purpose
-Projects future liquidity day-by-day over selectable time horizons (30, 60, or 90 days) across all accounts marked `includeInLiquidForecast = true`, factoring every budget's active month/year window, scheduled due dates, and spread daily rates to report the **Minimum Projected Balance** over the selected horizon.
+Projects future liquidity day-by-day over selectable preset horizons (30, 60, or 90 days) or a custom start/end date range (up to 5 years) across all accounts marked `includeInLiquidForecast = true`, factoring every budget's active month/year window, scheduled due dates, and spread daily rates to report the **Minimum Projected Balance** over the selected period.
 
 ### 🧮 Cash Flow Forecasting Algorithm (`computeCashFlowForecast`)
 
 1. **Starting Balance ($Bal_0$)**:
-   Sum of `currentBalance` across all active, non-deleted accounts where `includeInLiquidForecast = true`. If a deferred credit card is excluded (`includeInLiquidForecast = false`) and has a negative balance linked to an included account, its existing balance settles once on its next `settlementDay`. If the card is already included (`includeInLiquidForecast = true`), its negative balance is already reflected in $Bal_0$ and settlements are neutral internal transfers.
+   - **Standard Forecast (starting today)**: Sum of `currentBalance` across all active, non-deleted accounts where `includeInLiquidForecast = true` (optionally overridden in Custom mode). If a deferred credit card is excluded (`includeInLiquidForecast = false`) and has a negative balance linked to an included account, its existing balance settles once on its next `settlementDay`. If the card is already included (`includeInLiquidForecast = true`), its negative balance is already reflected in $Bal_0$ and settlements are neutral internal transfers.
+   - **Custom Start Date**: Uses the user-specified starting balance at the chosen start date and runs a pure budget-based projection through the custom end date without blending live current-month booked transactions or today's card balances.
 2. **Current-Month Scheduled Items (De-duplicated)**:
-   For scheduled budgets (`MONTHLY` with `day`, `YEARLY` with `month` + `day`, or `ONCE`) triggering on or after today in the current month, already-recorded matching transactions are subtracted so only the unpaid/unreceived remainder triggers on the due date.
+   For scheduled budgets (`MONTHLY` with `day`, `YEARLY` with `month` + `day`, or `ONCE`) triggering on or after today in the current month (when starting from today), already-recorded matching transactions are subtracted so only the unpaid/unreceived remainder triggers on the due date.
 3. **Spread (Non-Dated) Expense & Income Budgets**:
-   - Current month remaining spread expenses/income are prorated evenly across the remaining days after today (`daysInMonth - currentDay`).
-   - Subsequent months apply full monthly/yearly scheduled items on their due days and spread budgets evenly across each month's calendar days.
+   - Current month remaining spread expenses/income (when starting from today) are prorated evenly across the remaining days after today (`daysInMonth - currentDay`).
+   - Subsequent months (or any month under a custom start date) apply full monthly/yearly scheduled items on their due days and spread budgets evenly across each month's calendar days.
 4. **Minimum Projected Balance**:
-   Reports $\min(Bal_d)$ and its exact date across the requested horizon without a separate Safe-to-Spend calculation.
+   Reports $\min(Bal_d)$ and its exact date across the requested horizon or custom date range without a separate Safe-to-Spend calculation.
 
 * If $\min(Bal_d) < 500$, an amber low-buffer warning banner is displayed.
 * If $\min(Bal_d) < 0$, a red negative-balance warning banner is displayed.
