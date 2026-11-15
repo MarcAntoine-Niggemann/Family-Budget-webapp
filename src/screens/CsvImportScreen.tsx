@@ -41,12 +41,17 @@ export const CsvImportScreen: React.FC = () => {
 
   const isFr = language === 'fr';
 
+  const activeAccounts = accounts.filter(a => !a.isDeleted);
+  const activeCategories = categories.filter(c => !c.isDeleted);
+  const activeBudgets = budgets.filter(b => !b.isDeleted);
+  const activeRules = rules.filter(r => !r.isDeleted);
+
   const [activeTab, setActiveTab] = useState<'CSV' | 'OPEN_BANKING'>('CSV');
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   // CSV States
   const [rawCsvText, setRawCsvText] = useState('');
-  const [selectedAccountId, setSelectedAccountId] = useState(accounts[0]?.id || 'acc_main_checking');
+  const [selectedAccountId, setSelectedAccountId] = useState(activeAccounts[0]?.id || 'acc_main_checking');
   const [parseResult, setParseResult] = useState<CsvParseResult | null>(null);
 
   const sampleCsvCheckingFr = `Date;Libelle;Montant;Solde
@@ -79,7 +84,7 @@ export const CsvImportScreen: React.FC = () => {
       setParseResult(null);
       return;
     }
-    const res = parseBankStatementCsv(text, rules, categories, budgets);
+    const res = parseBankStatementCsv(text, activeRules, activeCategories, activeBudgets);
     setParseResult(res);
   };
 
@@ -103,7 +108,7 @@ export const CsvImportScreen: React.FC = () => {
     navigateTo('TRANSACTIONS');
   };
 
-  const openBankingTx = transactions.filter(t => t.source === 'OPEN_BANKING');
+  const openBankingTx = transactions.filter(t => !t.isDeleted && t.source === 'OPEN_BANKING');
 
   return (
     <div className="space-y-6 pb-12">
@@ -175,7 +180,7 @@ export const CsvImportScreen: React.FC = () => {
                   onChange={e => setSelectedAccountId(e.target.value)}
                   className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold text-white focus:outline-none focus:border-teal-500"
                 >
-                  {accounts.map(acc => (
+                  {activeAccounts.map(acc => (
                     <option key={acc.id} value={acc.id}>
                       {acc.name} ({acc.currentBalance.toLocaleString()} {currency})
                     </option>
@@ -199,7 +204,7 @@ export const CsvImportScreen: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    const cardAcc = accounts.find(a => a.type === 'DEFERRED_CARD');
+                    const cardAcc = activeAccounts.find(a => a.type === 'DEFERRED_CARD');
                     if (cardAcc) setSelectedAccountId(cardAcc.id);
                     handleParse(sampleCsvDeferredCardFr);
                   }}
@@ -273,16 +278,22 @@ export const CsvImportScreen: React.FC = () => {
                         : `${parseResult.totalRows} transactions discovered`}
                     </h2>
                     <p className="text-xs text-slate-400">
-                      {isFr
-                        ? `Séparateur : "${parseResult.delimiter}" | ${parseResult.parsedRecords.filter(r => r.matchedRulePattern).length} catégorisées automatiquement`
-                        : `Delimiter: "${parseResult.delimiter}" | ${parseResult.parsedRecords.filter(r => r.matchedRulePattern).length} auto-categorized`}
+                      {(() => {
+                        const autoCount = parseResult.parsedRecords.filter(
+                          r => r.matchedCategoryId > 0 && r.matchedBudgetId > 0
+                        ).length;
+                        const unassignedCount = parseResult.parsedRecords.length - autoCount;
+                        return isFr
+                          ? `Séparateur : "${parseResult.delimiter}" · ${autoCount} catégorisées · ${unassignedCount} à catégoriser après import`
+                          : `Delimiter: "${parseResult.delimiter}" · ${autoCount} auto-categorized · ${unassignedCount} unassigned`;
+                      })()}
                     </p>
                   </div>
                 </div>
 
                 <button
                   onClick={handleCommitImport}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
                 >
                   <span>{isFr ? 'Confirmer et Importer' : 'Commit Import'}</span>
                   <ArrowRight className="w-4 h-4" />
@@ -296,43 +307,66 @@ export const CsvImportScreen: React.FC = () => {
                     <tr className="border-b border-slate-800 text-slate-400 font-semibold">
                       <th className="py-2.5 px-3">{isFr ? 'Date' : 'Date'}</th>
                       <th className="py-2.5 px-3">{isFr ? 'Libellé' : 'Description'}</th>
-                      <th className="py-2.5 px-3">{isFr ? 'Catégorie attribuée' : 'Category'}</th>
+                      <th className="py-2.5 px-3">
+                        {isFr ? 'Catégorie & Sous-catégorie' : 'Category & Sub-category'}
+                      </th>
                       <th className="py-2.5 px-3 text-right">{isFr ? 'Montant' : 'Amount'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {parseResult.parsedRecords.map(rec => (
-                      <tr key={rec.id} className="hover:bg-slate-800/30 transition">
-                        <td className="py-3 px-3 text-slate-300 whitespace-nowrap">{rec.dateStr}</td>
-                        <td className="py-3 px-3">
-                          <div className="font-semibold text-white">{rec.cleanTitle}</div>
-                          <div className="text-[11px] font-mono text-slate-500 truncate max-w-xs">
-                            {rec.originalLabel}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 border border-slate-700 text-slate-200 flex items-center gap-1">
-                              <CategoryIcon name={rec.matchedCategoryIcon} className="w-3 h-3 text-teal-400" />
-                              <span>{rec.matchedCategoryName}</span>
-                            </span>
-                            {rec.matchedRulePattern && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-teal-500/10 text-teal-300 border border-teal-500/20">
-                                ⚡ {rec.matchedRulePattern}
+                    {parseResult.parsedRecords.map(rec => {
+                      const isUnassigned = !rec.matchedCategoryId || !rec.matchedBudgetId;
+                      return (
+                        <tr key={rec.id} className="hover:bg-slate-800/30 transition">
+                          <td className="py-3 px-3 text-slate-300 font-mono tabular-nums whitespace-nowrap">
+                            {rec.dateStr}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-white">{rec.cleanTitle}</div>
+                            <div className="text-[11px] font-mono text-slate-500 truncate max-w-xs">
+                              {rec.originalLabel}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            {isUnassigned ? (
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <span>
+                                  {isFr
+                                    ? 'À catégoriser après import'
+                                    : 'Unassigned (assign after import)'}
+                                </span>
                               </span>
+                            ) : (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
+                                  <CategoryIcon
+                                    name={rec.matchedCategoryIcon}
+                                    className="w-3.5 h-3.5 text-teal-400 shrink-0"
+                                  />
+                                  <span>{rec.matchedCategoryName}</span>
+                                  <span className="text-slate-600">·</span>
+                                  <span className="text-teal-300">{rec.matchedBudgetTitle}</span>
+                                </span>
+                                {rec.matchedRulePattern && (
+                                  <span className="text-[10px] font-mono text-slate-400">
+                                    ⚡ {rec.matchedRulePattern}
+                                  </span>
+                                )}
+                              </div>
                             )}
-                          </div>
-                        </td>
-                        <td
-                          className={`py-3 px-3 text-right font-bold whitespace-nowrap ${
-                            rec.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
-                          }`}
-                        >
-                          {rec.amount < 0 ? '' : '+'}
-                          {rec.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td
+                            className={`py-3 px-3 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
+                              rec.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                            }`}
+                          >
+                            {rec.amount < 0 ? '' : '+'}
+                            {rec.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -498,41 +532,58 @@ export const CsvImportScreen: React.FC = () => {
                     <tr className="border-b border-slate-800 text-slate-400 font-semibold">
                       <th className="py-2 px-3">{isFr ? 'Date' : 'Date'}</th>
                       <th className="py-2 px-3">{isFr ? 'Libellé' : 'Description'}</th>
-                      <th className="py-2 px-3">{isFr ? 'Catégorie' : 'Category'}</th>
+                      <th className="py-2 px-3">
+                        {isFr ? 'Catégorie & Sous-catégorie' : 'Category & Sub-category'}
+                      </th>
                       <th className="py-2 px-3">{isFr ? 'Statut' : 'Status'}</th>
                       <th className="py-2 px-3 text-right">{isFr ? 'Montant' : 'Amount'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {openBankingTx.slice(0, 8).map(tx => (
-                      <tr key={tx.id} className="hover:bg-slate-800/30 transition">
-                        <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">
-                          {new Date(tx.date).toLocaleDateString(isFr ? 'fr-FR' : 'en-US')}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="font-semibold text-white block">{tx.title}</span>
-                          <span className="text-[10px] font-mono text-slate-500">{tx.originalBankLabel}</span>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 border border-slate-700 text-teal-300">
-                            {tx.categoryName}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30">
-                            {tx.status}
-                          </span>
-                        </td>
-                        <td
-                          className={`py-2.5 px-3 text-right font-bold whitespace-nowrap ${
-                            tx.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
-                          }`}
-                        >
-                          {tx.amount < 0 ? '' : '+'}
-                          {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
-                        </td>
-                      </tr>
-                    ))}
+                    {openBankingTx.slice(0, 8).map(tx => {
+                      const isUnassigned = !tx.categoryId || !tx.budgetId;
+                      return (
+                        <tr key={tx.id} className="hover:bg-slate-800/30 transition">
+                          <td className="py-2.5 px-3 text-slate-400 font-mono tabular-nums whitespace-nowrap">
+                            {new Date(tx.date).toLocaleDateString(isFr ? 'fr-FR' : 'en-US')}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="font-semibold text-white block">{tx.title}</span>
+                            <span className="text-[10px] font-mono text-slate-500">{tx.originalBankLabel}</span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {isUnassigned ? (
+                              <span className="text-[11px] font-medium text-amber-300">
+                                {isFr ? 'À catégoriser' : 'Unassigned'}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-semibold text-slate-200">
+                                {tx.categoryName}
+                                {tx.budgetTitle && (
+                                  <>
+                                    <span className="text-slate-600 mx-1">·</span>
+                                    <span className="text-teal-300">{tx.budgetTitle}</span>
+                                  </>
+                                )}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="text-[10px] font-bold text-teal-300 uppercase tracking-wider">
+                              {tx.status}
+                            </span>
+                          </td>
+                          <td
+                            className={`py-2.5 px-3 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
+                              tx.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                            }`}
+                          >
+                            {tx.amount < 0 ? '' : '+'}
+                            {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

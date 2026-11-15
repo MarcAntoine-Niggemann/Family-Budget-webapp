@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
-import { X, ArrowDownRight, ArrowUpRight, Calendar, User, Wallet, Tag } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, ArrowDownRight, ArrowUpRight, Calendar, User, Wallet, Tag, AlertCircle } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { CategoryIcon } from './CategoryIcon';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
@@ -15,54 +14,105 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
     budgets,
     members,
     addTransaction,
+    navigateTo,
     language,
     currency
   } = useBudget();
 
   const isFr = language === 'fr';
 
+  const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
+  const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
+  const activeBudgets = useMemo(() => budgets.filter(b => !b.isDeleted && b.isActive), [budgets]);
+
   const [isExpense, setIsExpense] = useState(true);
   const [amountStr, setAmountStr] = useState('');
   const [title, setTitle] = useState('');
-  const [selectedAccountId, setSelectedAccountId] = useState(accounts[0]?.id || 'acc_main_checking');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number>(categories[0]?.id || 1);
+  const [selectedAccountId, setSelectedAccountId] = useState(activeAccounts[0]?.id || '');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number>(activeCategories[0]?.id || 0);
   const [selectedBudgetId, setSelectedBudgetId] = useState<number>(0);
   const [selectedMemberId, setSelectedMemberId] = useState(members[0]?.id || 'primary');
   const [dateStr, setDateStr] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState(isFr ? 'Carte Bancaire' : 'Card');
   const [notes, setNotes] = useState('');
 
+  const filteredBudgets = useMemo(
+    () => activeBudgets.filter(b => b.categoryId === selectedCategoryId && b.isExpense === isExpense),
+    [activeBudgets, selectedCategoryId, isExpense]
+  );
+
+  // Initialize defaults when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    const defaultCat =
+      activeCategories.find(c => activeBudgets.some(b => b.categoryId === c.id && b.isExpense === isExpense)) ||
+      activeCategories[0];
+    const catId = defaultCat?.id || 0;
+    const firstBudget = activeBudgets.find(b => b.categoryId === catId && b.isExpense === isExpense);
+    setSelectedAccountId(prev => (activeAccounts.some(a => a.id === prev) ? prev : activeAccounts[0]?.id || ''));
+    setSelectedCategoryId(catId);
+    setSelectedBudgetId(firstBudget?.id || 0);
+    setSelectedMemberId(members[0]?.id || 'primary');
+    setDateStr(new Date().toISOString().split('T')[0]);
+    setAmountStr('');
+    setTitle('');
+    setNotes('');
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep sub-category aligned with selected category + flow direction
+  useEffect(() => {
+    if (!filteredBudgets.some(b => b.id === selectedBudgetId)) {
+      setSelectedBudgetId(filteredBudgets[0]?.id || 0);
+    }
+  }, [filteredBudgets, selectedBudgetId]);
+
   if (!isOpen) return null;
 
-  const filteredBudgets = budgets.filter(
-    b => b.categoryId === selectedCategoryId && b.isExpense === isExpense
-  );
+  const selectedCategory = activeCategories.find(c => c.id === selectedCategoryId);
+  const selectedBudget = filteredBudgets.find(b => b.id === selectedBudgetId);
+  const canSubmit = Boolean(selectedCategory && selectedBudget && amountStr.trim() && title.trim());
+
+  const handleDirectionChange = (nextIsExpense: boolean) => {
+    setIsExpense(nextIsExpense);
+    const currentHasMatch = activeBudgets.some(
+      b => b.categoryId === selectedCategoryId && b.isExpense === nextIsExpense
+    );
+    if (!currentHasMatch) {
+      const catWithMatch = activeCategories.find(c =>
+        activeBudgets.some(b => b.categoryId === c.id && b.isExpense === nextIsExpense)
+      );
+      if (catWithMatch) {
+        setSelectedCategoryId(catWithMatch.id);
+        const firstSub = activeBudgets.find(b => b.categoryId === catWithMatch.id && b.isExpense === nextIsExpense);
+        setSelectedBudgetId(firstSub?.id || 0);
+        return;
+      }
+    }
+    const firstSub = activeBudgets.find(b => b.categoryId === selectedCategoryId && b.isExpense === nextIsExpense);
+    setSelectedBudgetId(firstSub?.id || 0);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(amountStr.replace(',', '.'));
-    if (isNaN(val) || val <= 0) return;
+    if (isNaN(val) || val <= 0 || !selectedCategory || !selectedBudget) return;
 
-    const account = accounts.find(a => a.id === selectedAccountId);
-    const category = categories.find(c => c.id === selectedCategoryId);
-    const budget = budgets.find(b => b.id === selectedBudgetId);
+    const account = activeAccounts.find(a => a.id === selectedAccountId);
     const member = members.find(m => m.id === selectedMemberId);
-
     const signedAmount = isExpense ? -Math.abs(val) : Math.abs(val);
-
     const txDate = new Date(dateStr).getTime() || Date.now();
 
     addTransaction({
-      title: title.trim() || (isExpense ? (isFr ? 'Dépense courante' : 'Expense') : (isFr ? 'Revenu' : 'Income')),
+      title: title.trim(),
       originalBankLabel: null,
       amount: signedAmount,
       isExpense,
-      categoryId: category?.id || 1,
-      categoryName: category?.name || 'General',
-      categoryColor: category?.color || 0xff3b82f6,
-      categoryIcon: category?.icon || 'Tag',
-      budgetId: budget?.id || 0,
-      budgetTitle: budget?.title || 'General',
+      categoryId: selectedCategory.id,
+      categoryName: selectedCategory.name,
+      categoryColor: selectedCategory.color,
+      categoryIcon: selectedCategory.icon,
+      budgetId: selectedBudget.id,
+      budgetTitle: selectedBudget.title,
       date: txDate,
       familyMemberId: member?.id || 'primary',
       familyMemberName: member?.name || 'Primary User',
@@ -82,7 +132,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
       <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <h2 className="text-lg font-bold text-white">
             {isFr ? 'Nouvelle Transaction Manuelle' : 'New Manual Transaction'}
@@ -100,7 +149,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
           <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
             <button
               type="button"
-              onClick={() => setIsExpense(true)}
+              onClick={() => handleDirectionChange(true)}
               className={`flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition ${
                 isExpense
                   ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
@@ -112,7 +161,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
             </button>
             <button
               type="button"
-              onClick={() => setIsExpense(false)}
+              onClick={() => handleDirectionChange(false)}
               className={`flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition ${
                 !isExpense
                   ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
@@ -137,7 +186,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
                 placeholder="0.00"
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
-                className="w-full text-2xl font-bold bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 transition"
+                className="w-full text-2xl font-bold font-mono bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 transition"
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-semibold">
                 {currency}
@@ -172,7 +221,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
                 onChange={e => setSelectedAccountId(e.target.value)}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
-                {accounts.map(acc => (
+                {activeAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
                     {acc.name}
                   </option>
@@ -199,7 +248,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
             </div>
           </div>
 
-          {/* Category & Budget Sub-line */}
+          {/* Category & Mandatory Sub-Category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
@@ -211,12 +260,14 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
                 onChange={e => {
                   const newCatId = parseInt(e.target.value, 10);
                   setSelectedCategoryId(newCatId);
-                  const firstBudget = budgets.find(b => b.categoryId === newCatId);
+                  const firstBudget = activeBudgets.find(
+                    b => b.categoryId === newCatId && b.isExpense === isExpense
+                  );
                   setSelectedBudgetId(firstBudget?.id || 0);
                 }}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
-                {categories.map(c => (
+                {activeCategories.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -226,22 +277,52 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">
-                {isFr ? 'Ligne de budget' : 'Budget Line'}
+                {isFr ? 'Sous-catégorie (obligatoire)' : 'Sub-category (required)'}
               </label>
               <select
                 value={selectedBudgetId}
                 onChange={e => setSelectedBudgetId(parseInt(e.target.value, 10))}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                disabled={filteredBudgets.length === 0}
+                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-50"
               >
-                <option value={0}>{isFr ? 'Général / Sans sous-budget' : 'General'}</option>
-                {filteredBudgets.map(b => (
-                  <option key={b.id} value={b.id}>
-                    {b.title} ({b.amount} {currency})
+                {filteredBudgets.length === 0 ? (
+                  <option value={0}>
+                    {isFr ? 'Aucune sous-catégorie' : 'No sub-categories'}
                   </option>
-                ))}
+                ) : (
+                  filteredBudgets.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.title} ({b.amount} {currency})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
+
+          {/* Blocking notice when selected category lacks a matching sub-category */}
+          {filteredBudgets.length === 0 && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  {isFr
+                    ? `Cette catégorie n’a aucune sous-catégorie de type ${isExpense ? 'Dépense' : 'Revenu'}. Créez-en une dans le Planificateur de Budget pour continuer.`
+                    : `This category has no ${isExpense ? 'Expense' : 'Income'} sub-categories. Create one in Budget Planner before saving.`}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  navigateTo('BUDGET_PLANNER');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition"
+              >
+                {isFr ? 'Planificateur' : 'Budget Planner'}
+              </button>
+            </div>
+          )}
 
           {/* Date & Payment Method */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -301,7 +382,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95"
+              disabled={!canSubmit}
+              className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95"
             >
               {isFr ? 'Enregistrer' : 'Save Transaction'}
             </button>

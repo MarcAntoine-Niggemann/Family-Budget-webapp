@@ -163,34 +163,43 @@ export function categorizeLabel(
     }
 
     if (matched) {
-      const cat = categories.find(c => c.id === rule.targetCategoryId);
-      return {
-        categoryId: rule.targetCategoryId,
-        categoryName: rule.targetCategoryName || cat?.name || 'General',
-        categoryColor: cat?.color || 0xff3b82f6,
-        categoryIcon: cat?.icon || 'Tag',
-        budgetId: rule.targetBudgetId,
-        budgetTitle: rule.targetBudgetTitle || 'General',
-        rulePattern: rule.pattern
-      };
+      const cat = categories.find(c => !c.isDeleted && c.id === rule.targetCategoryId);
+      const budget = budgets.find(b => !b.isDeleted && b.id === rule.targetBudgetId);
+
+      if (cat && budget) {
+        return {
+          categoryId: cat.id,
+          categoryName: cat.name,
+          categoryColor: cat.color,
+          categoryIcon: cat.icon,
+          budgetId: budget.id,
+          budgetTitle: budget.title,
+          rulePattern: rule.pattern
+        };
+      }
+
+      if (cat) {
+        return {
+          categoryId: cat.id,
+          categoryName: cat.name,
+          categoryColor: cat.color,
+          categoryIcon: cat.icon,
+          budgetId: 0,
+          budgetTitle: '',
+          rulePattern: rule.pattern
+        };
+      }
     }
   }
 
-  // Fallback category
-  const fallbackCat = categories.find(c => !c.isDeleted) || {
-    id: 3,
-    name: 'Alimentation & Courses',
-    icon: 'ShoppingCart',
-    color: 0xfff59e0b
-  };
-
+  // Unmatched: leave unassigned until edited by the user after import
   return {
-    categoryId: fallbackCat.id,
-    categoryName: fallbackCat.name,
-    categoryColor: fallbackCat.color,
-    categoryIcon: fallbackCat.icon,
+    categoryId: 0,
+    categoryName: '',
+    categoryColor: 0xff64748b,
+    categoryIcon: 'HelpCircle',
     budgetId: 0,
-    budgetTitle: 'General'
+    budgetTitle: ''
   };
 }
 

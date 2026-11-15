@@ -594,34 +594,40 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
 
   const budgets: CategoryBudgetEntity[] = isEn
     ? [
-        { id: 101, categoryId: 1, categoryName: 'Income & Salaries', title: 'John Salary', amount: 3400.0, frequency: 'MONTHLY', day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 102, categoryId: 1, categoryName: 'Income & Salaries', title: 'Sophie Salary', amount: 2250.0, frequency: 'MONTHLY', day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 103, categoryId: 2, categoryName: 'Housing & Rent', title: 'Rent / Mortgage', amount: 1200.0, frequency: 'MONTHLY', day: 1, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 104, categoryId: 3, categoryName: 'Groceries & Food', title: 'Supermarket & Groceries', amount: 650.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 105, categoryId: 3, categoryName: 'Groceries & Food', title: 'Bakeries & Fresh Markets', amount: 150.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 106, categoryId: 4, categoryName: 'Bills & Utilities', title: 'Electricity Utility (EDF)', amount: 140.0, frequency: 'MONTHLY', day: 5, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 107, categoryId: 4, categoryName: 'Bills & Utilities', title: 'Home Insurance', amount: 45.0, frequency: 'MONTHLY', day: 18, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 108, categoryId: 4, categoryName: 'Bills & Utilities', title: 'Fiber Internet & Phones', amount: 60.0, frequency: 'MONTHLY', day: 10, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 109, categoryId: 5, categoryName: 'Transport & Fuel', title: 'Fuel & Commute', amount: 220.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 110, categoryId: 6, categoryName: 'Children & School', title: 'School Lunches & Childcare', amount: 240.0, frequency: 'MONTHLY', day: 12, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 111, categoryId: 7, categoryName: 'Leisure & Dining Out', title: 'Family Outings & Dinners', amount: 200.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 112, categoryId: 8, categoryName: 'Health & Medical', title: 'Pharmacy & Doctor Checkups', amount: 80.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 113, categoryId: 9, categoryName: 'Savings & Investments', title: 'Monthly Livret A Transfer', amount: 300.0, frequency: 'MONTHLY', day: 29, isExpense: true, isActive: true, updatedAt: now, isDeleted: false }
+        { id: 101, categoryId: 1, categoryName: 'Income & Salaries', title: 'John Salary', amount: 3400.0, frequency: 'MONTHLY', month: null, day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 102, categoryId: 1, categoryName: 'Income & Salaries', title: 'Sophie Salary', amount: 2250.0, frequency: 'MONTHLY', month: null, day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 103, categoryId: 2, categoryName: 'Housing & Rent', title: 'Rent / Mortgage', amount: 1200.0, frequency: 'MONTHLY', month: null, day: 1, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 114, categoryId: 2, categoryName: 'Housing & Rent', title: 'Annual Property Tax', amount: 1450.0, frequency: 'YEARLY', month: 10, day: 15, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 104, categoryId: 3, categoryName: 'Groceries & Food', title: 'Supermarket & Groceries', amount: 650.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 105, categoryId: 3, categoryName: 'Groceries & Food', title: 'Bakeries & Fresh Markets', amount: 150.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 106, categoryId: 4, categoryName: 'Bills & Utilities', title: 'Electricity Utility (EDF)', amount: 140.0, frequency: 'MONTHLY', month: null, day: 5, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 107, categoryId: 4, categoryName: 'Bills & Utilities', title: 'Home Insurance', amount: 45.0, frequency: 'MONTHLY', month: null, day: 18, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 108, categoryId: 4, categoryName: 'Bills & Utilities', title: 'Fiber Internet & Phones', amount: 60.0, frequency: 'MONTHLY', month: null, day: 10, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 109, categoryId: 5, categoryName: 'Transport & Fuel', title: 'Fuel & Commute', amount: 220.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 116, categoryId: 5, categoryName: 'Transport & Fuel', title: 'Annual Car Insurance & Service', amount: 720.0, frequency: 'YEARLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 110, categoryId: 6, categoryName: 'Children & School', title: 'School Lunches & Childcare', amount: 240.0, frequency: 'MONTHLY', month: null, day: 12, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 111, categoryId: 7, categoryName: 'Leisure & Dining Out', title: 'Family Outings & Dinners', amount: 200.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 115, categoryId: 7, categoryName: 'Leisure & Dining Out', title: 'Summer Vacations', amount: 2400.0, frequency: 'YEARLY', month: 7, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 112, categoryId: 8, categoryName: 'Health & Medical', title: 'Pharmacy & Doctor Checkups', amount: 80.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 113, categoryId: 9, categoryName: 'Savings & Investments', title: 'Monthly Livret A Transfer', amount: 300.0, frequency: 'MONTHLY', month: null, day: 29, isExpense: true, isActive: true, updatedAt: now, isDeleted: false }
       ]
     : [
-        { id: 101, categoryId: 1, categoryName: 'Emploi & Revenus', title: 'Salaire Jean', amount: 3400.0, frequency: 'MONTHLY', day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 102, categoryId: 1, categoryName: 'Emploi & Revenus', title: 'Salaire Sophie', amount: 2250.0, frequency: 'MONTHLY', day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 103, categoryId: 2, categoryName: 'Logement & Loyer', title: 'Loyer / Prêt Immobilier', amount: 1200.0, frequency: 'MONTHLY', day: 1, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 104, categoryId: 3, categoryName: 'Alimentation & Courses', title: 'Supermarché & Courses', amount: 650.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 105, categoryId: 3, categoryName: 'Alimentation & Courses', title: 'Boulangerie & Marché', amount: 150.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 106, categoryId: 4, categoryName: 'Factures & Énergie', title: 'Électricité (EDF)', amount: 140.0, frequency: 'MONTHLY', day: 5, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 107, categoryId: 4, categoryName: 'Factures & Énergie', title: 'Assurance Habitation', amount: 45.0, frequency: 'MONTHLY', day: 18, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 108, categoryId: 4, categoryName: 'Factures & Énergie', title: 'Internet Fibre & Téléphonie', amount: 60.0, frequency: 'MONTHLY', day: 10, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 109, categoryId: 5, categoryName: 'Transports & Carburant', title: 'Carburant & Déplacements', amount: 220.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 110, categoryId: 6, categoryName: 'Enfants & Scolarité', title: 'Cantine & Activités extrascolaires', amount: 240.0, frequency: 'MONTHLY', day: 12, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 111, categoryId: 7, categoryName: 'Loisirs & Sorties', title: 'Restaurants & Sorties famille', amount: 200.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 112, categoryId: 8, categoryName: 'Santé & Prévoyance', title: 'Pharmacie & Médecins', amount: 80.0, frequency: 'MONTHLY', day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
-        { id: 113, categoryId: 9, categoryName: 'Épargne & Investissement', title: 'Virement Épargne Mensuel', amount: 300.0, frequency: 'MONTHLY', day: 29, isExpense: true, isActive: true, updatedAt: now, isDeleted: false }
+        { id: 101, categoryId: 1, categoryName: 'Emploi & Revenus', title: 'Salaire Jean', amount: 3400.0, frequency: 'MONTHLY', month: null, day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 102, categoryId: 1, categoryName: 'Emploi & Revenus', title: 'Salaire Sophie', amount: 2250.0, frequency: 'MONTHLY', month: null, day: 28, isExpense: false, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 103, categoryId: 2, categoryName: 'Logement & Loyer', title: 'Loyer / Prêt Immobilier', amount: 1200.0, frequency: 'MONTHLY', month: null, day: 1, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 114, categoryId: 2, categoryName: 'Logement & Loyer', title: 'Taxe Foncière & Impôts', amount: 1450.0, frequency: 'YEARLY', month: 10, day: 15, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 104, categoryId: 3, categoryName: 'Alimentation & Courses', title: 'Supermarché & Courses', amount: 650.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 105, categoryId: 3, categoryName: 'Alimentation & Courses', title: 'Boulangerie & Marché', amount: 150.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 106, categoryId: 4, categoryName: 'Factures & Énergie', title: 'Électricité (EDF)', amount: 140.0, frequency: 'MONTHLY', month: null, day: 5, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 107, categoryId: 4, categoryName: 'Factures & Énergie', title: 'Assurance Habitation', amount: 45.0, frequency: 'MONTHLY', month: null, day: 18, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 108, categoryId: 4, categoryName: 'Factures & Énergie', title: 'Internet Fibre & Téléphonie', amount: 60.0, frequency: 'MONTHLY', month: null, day: 10, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 109, categoryId: 5, categoryName: 'Transports & Carburant', title: 'Carburant & Déplacements', amount: 220.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 116, categoryId: 5, categoryName: 'Transports & Carburant', title: 'Assurance Auto & Entretien Annuel', amount: 720.0, frequency: 'YEARLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 110, categoryId: 6, categoryName: 'Enfants & Scolarité', title: 'Cantine & Activités extrascolaires', amount: 240.0, frequency: 'MONTHLY', month: null, day: 12, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 111, categoryId: 7, categoryName: 'Loisirs & Sorties', title: 'Restaurants & Sorties famille', amount: 200.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 115, categoryId: 7, categoryName: 'Loisirs & Sorties', title: 'Vacances d’Été', amount: 2400.0, frequency: 'YEARLY', month: 7, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 112, categoryId: 8, categoryName: 'Santé & Prévoyance', title: 'Pharmacie & Médecins', amount: 80.0, frequency: 'MONTHLY', month: null, day: null, isExpense: true, isActive: true, updatedAt: now, isDeleted: false },
+        { id: 113, categoryId: 9, categoryName: 'Épargne & Investissement', title: 'Virement Épargne Mensuel', amount: 300.0, frequency: 'MONTHLY', month: null, day: 29, isExpense: true, isActive: true, updatedAt: now, isDeleted: false }
       ];
 
   const rules: CategorizationRuleEntity[] = isEn

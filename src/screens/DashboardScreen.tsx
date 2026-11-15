@@ -13,7 +13,8 @@ import {
   ChevronRight,
   ShieldCheck,
   Calendar,
-  Sparkles
+  Sparkles,
+  HelpCircle
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { computeNetWorth, computeMonthlyReport } from '../utils/reportEngine';
@@ -61,12 +62,20 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     language
   );
 
-  const recentTransactions = transactions
+  const activeAccounts = accounts.filter(a => !a.isDeleted);
+  const activeCategoryIds = new Set(categories.filter(c => !c.isDeleted).map(c => c.id));
+  const activeTransactions = transactions.filter(tx => !tx.isDeleted);
+
+  const recentTransactions = activeTransactions
     .filter(tx => !activeAccountId || tx.accountId === activeAccountId)
     .slice(0, 8);
 
-  const pendingManualCount = transactions.filter(
+  const pendingManualCount = activeTransactions.filter(
     tx => tx.source === 'MANUAL' && tx.status === 'PENDING'
+  ).length;
+
+  const unassignedCount = activeTransactions.filter(
+    tx => !tx.isSplitParent && (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId))
   ).length;
 
   return (
@@ -84,7 +93,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white tracking-tight">
+            <span className="text-3xl font-extrabold text-white tracking-tight font-mono tabular-nums">
               {netWorth.liquidChecking.toLocaleString()}
             </span>
             <span className="text-lg font-bold text-teal-400">{currency}</span>
@@ -94,7 +103,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               {isFr ? 'Dépensable sans risque :' : 'Safe to spend now:'}
             </span>
             <span
-              className={`font-bold ${
+              className={`font-bold font-mono tabular-nums ${
                 forecast.safeToSpendNow >= 0 ? 'text-emerald-400' : 'text-rose-400'
               }`}
             >
@@ -114,7 +123,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white tracking-tight">
+            <span className="text-3xl font-extrabold text-white tracking-tight font-mono tabular-nums">
               {netWorth.totalNetWorth.toLocaleString()}
             </span>
             <span className="text-lg font-bold text-indigo-400">{currency}</span>
@@ -122,12 +131,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
             <span>
               {isFr ? 'Épargne totale :' : 'Total Savings:'}{' '}
-              <strong className="text-slate-200">
+              <strong className="text-slate-200 font-mono tabular-nums">
                 {netWorth.savingsTotal.toLocaleString()} {currency}
               </strong>
             </span>
             {netWorth.deferredCardDebts > 0 && (
-              <span className="text-rose-400 font-medium">
+              <span className="text-rose-400 font-medium font-mono tabular-nums">
                 -{netWorth.deferredCardDebts.toLocaleString()} {currency} carte
               </span>
             )}
@@ -145,10 +154,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white tracking-tight">
+            <span className="text-3xl font-extrabold text-white tracking-tight font-mono tabular-nums">
               {monthlyReport.totalActualExpenses.toLocaleString()}
             </span>
-            <span className="text-xs font-medium text-slate-400">
+            <span className="text-xs font-medium text-slate-400 font-mono tabular-nums">
               / {monthlyReport.totalExpenseBudget.toLocaleString()} {currency}
             </span>
           </div>
@@ -242,7 +251,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {accounts.map(acc => {
+          {activeAccounts.map(acc => {
             const isSelected = activeAccountId === acc.id;
             return (
               <div
@@ -260,7 +269,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                   {acc.type === 'DEFERRED_CARD' && <CreditCard className="w-4 h-4 text-blue-400" />}
                   {acc.type === 'SAVINGS' && <PiggyBank className="w-4 h-4 text-emerald-400" />}
                 </div>
-                <div className="mt-2 text-xl font-bold text-white">
+                <div className="mt-2 text-xl font-bold text-white font-mono tabular-nums">
                   {acc.currentBalance.toLocaleString()} {acc.currency || currency}
                 </div>
                 <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400">
@@ -364,10 +373,22 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
       {/* Recent Transactions List */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
-            {isFr ? 'Dernières Opérations' : 'Recent Transactions'}
-          </h2>
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
+              {isFr ? 'Dernières Opérations' : 'Recent Transactions'}
+            </h2>
+            {unassignedCount > 0 && (
+              <button
+                onClick={() => navigateTo('TRANSACTIONS')}
+                className="text-xs font-semibold text-amber-300 hover:text-amber-200 transition tabular-nums"
+              >
+                {isFr
+                  ? `${unassignedCount} à catégoriser →`
+                  : `${unassignedCount} unassigned →`}
+              </button>
+            )}
+          </div>
           <button
             onClick={() => navigateTo('TRANSACTIONS')}
             className="flex items-center gap-1 text-xs font-semibold text-teal-400 hover:text-teal-300 transition"
@@ -389,6 +410,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                 day: 'numeric',
                 month: 'short'
               });
+              const isUnassigned =
+                !tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId);
 
               return (
                 <div
@@ -396,47 +419,67 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                   onClick={() => onSelectTransaction(tx)}
                   className="p-4 hover:bg-slate-800/40 transition cursor-pointer flex items-center justify-between gap-3 group"
                 >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
-                      style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
-                    >
-                      <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm text-white group-hover:text-teal-300 transition">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {isUnassigned ? (
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                        <HelpCircle className="w-5 h-5" />
+                      </div>
+                    ) : (
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
+                        style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
+                      >
+                        <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-white group-hover:text-teal-300 transition truncate">
                           {tx.title}
                         </span>
                         {tx.status === 'PENDING' && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">
                             {isFr ? 'En attente' : 'Pending'}
                           </span>
                         )}
                         {tx.status === 'RECONCILED' && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
                             {isFr ? 'Rapproché ✓' : 'Reconciled ✓'}
                           </span>
                         )}
                         {tx.isSplit && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
                             Split
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                        <span>{formattedDate}</span>
-                        <span>•</span>
-                        <span>{tx.categoryName}</span>
-                        <span>•</span>
+                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
+                        <span className="tabular-nums">{formattedDate}</span>
+                        <span>·</span>
+                        {isUnassigned ? (
+                          <span className="text-amber-300 font-medium">
+                            {isFr ? 'À catégoriser' : 'Unassigned'}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="text-slate-300">{tx.categoryName}</span>
+                            {tx.budgetTitle && (
+                              <>
+                                <span>·</span>
+                                <span className="text-teal-300">{tx.budgetTitle}</span>
+                              </>
+                            )}
+                          </>
+                        )}
+                        <span>·</span>
                         <span>{tx.accountName}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <div
-                      className={`text-sm font-bold ${
+                      className={`text-sm font-bold font-mono tabular-nums ${
                         tx.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
                       }`}
                     >

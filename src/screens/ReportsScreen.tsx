@@ -8,7 +8,10 @@ import {
   DollarSign,
   Users,
   Flame,
-  Award
+  Award,
+  ChevronDown,
+  ChevronRight,
+  AlertCircle
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { computeMonthlyReport, computeYearlyReport } from '../utils/reportEngine';
@@ -21,6 +24,22 @@ export const ReportsScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [expandedMonthlyCats, setExpandedMonthlyCats] = useState<Record<number, boolean>>({});
+  const [expandedYearlyCats, setExpandedYearlyCats] = useState<Record<number, boolean>>({});
+
+  const toggleMonthlyCat = (catId: number) => {
+    setExpandedMonthlyCats(prev => ({
+      ...prev,
+      [catId]: !(prev[catId] ?? true)
+    }));
+  };
+
+  const toggleYearlyCat = (catId: number) => {
+    setExpandedYearlyCats(prev => ({
+      ...prev,
+      [catId]: !(prev[catId] ?? true)
+    }));
+  };
 
   const monthlyReport = computeMonthlyReport(
     selectedYear,
@@ -138,10 +157,10 @@ export const ReportsScreen: React.FC = () => {
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
                 {isFr ? 'Dépenses Réelles' : 'Total Spent'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-white">
+              <div className="mt-2 text-2xl font-bold text-white font-mono tabular-nums">
                 {monthlyReport.totalActualExpenses.toLocaleString()} {currency}
               </div>
-              <span className="text-xs text-slate-400 mt-1 block">
+              <span className="text-xs text-slate-400 mt-1 block font-mono tabular-nums">
                 {isFr ? 'Budget :' : 'Budget:'}{' '}
                 {monthlyReport.totalExpenseBudget.toLocaleString()} {currency}
               </span>
@@ -152,10 +171,10 @@ export const ReportsScreen: React.FC = () => {
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
                 {isFr ? 'Revenus Réels' : 'Total Income'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-emerald-400">
+              <div className="mt-2 text-2xl font-bold text-emerald-400 font-mono tabular-nums">
                 {monthlyReport.totalActualIncome.toLocaleString()} {currency}
               </div>
-              <span className="text-xs text-slate-400 mt-1 block">
+              <span className="text-xs text-slate-400 mt-1 block font-mono tabular-nums">
                 {isFr ? 'Objectif :' : 'Target:'}{' '}
                 {monthlyReport.totalIncomeBudget.toLocaleString()} {currency}
               </span>
@@ -167,14 +186,14 @@ export const ReportsScreen: React.FC = () => {
                 {isFr ? 'Épargne Nette' : 'Net Savings'}
               </span>
               <div
-                className={`mt-2 text-2xl font-bold ${
+                className={`mt-2 text-2xl font-bold font-mono tabular-nums ${
                   monthlyReport.netSavings >= 0 ? 'text-teal-400' : 'text-rose-400'
                 }`}
               >
                 {monthlyReport.netSavings >= 0 ? '+' : ''}
                 {monthlyReport.netSavings.toLocaleString()} {currency}
               </div>
-              <span className="text-xs text-slate-400 mt-1 block">
+              <span className="text-xs text-slate-400 mt-1 block font-mono tabular-nums">
                 {isFr ? 'Écart budget :' : 'Budget diff:'}{' '}
                 {monthlyReport.netBudgetDifference.toLocaleString()} {currency}
               </span>
@@ -185,7 +204,7 @@ export const ReportsScreen: React.FC = () => {
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
                 {isFr ? 'Taux d’Épargne' : 'Savings Rate'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-indigo-400">
+              <div className="mt-2 text-2xl font-bold text-indigo-400 font-mono tabular-nums">
                 {monthlyReport.savingsRate}%
               </div>
               <span className="text-xs text-slate-400 mt-1 block">
@@ -284,48 +303,161 @@ export const ReportsScreen: React.FC = () => {
 
           {/* Category Breakdown & Member Share Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Category Spend Distribution (2 cols) */}
+            {/* Category & Sub-Category Spend Distribution (2 cols) */}
             <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
-              <h3 className="font-bold text-white text-sm">
-                {isFr ? 'Répartition par Catégorie' : 'Category Spend Breakdown'}
-              </h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-bold text-white text-sm">
+                  {isFr ? 'Répartition par Catégorie & Sous-catégorie' : 'Category & Sub-Category Breakdown'}
+                </h3>
+                <span className="text-[11px] text-slate-500">
+                  {isFr ? 'Cliquer pour déplier' : 'Click to expand'}
+                </span>
+              </div>
 
               <div className="space-y-3">
-                {monthlyReport.categories.map(cat => (
-                  <div key={cat.categoryId} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <CategoryIcon name={cat.categoryIcon} className="w-4 h-4 text-slate-300" />
-                        <span className="font-semibold text-slate-200">{cat.categoryName}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white">
-                          {cat.actualSpent.toLocaleString()} {currency}
-                        </span>
-                        <span className="text-slate-500">
-                          / {cat.budgetExpense.toLocaleString()} {currency}
-                        </span>
-                        <span
-                          className={`font-semibold text-[11px] ${
-                            cat.isOverBudget ? 'text-rose-400' : 'text-teal-400'
-                          }`}
-                        >
-                          ({cat.percentageUsed}%)
-                        </span>
-                      </div>
-                    </div>
+                {monthlyReport.categories.map(cat => {
+                  const isExpanded = expandedMonthlyCats[cat.categoryId] ?? true;
+                  const visibleSubs = cat.subCategories.filter(
+                    sub => sub.budgetAmount > 0 || sub.actualAmount > 0
+                  );
 
-                    <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          cat.isOverBudget ? 'bg-rose-500' : 'bg-teal-500'
-                        }`}
-                        style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
-                      />
+                  return (
+                    <div
+                      key={cat.categoryId}
+                      className="rounded-xl bg-slate-950/50 border border-slate-800/70 p-3 space-y-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleMonthlyCat(cat.categoryId)}
+                        className="w-full text-left space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between text-xs gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {visibleSubs.length > 0 ? (
+                              isExpanded ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              )
+                            ) : (
+                              <span className="w-3.5 shrink-0" />
+                            )}
+                            <CategoryIcon name={cat.categoryIcon} className="w-4 h-4 text-slate-300 shrink-0" />
+                            <span className="font-semibold text-slate-100 truncate">
+                              {cat.categoryName}
+                            </span>
+                            {cat.actualIncome > 0 && (
+                              <span className="text-[10px] font-mono tabular-nums text-emerald-400">
+                                +{cat.actualIncome.toLocaleString()} {currency}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
+                            <span className="font-bold text-white">
+                              {cat.actualSpent.toLocaleString()} {currency}
+                            </span>
+                            <span className="text-slate-500">
+                              / {cat.budgetExpense.toLocaleString()} {currency}
+                            </span>
+                            <span
+                              className={`font-semibold text-[11px] ${
+                                cat.isOverBudget ? 'text-rose-400' : 'text-teal-400'
+                              }`}
+                            >
+                              ({cat.percentageUsed}%)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              cat.isOverBudget ? 'bg-rose-500' : 'bg-teal-500'
+                            }`}
+                            style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
+                          />
+                        </div>
+                      </button>
+
+                      {isExpanded && visibleSubs.length > 0 && (
+                        <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-800/60">
+                          {visibleSubs.map(sub => (
+                            <div key={sub.budgetId} className="space-y-1">
+                              <div className="flex items-center justify-between text-[11px] gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-slate-300 truncate">{sub.title}</span>
+                                  {!sub.isExpense && (
+                                    <span className="text-[10px] font-semibold text-emerald-400 uppercase">
+                                      {isFr ? 'Revenu' : 'Income'}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
+                                  <span
+                                    className={
+                                      sub.isExpense
+                                        ? 'font-semibold text-slate-200'
+                                        : 'font-semibold text-emerald-400'
+                                    }
+                                  >
+                                    {sub.actualAmount.toLocaleString()} {currency}
+                                  </span>
+                                  <span className="text-slate-500">
+                                    / {sub.budgetAmount.toLocaleString()} {currency}
+                                  </span>
+                                  <span
+                                    className={
+                                      sub.isExpense
+                                        ? sub.isOverBudget
+                                          ? 'text-rose-400'
+                                          : 'text-teal-400'
+                                        : 'text-emerald-400'
+                                    }
+                                  >
+                                    {sub.percentageUsed}%
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="w-full h-1 rounded-full bg-slate-900 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    !sub.isExpense
+                                      ? 'bg-emerald-500'
+                                      : sub.isOverBudget
+                                      ? 'bg-rose-500'
+                                      : 'bg-teal-500/80'
+                                  }`}
+                                  style={{ width: `${Math.min(100, sub.percentageUsed)}%` }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              {(monthlyReport.unassignedExpenses > 0 || monthlyReport.unassignedIncome > 0) && (
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300">
+                  <span className="flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {isFr
+                        ? 'Opérations non catégorisées sur la période'
+                        : 'Unassigned transactions in period'}
+                    </span>
+                  </span>
+                  <span className="font-mono tabular-nums font-semibold">
+                    {monthlyReport.unassignedExpenses > 0 &&
+                      `-${monthlyReport.unassignedExpenses.toLocaleString()} ${currency}`}
+                    {monthlyReport.unassignedExpenses > 0 && monthlyReport.unassignedIncome > 0 && ' · '}
+                    {monthlyReport.unassignedIncome > 0 &&
+                      `+${monthlyReport.unassignedIncome.toLocaleString()} ${currency}`}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Member Spending Share (1 col) */}
@@ -379,7 +511,7 @@ export const ReportsScreen: React.FC = () => {
               <span className="text-xs text-slate-400 block">
                 {isFr ? 'Budget Annuel Total' : 'Total Annual Budget'}
               </span>
-              <div className="mt-1 text-2xl font-bold text-white">
+              <div className="mt-1 text-2xl font-bold text-white font-mono tabular-nums">
                 {yearlyReport.totalAnnualBudget.toLocaleString()} {currency}
               </div>
             </div>
@@ -387,7 +519,7 @@ export const ReportsScreen: React.FC = () => {
               <span className="text-xs text-slate-400 block">
                 {isFr ? 'Dépensé sur l’Année (YTD)' : 'Year-to-Date Spent'}
               </span>
-              <div className="mt-1 text-2xl font-bold text-slate-100">
+              <div className="mt-1 text-2xl font-bold text-slate-100 font-mono tabular-nums">
                 {yearlyReport.totalAnnualSpent.toLocaleString()} {currency}
               </div>
             </div>
@@ -395,7 +527,7 @@ export const ReportsScreen: React.FC = () => {
               <span className="text-xs text-slate-400 block">
                 {isFr ? 'Revenus Annuels Réalisés' : 'Annual Income Received'}
               </span>
-              <div className="mt-1 text-2xl font-bold text-emerald-400">
+              <div className="mt-1 text-2xl font-bold text-emerald-400 font-mono tabular-nums">
                 {yearlyReport.totalAnnualIncome.toLocaleString()} {currency}
               </div>
             </div>
@@ -403,7 +535,11 @@ export const ReportsScreen: React.FC = () => {
               <span className="text-xs text-slate-400 block">
                 {isFr ? 'Solde Budgétaire Annuel' : 'Remaining Annual Allowance'}
               </span>
-              <div className="mt-1 text-2xl font-bold text-teal-400">
+              <div
+                className={`mt-1 text-2xl font-bold font-mono tabular-nums ${
+                  yearlyReport.remainingAnnualBudget >= 0 ? 'text-teal-400' : 'text-rose-400'
+                }`}
+              >
                 {yearlyReport.remainingAnnualBudget.toLocaleString()} {currency}
               </div>
             </div>
@@ -412,30 +548,40 @@ export const ReportsScreen: React.FC = () => {
           {/* 12 Months Matrix Table */}
           <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
             <div className="p-4 border-b border-slate-800 font-bold text-sm text-white">
-              {isFr ? 'Historique Mois par Mois' : 'Month-by-Month Trend Matrix'}
+              {isFr ? 'Historique & Budget Prévu Mois par Mois' : 'Month-by-Month Actual vs. Planned Matrix'}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold">
                   <tr>
                     <th className="py-3 px-4">{isFr ? 'Mois' : 'Month'}</th>
-                    <th className="py-3 px-4">{isFr ? 'Revenus' : 'Income'}</th>
-                    <th className="py-3 px-4">{isFr ? 'Dépenses' : 'Expenses'}</th>
-                    <th className="py-3 px-4">{isFr ? 'Solde / Épargne' : 'Net Savings'}</th>
+                    <th className="py-3 px-4 text-right">{isFr ? 'Revenus' : 'Income'}</th>
+                    <th className="py-3 px-4 text-right">{isFr ? 'Dépenses Réelles' : 'Actual Expenses'}</th>
+                    <th className="py-3 px-4 text-right">{isFr ? 'Budget Prévu' : 'Planned Budget'}</th>
+                    <th className="py-3 px-4 text-right">{isFr ? 'Solde / Épargne' : 'Net Savings'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-medium">
                   {yearlyReport.monthlyBreakdown.map(m => (
                     <tr key={m.monthIndex} className="hover:bg-slate-800/30 transition">
                       <td className="py-3 px-4 text-slate-200 capitalize">{m.monthName}</td>
-                      <td className="py-3 px-4 text-emerald-400">
+                      <td className="py-3 px-4 text-right text-emerald-400 font-mono tabular-nums">
                         {m.income > 0 ? `+${m.income.toLocaleString()}` : '0'} {currency}
                       </td>
-                      <td className="py-3 px-4 text-slate-100">
+                      <td
+                        className={`py-3 px-4 text-right font-mono tabular-nums ${
+                          m.plannedExpenses > 0 && m.expenses > m.plannedExpenses
+                            ? 'text-rose-400 font-semibold'
+                            : 'text-slate-100'
+                        }`}
+                      >
                         {m.expenses.toLocaleString()} {currency}
                       </td>
+                      <td className="py-3 px-4 text-right text-slate-400 font-mono tabular-nums">
+                        {m.plannedExpenses.toLocaleString()} {currency}
+                      </td>
                       <td
-                        className={`py-3 px-4 font-bold ${
+                        className={`py-3 px-4 text-right font-bold font-mono tabular-nums ${
                           m.savings >= 0 ? 'text-teal-400' : 'text-rose-400'
                         }`}
                       >
@@ -447,6 +593,129 @@ export const ReportsScreen: React.FC = () => {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Annual Category & Sub-Category Breakdown */}
+          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-bold text-white text-sm">
+                {isFr
+                  ? `Détail Annuel par Catégorie & Sous-catégorie (${selectedYear})`
+                  : `Annual Category & Sub-Category Breakdown (${selectedYear})`}
+              </h3>
+              <span className="text-[11px] text-slate-500">
+                {isFr ? 'Cliquer pour déplier' : 'Click to expand'}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {yearlyReport.categoryBreakdown.map(cat => {
+                const isExpanded = expandedYearlyCats[cat.categoryId] ?? false;
+                const isOver = cat.annualSpent > cat.annualBudget && cat.annualBudget > 0;
+                return (
+                  <div
+                    key={cat.categoryId}
+                    className="rounded-xl bg-slate-950/50 border border-slate-800/70 p-3 space-y-2"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleYearlyCat(cat.categoryId)}
+                      className="w-full text-left space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-xs gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {cat.subCategories.length > 0 ? (
+                            isExpanded ? (
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            ) : (
+                              <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            )
+                          ) : (
+                            <span className="w-3.5 shrink-0" />
+                          )}
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: `#${cat.categoryColor.toString(16).slice(-6)}` }}
+                          />
+                          <span className="font-semibold text-slate-100 truncate">
+                            {cat.categoryName}
+                          </span>
+                          <span className="text-[11px] text-slate-500 shrink-0">
+                            ({cat.subCategories.length}{' '}
+                            {isFr ? 'sous-cat.' : 'sub-cat.'})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
+                          <span className="font-bold text-white">
+                            {cat.annualSpent.toLocaleString()} {currency}
+                          </span>
+                          <span className="text-slate-500">
+                            / {cat.annualBudget.toLocaleString()} {currency}
+                          </span>
+                          <span
+                            className={`font-semibold text-[11px] ${
+                              isOver ? 'text-rose-400' : 'text-teal-400'
+                            }`}
+                          >
+                            ({cat.percentageUsed}%)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${isOver ? 'bg-rose-500' : 'bg-teal-500'}`}
+                          style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
+                        />
+                      </div>
+                    </button>
+
+                    {isExpanded && cat.subCategories.length > 0 && (
+                      <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-800/60">
+                        {cat.subCategories.map(sub => {
+                          const subOver = sub.annualActual > sub.annualBudget && sub.annualBudget > 0;
+                          return (
+                            <div
+                              key={sub.budgetId}
+                              className="flex items-center justify-between text-[11px] gap-2"
+                            >
+                              <span className="text-slate-300 truncate">{sub.title}</span>
+                              <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
+                                <span className="font-semibold text-slate-200">
+                                  {sub.annualActual.toLocaleString()} {currency}
+                                </span>
+                                <span className="text-slate-500">
+                                  / {sub.annualBudget.toLocaleString()} {currency}
+                                </span>
+                                <span className={subOver ? 'text-rose-400' : 'text-teal-400'}>
+                                  {sub.percentageUsed}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {yearlyReport.unassignedExpenses > 0 && (
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300">
+                <span className="flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {isFr
+                      ? 'Dépenses non catégorisées sur l’année'
+                      : 'Unassigned expenses in year'}
+                  </span>
+                </span>
+                <span className="font-mono tabular-nums font-semibold">
+                  -{yearlyReport.unassignedExpenses.toLocaleString()} {currency}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -762,18 +762,30 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let nextId = Math.max(0, ...transactions.map(t => t.id)) + 1;
     const absAmount = Math.abs(amount);
 
+    const savingsCat = categories.find(c => !c.isDeleted && c.id === 9) || categories.find(c => !c.isDeleted);
+    const savingsBudget =
+      budgets.find(b => !b.isDeleted && b.categoryId === (savingsCat?.id || 9) && b.isExpense) ||
+      budgets.find(b => !b.isDeleted && b.categoryId === (savingsCat?.id || 9));
+
+    const resolvedCategoryId = savingsCat?.id || 0;
+    const resolvedCategoryName = savingsCat?.name || '';
+    const resolvedCategoryColor = savingsCat?.color || 0xff6366f1;
+    const resolvedCategoryIcon = savingsCat?.icon || 'PiggyBank';
+    const resolvedBudgetId = savingsBudget?.id || 0;
+    const resolvedBudgetTitle = savingsBudget?.title || '';
+
     const outTx: TransactionEntity = {
       id: nextId++,
       title: `${language === 'fr' ? 'Virement vers' : 'Transfer to'} ${targetAcc.name}`,
       originalBankLabel: `INTERNAL TRANSFER TO ${targetAcc.name.toUpperCase()}`,
       amount: -absAmount,
       isExpense: true,
-      categoryId: 9,
-      categoryName: language === 'fr' ? 'Épargne & Investissement' : 'Savings & Investments',
-      categoryColor: 0xff6366f1,
-      categoryIcon: 'PiggyBank',
-      budgetId: 0,
-      budgetTitle: 'Internal Transfer',
+      categoryId: resolvedCategoryId,
+      categoryName: resolvedCategoryName,
+      categoryColor: resolvedCategoryColor,
+      categoryIcon: resolvedCategoryIcon,
+      budgetId: resolvedBudgetId,
+      budgetTitle: resolvedBudgetTitle,
       date: now,
       familyMemberId: members[0]?.id || 'primary',
       familyMemberName: members[0]?.name || 'Primary User',
@@ -797,12 +809,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       originalBankLabel: `INTERNAL TRANSFER FROM ${sourceAcc.name.toUpperCase()}`,
       amount: absAmount,
       isExpense: false,
-      categoryId: 9,
-      categoryName: language === 'fr' ? 'Épargne & Investissement' : 'Savings & Investments',
-      categoryColor: 0xff6366f1,
-      categoryIcon: 'PiggyBank',
-      budgetId: 0,
-      budgetTitle: 'Internal Transfer',
+      categoryId: resolvedCategoryId,
+      categoryName: resolvedCategoryName,
+      categoryColor: resolvedCategoryColor,
+      categoryIcon: resolvedCategoryIcon,
+      budgetId: resolvedBudgetId,
+      budgetTitle: resolvedBudgetTitle,
       date: now,
       familyMemberId: members[0]?.id || 'primary',
       familyMemberName: members[0]?.name || 'Primary User',
@@ -966,6 +978,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateCategory = (cat: CategoryEntity) => {
     const now = Date.now();
     setCategories(prev => prev.map(c => (c.id === cat.id ? { ...cat, updatedAt: now } : c)));
+    setBudgets(prev =>
+      prev.map(b => (b.categoryId === cat.id ? { ...b, categoryName: cat.name, updatedAt: now } : b))
+    );
+    setRules(prev =>
+      prev.map(r => (r.targetCategoryId === cat.id ? { ...r, targetCategoryName: cat.name, updatedAt: now } : r))
+    );
     enqueueOutbox('CATEGORY', `cat_${cat.id}`, 'UPSERT');
     showToast(language === 'fr' ? 'Catégorie mise à jour' : 'Category updated');
   };
@@ -977,27 +995,30 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showToast(language === 'fr' ? 'Catégorie supprimée' : 'Category deleted');
   };
 
-  // Budgets CRUD
+  // Budgets (Sub-categories) CRUD
   const addBudget = (b: Omit<CategoryBudgetEntity, 'id' | 'updatedAt' | 'isDeleted'>) => {
     const nextId = Math.max(0, ...budgets.map(bg => bg.id)) + 1;
     const now = Date.now();
     setBudgets(prev => [...prev, { ...b, id: nextId, updatedAt: now, isDeleted: false }]);
     enqueueOutbox('BUDGET', `budget_${nextId}`, 'UPSERT');
-    showToast(language === 'fr' ? 'Ligne de budget créée' : 'Budget line created');
+    showToast(language === 'fr' ? 'Sous-catégorie créée' : 'Sub-category created');
   };
 
   const updateBudget = (b: CategoryBudgetEntity) => {
     const now = Date.now();
     setBudgets(prev => prev.map(bg => (bg.id === b.id ? { ...b, updatedAt: now } : bg)));
+    setRules(prev =>
+      prev.map(r => (r.targetBudgetId === b.id ? { ...r, targetBudgetTitle: b.title, updatedAt: now } : r))
+    );
     enqueueOutbox('BUDGET', `budget_${b.id}`, 'UPSERT');
-    showToast(language === 'fr' ? 'Budget mis à jour' : 'Budget updated');
+    showToast(language === 'fr' ? 'Sous-catégorie mise à jour' : 'Sub-category updated');
   };
 
   const deleteBudget = (id: number) => {
     const now = Date.now();
     setBudgets(prev => prev.map(bg => (bg.id === id ? { ...bg, isDeleted: true, updatedAt: now } : bg)));
     enqueueOutbox('BUDGET', `budget_${id}`, 'DELETE');
-    showToast(language === 'fr' ? 'Ligne de budget supprimée' : 'Budget line deleted');
+    showToast(language === 'fr' ? 'Sous-catégorie supprimée' : 'Sub-category deleted');
   };
 
   // Rules CRUD

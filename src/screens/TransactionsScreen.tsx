@@ -13,7 +13,9 @@ import {
   Clock,
   Sparkles,
   Split,
-  EyeOff
+  EyeOff,
+  HelpCircle,
+  AlertCircle
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { CategoryIcon } from '../components/CategoryIcon';
@@ -44,17 +46,40 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   const isFr = language === 'fr';
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCatId, setSelectedCatId] = useState<number | 'ALL'>('ALL');
+  const [selectedCatId, setSelectedCatId] = useState<number | 'ALL' | 'UNASSIGNED'>('ALL');
   const [filterType, setFilterType] = useState<'ALL' | 'EXPENSE' | 'INCOME' | 'TRANSFER'>('ALL');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'PENDING' | 'RECONCILED' | 'VERIFIED'>('ALL');
 
+  const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
+  const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
+  const activeCategoryIds = useMemo(() => new Set(activeCategories.map(c => c.id)), [activeCategories]);
+
+  const activeTransactions = useMemo(
+    () => transactions.filter(tx => !tx.isDeleted),
+    [transactions]
+  );
+
+  const unassignedCount = useMemo(
+    () =>
+      activeTransactions.filter(
+        tx => !tx.isSplitParent && (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId))
+      ).length,
+    [activeTransactions, activeCategoryIds]
+  );
+
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(tx => {
+    return activeTransactions.filter(tx => {
       // Account filter
       if (activeAccountId && tx.accountId !== activeAccountId) return false;
 
-      // Category filter
-      if (selectedCatId !== 'ALL' && tx.categoryId !== selectedCatId) return false;
+      // Category / Unassigned filter
+      const isTxUnassigned =
+        !tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId);
+      if (selectedCatId === 'UNASSIGNED') {
+        if (!isTxUnassigned) return false;
+      } else if (selectedCatId !== 'ALL' && tx.categoryId !== selectedCatId) {
+        return false;
+      }
 
       // Type filter
       if (filterType === 'EXPENSE' && (!tx.isExpense || tx.isInternalTransfer)) return false;
@@ -71,15 +96,31 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
         const matchesLabel = (tx.originalBankLabel || '').toLowerCase().includes(q);
         const matchesNotes = (tx.notes || '').toLowerCase().includes(q);
         const matchesCategory = tx.categoryName.toLowerCase().includes(q);
+        const matchesSubCategory = (tx.budgetTitle || '').toLowerCase().includes(q);
         const matchesMember = tx.familyMemberName.toLowerCase().includes(q);
-        if (!matchesTitle && !matchesLabel && !matchesNotes && !matchesCategory && !matchesMember) {
+        if (
+          !matchesTitle &&
+          !matchesLabel &&
+          !matchesNotes &&
+          !matchesCategory &&
+          !matchesSubCategory &&
+          !matchesMember
+        ) {
           return false;
         }
       }
 
       return true;
     });
-  }, [transactions, activeAccountId, selectedCatId, filterType, filterStatus, searchTerm]);
+  }, [
+    activeTransactions,
+    activeAccountId,
+    activeCategoryIds,
+    selectedCatId,
+    filterType,
+    filterStatus,
+    searchTerm
+  ]);
 
   const totalFilteredSum = useMemo(() => {
     return filteredTransactions
@@ -103,23 +144,45 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           <h1 className="text-xl font-bold text-white tracking-tight">
             {isFr ? 'Opérations & Historique' : 'Transactions & History'}
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {filteredTransactions.length}{' '}
-            {isFr ? 'transactions filtrées' : 'matching transactions'} •{' '}
+          <p className="text-xs text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
+            <span className="tabular-nums">
+              {filteredTransactions.length}{' '}
+              {isFr ? 'transactions filtrées' : 'matching transactions'}
+            </span>
+            <span>·</span>
             <span
-              className={`font-semibold ${
+              className={`font-semibold font-mono tabular-nums ${
                 totalFilteredSum >= 0 ? 'text-emerald-400' : 'text-slate-200'
               }`}
             >
               {totalFilteredSum >= 0 ? '+' : ''}
               {totalFilteredSum.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
             </span>
+            {unassignedCount > 0 && (
+              <>
+                <span>·</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedCatId(selectedCatId === 'UNASSIGNED' ? 'ALL' : 'UNASSIGNED')
+                  }
+                  className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 font-semibold transition"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="tabular-nums">
+                    {isFr
+                      ? `${unassignedCount} à catégoriser`
+                      : `${unassignedCount} unassigned`}
+                  </span>
+                </button>
+              </>
+            )}
           </p>
         </div>
 
         <button
           onClick={onOpenAddTx}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
         >
           <Plus className="w-4 h-4" />
           <span>{isFr ? 'Nouvelle Transaction' : 'New Transaction'}</span>
@@ -135,8 +198,8 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             type="text"
             placeholder={
               isFr
-                ? 'Rechercher un commerçant, libellé, note...'
-                : 'Search merchant, bank label, notes...'
+                ? 'Rechercher un commerçant, sous-catégorie, libellé, note...'
+                : 'Search merchant, sub-category, bank label, notes...'
             }
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
@@ -144,7 +207,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           />
         </div>
 
-        {/* Filter Pills Grid */}
+        {/* Filter Controls Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
           {/* Account Filter */}
           <div>
@@ -155,7 +218,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Tous les comptes' : 'All Accounts'}</option>
-              {accounts.map(acc => (
+              {activeAccounts.map(acc => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name}
                 </option>
@@ -168,13 +231,21 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             <select
               aria-label="Filter transactions by category"
               value={selectedCatId}
-              onChange={e =>
-                setSelectedCatId(e.target.value === 'ALL' ? 'ALL' : parseInt(e.target.value, 10))
-              }
+              onChange={e => {
+                const val = e.target.value;
+                setSelectedCatId(
+                  val === 'ALL' || val === 'UNASSIGNED' ? val : parseInt(val, 10)
+                );
+              }}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Toutes catégories' : 'All Categories'}</option>
-              {categories.map(c => (
+              <option value="UNASSIGNED">
+                {isFr
+                  ? `À catégoriser (${unassignedCount})`
+                  : `Unassigned (${unassignedCount})`}
+              </option>
+              {activeCategories.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -228,6 +299,8 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               month: 'short',
               year: 'numeric'
             });
+            const isUnassigned =
+              !tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId);
 
             return (
               <div
@@ -239,12 +312,18 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               >
                 {/* Left: Icon & info */}
                 <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
-                    style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
-                  >
-                    <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
-                  </div>
+                  {isUnassigned ? (
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                      <HelpCircle className="w-5 h-5" />
+                    </div>
+                  ) : (
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
+                      style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
+                    >
+                      <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
+                    </div>
+                  )}
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -253,49 +332,57 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                       </span>
 
                       {tx.status === 'PENDING' && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          {isFr ? 'Manuel en attente' : 'Pending'}
+                        <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">
+                          {isFr ? 'En attente' : 'Pending'}
                         </span>
                       )}
 
                       {tx.status === 'RECONCILED' && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
                           {isFr ? 'Rapproché ✓' : 'Reconciled ✓'}
                         </span>
                       )}
 
                       {tx.isSplit && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
                           Split
                         </span>
                       )}
 
                       {tx.creditCardPeriod && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                        <span className="text-[10px] font-mono text-blue-300">
                           💳 {tx.creditCardPeriod}
                         </span>
                       )}
 
                       {tx.isExcluded && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                        <span className="text-[10px] font-medium text-slate-400">
                           {isFr ? 'Exclu des totaux' : 'Excluded'}
                         </span>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 truncate">
-                      <span>{formattedDate}</span>
-                      <span>•</span>
-                      <span className="text-slate-300">{tx.categoryName}</span>
-                      {tx.budgetTitle && tx.budgetTitle !== 'General' && (
+                      <span className="tabular-nums">{formattedDate}</span>
+                      <span>·</span>
+                      {isUnassigned ? (
+                        <span className="text-amber-300 font-semibold">
+                          {isFr ? 'À catégoriser (cliquer pour éditer)' : 'Unassigned (click to edit)'}
+                        </span>
+                      ) : (
                         <>
-                          <span>•</span>
-                          <span className="text-slate-400">{tx.budgetTitle}</span>
+                          <span className="text-slate-300 font-medium">{tx.categoryName}</span>
+                          {tx.budgetTitle && (
+                            <>
+                              <span>·</span>
+                              <span className="text-teal-300">{tx.budgetTitle}</span>
+                            </>
+                          )}
                         </>
                       )}
-                      <span>•</span>
+                      <span>·</span>
                       <span>{tx.accountName}</span>
-                      <span>•</span>
+                      <span>·</span>
                       <span className="text-slate-500">{tx.paymentMethod}</span>
                     </div>
 
@@ -311,7 +398,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                 <div className="flex items-center gap-3 shrink-0">
                   <div className="text-right">
                     <div
-                      className={`text-base font-bold ${
+                      className={`text-base font-bold font-mono tabular-nums ${
                         tx.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
                       }`}
                     >
@@ -322,7 +409,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                   </div>
 
                   {/* Quick Action buttons */}
-                  <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                  <div className="flex items-center gap-1 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition">
                     {!tx.isSplit && (
                       <button
                         onClick={e => {

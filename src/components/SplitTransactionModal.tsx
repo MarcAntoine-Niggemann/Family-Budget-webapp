@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Plus, Trash2, Tag, AlertCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { TransactionEntity } from '../types';
 
@@ -9,52 +9,92 @@ interface SplitTransactionModalProps {
   onClose: () => void;
 }
 
+interface SplitDraft {
+  categoryId: number;
+  categoryName: string;
+  budgetId: number;
+  budgetTitle: string;
+  amount: number;
+  notes: string;
+}
+
 export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   transaction,
   isOpen,
   onClose
 }) => {
-  const { categories, budgets, splitTransaction, language, currency } = useBudget();
+  const { categories, budgets, splitTransaction, navigateTo, language, currency } = useBudget();
   const isFr = language === 'fr';
+
+  const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
+  const activeBudgets = useMemo(() => budgets.filter(b => !b.isDeleted && b.isActive), [budgets]);
+
+  const [splits, setSplits] = useState<SplitDraft[]>([]);
+
+  useEffect(() => {
+    if (!isOpen || !transaction) return;
+    const totalAbsAmount = Math.abs(transaction.amount);
+    const matchingFlowBudgets = activeBudgets.filter(b => b.isExpense === transaction.isExpense);
+
+    const firstCat =
+      activeCategories.find(c => c.id === transaction.categoryId) ||
+      activeCategories.find(c => matchingFlowBudgets.some(b => b.categoryId === c.id)) ||
+      activeCategories[0];
+    const firstBudget =
+      matchingFlowBudgets.find(b => b.id === transaction.budgetId) ||
+      matchingFlowBudgets.find(b => b.categoryId === (firstCat?.id || 0));
+
+    const secondCat =
+      activeCategories.find(c => c.id !== firstCat?.id && matchingFlowBudgets.some(b => b.categoryId === c.id)) ||
+      firstCat;
+    const secondBudget = matchingFlowBudgets.find(b => b.categoryId === (secondCat?.id || 0));
+
+    const half = Math.round((totalAbsAmount / 2) * 100) / 100;
+    const rest = Math.round((totalAbsAmount - half) * 100) / 100;
+
+    setSplits([
+      {
+        categoryId: firstCat?.id || 0,
+        categoryName: firstCat?.name || '',
+        budgetId: firstBudget?.id || 0,
+        budgetTitle: firstBudget?.title || '',
+        amount: half,
+        notes: ''
+      },
+      {
+        categoryId: secondCat?.id || 0,
+        categoryName: secondCat?.name || '',
+        budgetId: secondBudget?.id || 0,
+        budgetTitle: secondBudget?.title || '',
+        amount: rest,
+        notes: ''
+      }
+    ]);
+  }, [isOpen, transaction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen || !transaction) return null;
 
   const totalAbsAmount = Math.abs(transaction.amount);
-
-  const [splits, setSplits] = useState<
-    { categoryId: number; categoryName: string; budgetId: number; budgetTitle: string; amount: number; notes: string }[]
-  >([
-    {
-      categoryId: transaction.categoryId,
-      categoryName: transaction.categoryName,
-      budgetId: transaction.budgetId,
-      budgetTitle: transaction.budgetTitle,
-      amount: Math.round((totalAbsAmount / 2) * 100) / 100,
-      notes: ''
-    },
-    {
-      categoryId: categories[1]?.id || categories[0]?.id || 1,
-      categoryName: categories[1]?.name || categories[0]?.name || 'General',
-      budgetId: 0,
-      budgetTitle: 'General',
-      amount: Math.round((totalAbsAmount - totalAbsAmount / 2) * 100) / 100,
-      notes: ''
-    }
-  ]);
-
   const currentSplitsSum = splits.reduce((sum, s) => sum + (s.amount || 0), 0);
   const remaining = Math.round((totalAbsAmount - currentSplitsSum) * 100) / 100;
-  const isValid = Math.abs(remaining) < 0.01 && splits.every(s => s.amount > 0);
+  const allCategorized = splits.every(s => s.categoryId > 0 && s.budgetId > 0);
+  const isValid = Math.abs(remaining) < 0.01 && splits.every(s => s.amount > 0) && allCategorized;
 
   const handleAddSplit = () => {
-    const defaultCat = categories[0] || { id: 1, name: 'General' };
+    const defaultCat =
+      activeCategories.find(c =>
+        activeBudgets.some(b => b.categoryId === c.id && b.isExpense === transaction.isExpense)
+      ) || activeCategories[0];
+    const defaultBudget = activeBudgets.find(
+      b => b.categoryId === (defaultCat?.id || 0) && b.isExpense === transaction.isExpense
+    );
     setSplits(prev => [
       ...prev,
       {
-        categoryId: defaultCat.id,
-        categoryName: defaultCat.name,
-        budgetId: 0,
-        budgetTitle: 'General',
+        categoryId: defaultCat?.id || 0,
+        categoryName: defaultCat?.name || '',
+        budgetId: defaultBudget?.id || 0,
+        budgetTitle: defaultBudget?.title || '',
         amount: remaining > 0 ? remaining : 0,
         notes: ''
       }
@@ -81,8 +121,8 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             <h2 className="text-lg font-bold text-white">
               {isFr ? 'Ventilation de la dépense (Split)' : 'Split Transaction'}
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {transaction.title} • {totalAbsAmount.toFixed(2)} {currency}
+            <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+              {transaction.title} · {totalAbsAmount.toFixed(2)} {currency}
             </p>
           </div>
           <button
@@ -95,7 +135,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
 
         {/* Sum Indicator */}
         <div
-          className={`mt-4 p-3 rounded-xl border flex items-center justify-between text-xs font-medium ${
+          className={`mt-4 p-3 rounded-xl border flex items-center justify-between text-xs font-medium tabular-nums ${
             isValid
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
               : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
@@ -105,24 +145,46 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>
               {isFr ? 'Total ventilé :' : 'Allocated:'}{' '}
-              <strong>
+              <strong className="font-mono">
                 {currentSplitsSum.toFixed(2)} / {totalAbsAmount.toFixed(2)} {currency}
               </strong>
             </span>
           </div>
-          <span>
-            {remaining === 0
+          <span className="font-mono">
+            {Math.abs(remaining) < 0.01
               ? isFr
                 ? 'Équilibré (100%)'
                 : 'Balanced (100%)'
-              : `${isFr ? 'Reste à répartir :' : 'Remaining:'} ${remaining.toFixed(2)} ${currency}`}
+              : `${isFr ? 'Reste :' : 'Remaining:'} ${remaining.toFixed(2)} ${currency}`}
           </span>
         </div>
+
+        {!allCategorized && (
+          <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+            <span>
+              {isFr
+                ? 'Chaque ligne doit pointer vers une catégorie et une sous-catégorie existante.'
+                : 'Every split line must point to an existing category and sub-category.'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                navigateTo('BUDGET_PLANNER');
+              }}
+              className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition"
+            >
+              {isFr ? 'Planificateur' : 'Budget Planner'}
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSave} className="mt-4 space-y-4">
           <div className="space-y-3">
             {splits.map((split, idx) => {
-              const catBudgets = budgets.filter(b => b.categoryId === split.categoryId);
+              const catBudgets = activeBudgets.filter(
+                b => b.categoryId === split.categoryId && b.isExpense === transaction.isExpense
+              );
 
               return (
                 <div
@@ -145,7 +207,6 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    {/* Amount */}
                     <div>
                       <label className="block text-[11px] font-medium text-slate-400 mb-1">
                         {isFr ? 'Montant' : 'Amount'} ({currency})
@@ -158,15 +219,12 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                         value={split.amount || ''}
                         onChange={e => {
                           const val = parseFloat(e.target.value) || 0;
-                          setSplits(prev =>
-                            prev.map((s, i) => (i === idx ? { ...s, amount: val } : s))
-                          );
+                          setSplits(prev => prev.map((s, i) => (i === idx ? { ...s, amount: val } : s)));
                         }}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm font-bold text-white focus:outline-none focus:border-teal-500"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm font-bold font-mono text-white focus:outline-none focus:border-teal-500"
                       />
                     </div>
 
-                    {/* Category */}
                     <div>
                       <label className="block text-[11px] font-medium text-slate-400 mb-1">
                         {isFr ? 'Catégorie' : 'Category'}
@@ -175,16 +233,19 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                         value={split.categoryId}
                         onChange={e => {
                           const catId = parseInt(e.target.value, 10);
-                          const cat = categories.find(c => c.id === catId);
+                          const cat = activeCategories.find(c => c.id === catId);
+                          const firstBudget = activeBudgets.find(
+                            b => b.categoryId === catId && b.isExpense === transaction.isExpense
+                          );
                           setSplits(prev =>
                             prev.map((s, i) =>
                               i === idx
                                 ? {
                                     ...s,
                                     categoryId: catId,
-                                    categoryName: cat?.name || 'General',
-                                    budgetId: 0,
-                                    budgetTitle: 'General'
+                                    categoryName: cat?.name || '',
+                                    budgetId: firstBudget?.id || 0,
+                                    budgetTitle: firstBudget?.title || ''
                                   }
                                 : s
                             )
@@ -192,7 +253,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                         }}
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
                       >
-                        {categories.map(c => (
+                        {activeCategories.map(c => (
                           <option key={c.id} value={c.id}>
                             {c.name}
                           </option>
@@ -200,37 +261,39 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                       </select>
                     </div>
 
-                    {/* Sub-Budget */}
                     <div>
                       <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                        {isFr ? 'Sous-budget' : 'Sub-budget'}
+                        {isFr ? 'Sous-catégorie' : 'Sub-category'}
                       </label>
                       <select
                         value={split.budgetId}
+                        disabled={catBudgets.length === 0}
                         onChange={e => {
                           const bId = parseInt(e.target.value, 10);
-                          const b = budgets.find(bg => bg.id === bId);
+                          const b = catBudgets.find(bg => bg.id === bId);
                           setSplits(prev =>
                             prev.map((s, i) =>
-                              i === idx
-                                ? { ...s, budgetId: bId, budgetTitle: b?.title || 'General' }
-                                : s
+                              i === idx ? { ...s, budgetId: bId, budgetTitle: b?.title || '' } : s
                             )
                           );
                         }}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                       >
-                        <option value={0}>{isFr ? 'Général' : 'General'}</option>
-                        {catBudgets.map(b => (
-                          <option key={b.id} value={b.id}>
-                            {b.title}
+                        {catBudgets.length === 0 ? (
+                          <option value={0}>
+                            {isFr ? 'Aucune sous-catégorie' : 'No sub-categories'}
                           </option>
-                        ))}
+                        ) : (
+                          catBudgets.map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.title}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
                   </div>
 
-                  {/* Note */}
                   <div>
                     <input
                       type="text"
@@ -238,9 +301,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                       value={split.notes}
                       onChange={e => {
                         const val = e.target.value;
-                        setSplits(prev =>
-                          prev.map((s, i) => (i === idx ? { ...s, notes: val } : s))
-                        );
+                        setSplits(prev => prev.map((s, i) => (i === idx ? { ...s, notes: val } : s)));
                       }}
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1 text-xs text-slate-300 focus:outline-none focus:border-teal-500"
                     />

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Trash2, Calendar, User, Wallet, Tag } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X, Trash2, Calendar, User, Wallet, Tag, AlertCircle } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { TransactionEntity } from '../types';
 
@@ -23,39 +23,63 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     members,
     updateTransaction,
     deleteTransaction,
+    navigateTo,
     language,
     currency
   } = useBudget();
 
   const isFr = language === 'fr';
 
+  const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
+  const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
+  const activeBudgets = useMemo(() => budgets.filter(b => !b.isDeleted && b.isActive), [budgets]);
+
+  const [title, setTitle] = useState('');
+  const [amountStr, setAmountStr] = useState('');
+  const [isExpense, setIsExpense] = useState(true);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState(0);
+  const [selectedBudgetId, setSelectedBudgetId] = useState(0);
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [dateStr, setDateStr] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [notes, setNotes] = useState('');
+  const [isExcluded, setIsExcluded] = useState(false);
+  const [creditCardPeriod, setCreditCardPeriod] = useState('');
+
+  useEffect(() => {
+    if (!isOpen || !transaction) return;
+    setTitle(transaction.title);
+    setAmountStr(Math.abs(transaction.amount).toString());
+    setIsExpense(transaction.isExpense);
+    setSelectedAccountId(transaction.accountId);
+    setSelectedCategoryId(transaction.categoryId || 0);
+    setSelectedBudgetId(transaction.budgetId || 0);
+    setSelectedMemberId(transaction.familyMemberId);
+    setDateStr(new Date(transaction.date).toISOString().split('T')[0]);
+    setPaymentMethod(transaction.paymentMethod);
+    setNotes(transaction.notes || '');
+    setIsExcluded(transaction.isExcluded || false);
+    setCreditCardPeriod(transaction.creditCardPeriod || '');
+  }, [isOpen, transaction]);
+
+  const filteredBudgets = useMemo(
+    () => activeBudgets.filter(b => b.categoryId === selectedCategoryId && b.isExpense === isExpense),
+    [activeBudgets, selectedCategoryId, isExpense]
+  );
+
   if (!isOpen || !transaction) return null;
 
-  const [title, setTitle] = useState(transaction.title);
-  const [amountStr, setAmountStr] = useState(Math.abs(transaction.amount).toString());
-  const [isExpense, setIsExpense] = useState(transaction.isExpense);
-  const [selectedAccountId, setSelectedAccountId] = useState(transaction.accountId);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(transaction.categoryId);
-  const [selectedBudgetId, setSelectedBudgetId] = useState(transaction.budgetId);
-  const [selectedMemberId, setSelectedMemberId] = useState(transaction.familyMemberId);
-  const [dateStr, setDateStr] = useState(new Date(transaction.date).toISOString().split('T')[0]);
-  const [paymentMethod, setPaymentMethod] = useState(transaction.paymentMethod);
-  const [notes, setNotes] = useState(transaction.notes || '');
-  const [isExcluded, setIsExcluded] = useState(transaction.isExcluded || false);
-  const [creditCardPeriod, setCreditCardPeriod] = useState(transaction.creditCardPeriod || '');
-
-  const filteredBudgets = budgets.filter(
-    b => b.categoryId === selectedCategoryId && b.isExpense === isExpense
-  );
+  const selectedCategory = activeCategories.find(c => c.id === selectedCategoryId);
+  const selectedBudget = filteredBudgets.find(b => b.id === selectedBudgetId);
+  const canSave = Boolean(selectedCategory && selectedBudget && title.trim() && amountStr.trim());
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(amountStr.replace(',', '.'));
-    if (isNaN(val) || val <= 0) return;
+    if (isNaN(val) || val <= 0 || !selectedCategory || !selectedBudget) return;
 
-    const account = accounts.find(a => a.id === selectedAccountId);
-    const category = categories.find(c => c.id === selectedCategoryId);
-    const budget = budgets.find(b => b.id === selectedBudgetId);
+    const account = activeAccounts.find(a => a.id === selectedAccountId);
     const member = members.find(m => m.id === selectedMemberId);
 
     const signedAmount = isExpense ? -Math.abs(val) : Math.abs(val);
@@ -66,12 +90,12 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       title: title.trim(),
       amount: signedAmount,
       isExpense,
-      categoryId: category?.id || transaction.categoryId,
-      categoryName: category?.name || transaction.categoryName,
-      categoryColor: category?.color || transaction.categoryColor,
-      categoryIcon: category?.icon || transaction.categoryIcon,
-      budgetId: budget?.id || 0,
-      budgetTitle: budget?.title || 'General',
+      categoryId: selectedCategory.id,
+      categoryName: selectedCategory.name,
+      categoryColor: selectedCategory.color,
+      categoryIcon: selectedCategory.icon,
+      budgetId: selectedBudget.id,
+      budgetTitle: selectedBudget.title,
       date: txDate,
       familyMemberId: member?.id || transaction.familyMemberId,
       familyMemberName: member?.name || transaction.familyMemberName,
@@ -102,10 +126,19 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               {isFr ? 'Modifier la Transaction' : 'Edit Transaction'}
             </h2>
             <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
-              <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 font-mono">
-                #{transaction.id}
+              <span className="font-mono">#{transaction.id}</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {transaction.source === 'BANK_IMPORT'
+                  ? isFr
+                    ? 'Import Banque'
+                    : 'Bank Import'
+                  : transaction.source === 'OPEN_BANKING'
+                  ? 'Open Banking'
+                  : isFr
+                  ? 'Manuel'
+                  : 'Manual'}
               </span>
-              <span>{transaction.source === 'BANK_IMPORT' ? (isFr ? 'Import Banque' : 'Bank Import') : 'Manuel'}</span>
             </div>
           </div>
           <button
@@ -117,7 +150,6 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
         </div>
 
         <form onSubmit={handleSave} className="mt-4 space-y-4">
-          {/* Raw Bank Label display if imported */}
           {transaction.originalBankLabel && (
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800/80 text-xs">
               <span className="text-slate-400 font-medium block mb-0.5">
@@ -138,7 +170,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 required
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
-                className="w-full text-xl font-bold bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-teal-500 transition"
+                className="w-full text-xl font-bold font-mono bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-teal-500 transition"
               />
             </div>
 
@@ -148,7 +180,14 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               </label>
               <select
                 value={isExpense ? 'EXPENSE' : 'INCOME'}
-                onChange={e => setIsExpense(e.target.value === 'EXPENSE')}
+                onChange={e => {
+                  const nextIsExpense = e.target.value === 'EXPENSE';
+                  setIsExpense(nextIsExpense);
+                  const firstMatch = activeBudgets.find(
+                    b => b.categoryId === selectedCategoryId && b.isExpense === nextIsExpense
+                  );
+                  setSelectedBudgetId(firstMatch?.id || 0);
+                }}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 <option value="EXPENSE">{isFr ? 'Dépense (-)' : 'Expense (-)'}</option>
@@ -171,7 +210,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             />
           </div>
 
-          {/* Category & Budget */}
+          {/* Category & Mandatory Sub-Category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
@@ -183,12 +222,17 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 onChange={e => {
                   const newCatId = parseInt(e.target.value, 10);
                   setSelectedCategoryId(newCatId);
-                  const firstBudget = budgets.find(b => b.categoryId === newCatId);
+                  const firstBudget = activeBudgets.find(
+                    b => b.categoryId === newCatId && b.isExpense === isExpense
+                  );
                   setSelectedBudgetId(firstBudget?.id || 0);
                 }}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
-                {categories.map(c => (
+                <option value={0}>
+                  {isFr ? 'Sélectionner une catégorie...' : 'Select a category...'}
+                </option>
+                {activeCategories.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -198,14 +242,27 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">
-                {isFr ? 'Ligne de budget' : 'Budget Line'}
+                {isFr ? 'Sous-catégorie (obligatoire)' : 'Sub-category (required)'}
               </label>
               <select
                 value={selectedBudgetId}
                 onChange={e => setSelectedBudgetId(parseInt(e.target.value, 10))}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                disabled={selectedCategoryId === 0 || filteredBudgets.length === 0}
+                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-50"
               >
-                <option value={0}>{isFr ? 'Général' : 'General'}</option>
+                <option value={0}>
+                  {selectedCategoryId === 0
+                    ? isFr
+                      ? 'Choisir une catégorie d’abord'
+                      : 'Select category first'
+                    : filteredBudgets.length === 0
+                    ? isFr
+                      ? 'Aucune sous-catégorie'
+                      : 'No sub-categories'
+                    : isFr
+                    ? 'Sélectionner une sous-catégorie...'
+                    : 'Select a sub-category...'}
+                </option>
                 {filteredBudgets.map(b => (
                   <option key={b.id} value={b.id}>
                     {b.title}
@@ -214,6 +271,29 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               </select>
             </div>
           </div>
+
+          {selectedCategoryId > 0 && filteredBudgets.length === 0 && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  {isFr
+                    ? `Aucune sous-catégorie de type ${isExpense ? 'Dépense' : 'Revenu'} dans cette catégorie. Créez-en une dans le Planificateur.`
+                    : `No ${isExpense ? 'Expense' : 'Income'} sub-categories in this category. Create one in Budget Planner first.`}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  navigateTo('BUDGET_PLANNER');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition"
+              >
+                {isFr ? 'Planificateur' : 'Budget Planner'}
+              </button>
+            </div>
+          )}
 
           {/* Account & Member */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -227,7 +307,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 onChange={e => setSelectedAccountId(e.target.value)}
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
-                {accounts.map(acc => (
+                {activeAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
                     {acc.name}
                   </option>
@@ -348,7 +428,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95"
+                disabled={!canSave}
+                className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95"
               >
                 {isFr ? 'Enregistrer' : 'Save Changes'}
               </button>

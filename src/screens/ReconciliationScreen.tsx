@@ -22,10 +22,12 @@ export const ReconciliationScreen: React.FC = () => {
   const candidates = findReconciliationCandidates(transactions);
 
   const pendingManual = transactions.filter(
-    tx => tx.source === 'MANUAL' && tx.status === 'PENDING'
+    tx => !tx.isDeleted && tx.source === 'MANUAL' && tx.status === 'PENDING'
   );
 
-  const reconciledCount = transactions.filter(tx => tx.status === 'RECONCILED').length;
+  const reconciledCount = transactions.filter(
+    tx => !tx.isDeleted && tx.status === 'RECONCILED'
+  ).length;
 
   return (
     <div className="space-y-6 pb-12">
@@ -128,16 +130,24 @@ export const ReconciliationScreen: React.FC = () => {
                       </span>
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-sm text-white">{cand.manualTx.title}</span>
-                        <span className="font-bold text-sm text-slate-100">
+                        <span className="font-bold font-mono tabular-nums text-sm text-slate-100">
                           {cand.manualTx.amount.toFixed(2)} {currency}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
                         <span>{manualDate}</span>
-                        <span>•</span>
+                        <span>·</span>
                         <span>{cand.manualTx.familyMemberName}</span>
-                        <span>•</span>
-                        <span>{cand.manualTx.categoryName}</span>
+                        <span>·</span>
+                        <span>
+                          {cand.manualTx.categoryName
+                            ? cand.manualTx.budgetTitle
+                              ? `${cand.manualTx.categoryName} · ${cand.manualTx.budgetTitle}`
+                              : cand.manualTx.categoryName
+                            : isFr
+                            ? 'À catégoriser'
+                            : 'Unassigned'}
+                        </span>
                       </div>
                       {cand.manualTx.notes && (
                         <p className="text-[11px] text-teal-400/80 italic">
@@ -153,7 +163,7 @@ export const ReconciliationScreen: React.FC = () => {
                       </span>
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-sm text-white">{cand.bankTx.title}</span>
-                        <span className="font-bold text-sm text-slate-100">
+                        <span className="font-bold font-mono tabular-nums text-sm text-slate-100">
                           {cand.bankTx.amount.toFixed(2)} {currency}
                         </span>
                       </div>

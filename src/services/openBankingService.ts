@@ -259,10 +259,10 @@ export async function executeOpenBankingSync(
 
     // Apply Priority Categorization Rule
     const cleanLabel = (rtx.description || '').toUpperCase();
-    let assignedCategory = categories[0] || { id: 1, name: 'Divers', color: 0xff64748b, icon: 'receipt' };
-    let assignedBudget = budgets[0] || { id: 1, title: 'Budget Général' };
+    let assignedCategory: CategoryEntity | null = null;
+    let assignedBudget: CategoryBudgetEntity | null = null;
 
-    for (const rule of rules.filter(r => r.isActive).sort((a, b) => b.priority - a.priority)) {
+    for (const rule of rules.filter(r => !r.isDeleted && r.isActive).sort((a, b) => b.priority - a.priority)) {
       const pat = (rule.pattern || '').toUpperCase();
       let matched = false;
       if (rule.matchType === 'CONTAINS' && cleanLabel.includes(pat)) matched = true;
@@ -277,10 +277,8 @@ export async function executeOpenBankingSync(
       }
 
       if (matched) {
-        const foundCat = categories.find(c => c.id === rule.targetCategoryId);
-        if (foundCat) assignedCategory = foundCat;
-        const foundBgt = budgets.find(b => b.id === rule.targetBudgetId);
-        if (foundBgt) assignedBudget = foundBgt;
+        assignedCategory = categories.find(c => !c.isDeleted && c.id === rule.targetCategoryId) || null;
+        assignedBudget = budgets.find(b => !b.isDeleted && b.id === rule.targetBudgetId) || null;
         break;
       }
     }
@@ -293,12 +291,12 @@ export async function executeOpenBankingSync(
       originalBankLabel: rtx.originalLabel || rtx.description,
       amount: rtx.amount,
       isExpense,
-      categoryId: assignedCategory.id,
-      categoryName: assignedCategory.name,
-      categoryColor: assignedCategory.color,
-      categoryIcon: assignedCategory.icon,
-      budgetId: assignedBudget.id,
-      budgetTitle: assignedBudget.title,
+      categoryId: assignedCategory?.id || 0,
+      categoryName: assignedCategory?.name || '',
+      categoryColor: assignedCategory?.color || 0xff64748b,
+      categoryIcon: assignedCategory?.icon || 'HelpCircle',
+      budgetId: assignedBudget?.id || 0,
+      budgetTitle: assignedBudget?.title || '',
       date: rtxDateMs,
       familyMemberId: 'jean_martin',
       familyMemberName: 'Jean Martin',

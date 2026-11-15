@@ -5,6 +5,18 @@ import {
   FamilyMemberEntity,
   TransactionEntity
 } from '../types';
+import { getBudgetAnnualAmount, getBudgetMonthlyAmount } from './budgetEngine';
+
+export interface SubCategoryReportItem {
+  budgetId: number;
+  title: string;
+  isExpense: boolean;
+  budgetAmount: number;
+  actualAmount: number;
+  difference: number;
+  percentageUsed: number;
+  isOverBudget: boolean;
+}
 
 export interface CategoryReportItem {
   categoryId: number;
@@ -18,6 +30,7 @@ export interface CategoryReportItem {
   isOverBudget: boolean;
   budgetIncome: number;
   actualIncome: number;
+  subCategories: SubCategoryReportItem[];
 }
 
 export interface MemberSpendingItem {
@@ -36,6 +49,8 @@ export interface MonthlyReportResult {
   totalActualExpenses: number;
   totalIncomeBudget: number;
   totalActualIncome: number;
+  unassignedExpenses: number;
+  unassignedIncome: number;
   netSavings: number; // Income - Expense
   netBudgetDifference: number; // Budget - Spent
   savingsRate: number; // (Savings / Income) * 100
@@ -44,17 +59,28 @@ export interface MonthlyReportResult {
   burnDownPoints: { day: number; ideal: number; actual: number }[];
 }
 
+export interface YearlySubCategoryItem {
+  budgetId: number;
+  title: string;
+  isExpense: boolean;
+  annualBudget: number;
+  annualActual: number;
+  percentageUsed: number;
+}
+
 export interface YearlyReportResult {
   year: number;
   totalAnnualBudget: number;
   totalAnnualSpent: number;
   totalAnnualIncome: number;
   remainingAnnualBudget: number;
+  unassignedExpenses: number;
   monthlyBreakdown: {
     monthIndex: number;
     monthName: string;
     income: number;
     expenses: number;
+    plannedExpenses: number;
     savings: number;
   }[];
   categoryBreakdown: {
@@ -64,6 +90,7 @@ export interface YearlyReportResult {
     annualBudget: number;
     annualSpent: number;
     percentageUsed: number;
+    subCategories: YearlySubCategoryItem[];
   }[];
 }
 
@@ -110,6 +137,7 @@ export function computeMonthlyReport(
   members: FamilyMemberEntity[],
   locale: string = 'fr'
 ): MonthlyReportResult {
+  const month1to12 = monthIndex + 1;
   const startDate = new Date(year, monthIndex, 1, 0, 0, 0, 0).getTime();
   const endDate = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999).getTime();
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
@@ -121,35 +149,58 @@ export function computeMonthlyReport(
   );
 
   // Filter out internal transfers and credit card settlement debits to avoid double counting
-  const expenseTx = monthTx.filter(tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT');
+  const expenseTx = monthTx.filter(
+    tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT'
+  );
   const incomeTx = monthTx.filter(tx => !tx.isExpense && !tx.isInternalTransfer);
 
   const totalActualExpenses = expenseTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
   const totalActualIncome = incomeTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
-  // Category map
+  const activeCategoryIds = new Set(categories.filter(c => !c.isDeleted).map(c => c.id));
+  const unassignedExpenses = expenseTx
+    .filter(tx => !tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId)
+    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const unassignedIncome = incomeTx
+    .filter(tx => !tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId)
+    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+
+  // Category wrapper aggregation from sub-category budget lines
   const catItems: CategoryReportItem[] = categories
     .filter(c => !c.isDeleted)
     .map(cat => {
-      const catBudgets = budgets.filter(b => !b.isDeleted && b.isActive && b.categoryId === cat.id);
+      const catBudgets = budgets.filter(b => !b.isDeleted && b.categoryId === cat.id);
+
+      const subCategories: SubCategoryReportItem[] = catBudgets.map(b => {
+        const budgetAmount = Math.round(getBudgetMonthlyAmount(b, year, month1to12) * 100) / 100;
+        const matchingTx = b.isExpense
+          ? expenseTx.filter(tx => tx.budgetId === b.id)
+          : incomeTx.filter(tx => tx.budgetId === b.id);
+        const actualAmount =
+          Math.round(matchingTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0) * 100) / 100;
+        const difference = Math.round((budgetAmount - actualAmount) * 100) / 100;
+        const percentageUsed =
+          budgetAmount > 0 ? Math.min(100, Math.round((actualAmount / budgetAmount) * 100)) : 0;
+
+        return {
+          budgetId: b.id,
+          title: b.title,
+          isExpense: b.isExpense,
+          budgetAmount,
+          actualAmount,
+          difference,
+          percentageUsed,
+          isOverBudget: b.isExpense && actualAmount > budgetAmount && budgetAmount > 0
+        };
+      });
 
       const budgetExpense = catBudgets
         .filter(b => b.isExpense)
-        .reduce((sum, b) => {
-          if (b.month != null && b.month !== monthIndex + 1) return sum;
-          if (b.frequency === 'MONTHLY') return sum + b.amount;
-          if (b.frequency === 'YEARLY') return sum + b.amount / 12;
-          return sum + b.amount;
-        }, 0);
+        .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, year, month1to12), 0);
 
       const budgetIncome = catBudgets
         .filter(b => !b.isExpense)
-        .reduce((sum, b) => {
-          if (b.month != null && b.month !== monthIndex + 1) return sum;
-          if (b.frequency === 'MONTHLY') return sum + b.amount;
-          if (b.frequency === 'YEARLY') return sum + b.amount / 12;
-          return sum + b.amount;
-        }, 0);
+        .reduce((sum, b) => sum + getBudgetMonthlyAmount(b, year, month1to12), 0);
 
       const actualSpent = expenseTx
         .filter(tx => tx.categoryId === cat.id)
@@ -160,7 +211,8 @@ export function computeMonthlyReport(
         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
       const difference = Math.round((budgetExpense - actualSpent) * 100) / 100;
-      const percentageUsed = budgetExpense > 0 ? Math.min(100, Math.round((actualSpent / budgetExpense) * 100)) : 0;
+      const percentageUsed =
+        budgetExpense > 0 ? Math.min(100, Math.round((actualSpent / budgetExpense) * 100)) : 0;
 
       return {
         categoryId: cat.id,
@@ -173,7 +225,8 @@ export function computeMonthlyReport(
         percentageUsed,
         isOverBudget: actualSpent > budgetExpense && budgetExpense > 0,
         budgetIncome: Math.round(budgetIncome * 100) / 100,
-        actualIncome: Math.round(actualIncome * 100) / 100
+        actualIncome: Math.round(actualIncome * 100) / 100,
+        subCategories
       };
     });
 
@@ -199,9 +252,7 @@ export function computeMonthlyReport(
     };
   });
 
-  // Burn down curve calculation:
-  // Ideal: linear burn of totalExpenseBudget from day 1 to daysInMonth
-  // Actual: cumulative spend day-by-day
+  // Burn down curve calculation
   const burnDownPoints: { day: number; ideal: number; actual: number }[] = [];
   let cumulativeSpend = 0;
   const maxDayTracked = isCurrentMonth ? currentDay : daysInMonth;
@@ -226,7 +277,10 @@ export function computeMonthlyReport(
   const savingsRate = totalActualIncome > 0 ? Math.round((netSavings / totalActualIncome) * 100) : 0;
 
   const monthDate = new Date(year, monthIndex, 1);
-  const monthName = monthDate.toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', { month: 'long', year: 'numeric' });
+  const monthName = monthDate.toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
+    month: 'long',
+    year: 'numeric'
+  });
 
   return {
     monthIndex,
@@ -236,10 +290,12 @@ export function computeMonthlyReport(
     totalActualExpenses: Math.round(totalActualExpenses * 100) / 100,
     totalIncomeBudget: Math.round(totalIncomeBudget * 100) / 100,
     totalActualIncome: Math.round(totalActualIncome * 100) / 100,
+    unassignedExpenses: Math.round(unassignedExpenses * 100) / 100,
+    unassignedIncome: Math.round(unassignedIncome * 100) / 100,
     netSavings,
     netBudgetDifference,
     savingsRate,
-    categories: catItems.sort((a, b) => b.actualSpent - a.actualSpent),
+    categories: catItems.sort((a, b) => b.actualSpent - a.actualSpent || b.budgetExpense - a.budgetExpense),
     members: memberItems.sort((a, b) => b.amount - a.amount),
     burnDownPoints
   };
@@ -259,20 +315,25 @@ export function computeYearlyReport(
     tx => !tx.isDeleted && !tx.isExcluded && !tx.isSplitParent && tx.date >= startOfYear && tx.date <= endOfYear
   );
 
-  const expenseTx = yearTx.filter(tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT');
+  const expenseTx = yearTx.filter(
+    tx => tx.isExpense && !tx.isInternalTransfer && tx.transferType !== 'CARD_SETTLEMENT'
+  );
   const incomeTx = yearTx.filter(tx => !tx.isExpense && !tx.isInternalTransfer);
 
   const totalAnnualSpent = expenseTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
   const totalAnnualIncome = incomeTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
-  // Total annual budget calculation:
-  // Monthly budget * 12 + Yearly budgets
-  const activeBudgets = budgets.filter(b => !b.isDeleted && b.isActive && b.isExpense);
-  const totalAnnualBudget = activeBudgets.reduce((sum, b) => {
-    if (b.frequency === 'MONTHLY') return sum + b.amount * 12;
-    if (b.frequency === 'YEARLY') return sum + b.amount;
-    return sum + b.amount;
-  }, 0);
+  const activeCategoryIds = new Set(categories.filter(c => !c.isDeleted).map(c => c.id));
+  const unassignedExpenses = expenseTx
+    .filter(tx => !tx.categoryId || !activeCategoryIds.has(tx.categoryId) || !tx.budgetId)
+    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+
+  // Total annual budget computed month-by-month across active sub-category lines
+  const activeExpenseBudgets = budgets.filter(b => !b.isDeleted && b.isExpense && activeCategoryIds.has(b.categoryId));
+  const totalAnnualBudget = activeExpenseBudgets.reduce(
+    (sum, b) => sum + getBudgetAnnualAmount(b, year),
+    0
+  );
 
   const remainingAnnualBudget = Math.max(0, Math.round((totalAnnualBudget - totalAnnualSpent) * 100) / 100);
 
@@ -289,6 +350,11 @@ export function computeYearlyReport(
       .filter(tx => tx.date >= mStart && tx.date <= mEnd)
       .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
+    const plannedExpenses = activeExpenseBudgets.reduce(
+      (sum, b) => sum + getBudgetMonthlyAmount(b, year, mIdx + 1),
+      0
+    );
+
     const mDate = new Date(year, mIdx, 1);
     const monthName = mDate.toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', { month: 'short' });
 
@@ -297,25 +363,43 @@ export function computeYearlyReport(
       monthName,
       income: Math.round(mIncome * 100) / 100,
       expenses: Math.round(mExpense * 100) / 100,
+      plannedExpenses: Math.round(plannedExpenses * 100) / 100,
       savings: Math.round((mIncome - mExpense) * 100) / 100
     };
   });
 
-  // Category breakdown for the year
+  // Category wrapper breakdown for the year (with sub-categories)
   const categoryBreakdown = categories
     .filter(c => !c.isDeleted)
     .map(cat => {
-      const catBudgets = budgets.filter(b => !b.isDeleted && b.isActive && b.categoryId === cat.id && b.isExpense);
-      const annualBudget = catBudgets.reduce((sum, b) => {
-        if (b.frequency === 'MONTHLY') return sum + b.amount * 12;
-        return sum + b.amount;
-      }, 0);
+      const catBudgets = budgets.filter(b => !b.isDeleted && b.categoryId === cat.id && b.isExpense);
+      const subCategories: YearlySubCategoryItem[] = catBudgets.map(b => {
+        const annualBudget = getBudgetAnnualAmount(b, year);
+        const annualActual = Math.round(
+          expenseTx
+            .filter(tx => tx.budgetId === b.id)
+            .reduce((sum, tx) => sum + Math.abs(tx.amount), 0) * 100
+        ) / 100;
+        const percentageUsed =
+          annualBudget > 0 ? Math.min(100, Math.round((annualActual / annualBudget) * 100)) : 0;
 
+        return {
+          budgetId: b.id,
+          title: b.title,
+          isExpense: b.isExpense,
+          annualBudget,
+          annualActual,
+          percentageUsed
+        };
+      });
+
+      const annualBudget = catBudgets.reduce((sum, b) => sum + getBudgetAnnualAmount(b, year), 0);
       const annualSpent = expenseTx
         .filter(tx => tx.categoryId === cat.id)
         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
-      const percentageUsed = annualBudget > 0 ? Math.min(100, Math.round((annualSpent / annualBudget) * 100)) : 0;
+      const percentageUsed =
+        annualBudget > 0 ? Math.min(100, Math.round((annualSpent / annualBudget) * 100)) : 0;
 
       return {
         categoryId: cat.id,
@@ -323,10 +407,11 @@ export function computeYearlyReport(
         categoryColor: cat.color,
         annualBudget: Math.round(annualBudget * 100) / 100,
         annualSpent: Math.round(annualSpent * 100) / 100,
-        percentageUsed
+        percentageUsed,
+        subCategories
       };
     })
-    .sort((a, b) => b.annualSpent - a.annualSpent);
+    .sort((a, b) => b.annualSpent - a.annualSpent || b.annualBudget - a.annualBudget);
 
   return {
     year,
@@ -334,6 +419,7 @@ export function computeYearlyReport(
     totalAnnualSpent: Math.round(totalAnnualSpent * 100) / 100,
     totalAnnualIncome: Math.round(totalAnnualIncome * 100) / 100,
     remainingAnnualBudget,
+    unassignedExpenses: Math.round(unassignedExpenses * 100) / 100,
     monthlyBreakdown,
     categoryBreakdown
   };
