@@ -1,9 +1,8 @@
 import { BIOMETRIC_CRED_STORAGE_KEY } from './storage';
 
 /**
- * Biometric Hardware Keyvault integration using WebAuthn (FIDO2 / Platform Authenticator).
- * Ties cryptographic verification directly to the device's hardware security module
- * (Apple Secure Enclave on iOS/macOS / Android Hardware Keystore / Windows Hello).
+ * Biometric Hardware Keyvault integration using WebAuthn (FIDO2 / Platform Authenticator)
+ * with WebAuthn PRF extension support for hardware-derived AES-256-GCM vault keys.
  */
 
 export interface BiometricStatus {
@@ -12,8 +11,25 @@ export interface BiometricStatus {
   hasEnrolledCredential: boolean;
 }
 
+export interface BiometricPrfEnrollResult {
+  success: boolean;
+  credentialId?: string;
+  prfSupported: boolean;
+  prfSecret?: ArrayBuffer;
+  error?: string;
+}
+
+export interface BiometricPrfAuthResult {
+  success: boolean;
+  prfSecret?: ArrayBuffer;
+  error?: string;
+}
+
 function base64UrlToUint8Array(base64Url: string): Uint8Array {
-  const padded = base64Url.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(base64Url.length / 4) * 4, '=');
+  const padded = base64Url
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .padEnd(Math.ceil(base64Url.length / 4) * 4, '=');
   const raw = atob(padded);
   const bytes = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) {
@@ -34,6 +50,14 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
 export function clearBiometricCredential(): void {
   try {
     localStorage.removeItem(BIOMETRIC_CRED_STORAGE_KEY);
+  } catch {
+    // Ignore
+  }
+}
+
+export function saveBiometricCredentialId(credentialId: string): void {
+  try {
+    localStorage.setItem(BIOMETRIC_CRED_STORAGE_KEY, credentialId);
   } catch {
     // Ignore
   }
@@ -76,15 +100,21 @@ export async function checkBiometricSupport(): Promise<BiometricStatus> {
 }
 
 /**
- * Enrolls the user's biometric credential in the device hardware Secure Enclave.
+ * Enrolls a hardware WebAuthn credential and evaluates WebAuthn PRF extension support
+ * so the authenticator can derive cryptographic key material for AES-256-GCM storage encryption.
  */
-export async function enrollBiometricCredential(
+export async function enrollBiometricWithPrf(
   userName: string = 'Vault Owner',
-  userEmail: string = 'vault@family.local'
-): Promise<{ success: boolean; error?: string }> {
+  userEmail: string = 'vault@family.local',
+  prfSalt?: Uint8Array
+): Promise<BiometricPrfEnrollResult> {
   try {
     if (!window.PublicKeyCredential) {
-      throw new Error('WebAuthn not supported');
+      return {
+        success: false,
+        prfSupported: false,
+        error: 'WebAuthn is not supported in this browser.'
+      };
     }
 
     const challenge = new Uint8Array(32);
@@ -92,6 +122,10 @@ export async function enrollBiometricCredential(
 
     const userId = new Uint8Array(16);
     crypto.getRandomValues(userId);
+
+    const extensions: Record<string, any> = prfSalt
+      ? { prf: { eval: { first: prfSalt as BufferSource } } }
+      : { prf: {} };
 
     const credential = (await navigator.credentials.create({
       publicKey: {
@@ -114,25 +148,57 @@ export async function enrollBiometricCredential(
           userVerification: 'required',
           residentKey: 'preferred'
         },
+        extensions: extensions as any,
         timeout: 60000,
         attestation: 'none'
       }
     })) as PublicKeyCredential | null;
 
-    if (credential) {
-      const encodedId = credential.rawId
-        ? arrayBufferToBase64Url(credential.rawId)
-        : credential.id;
-      if (encodedId) {
-        localStorage.setItem(BIOMETRIC_CRED_STORAGE_KEY, encodedId);
-        return { success: true };
+    if (!credential) {
+      return {
+        success: false,
+        prfSupported: false,
+        error: 'Biometric registration was cancelled or failed.'
+      };
+    }
+
+    const encodedId = credential.rawId
+      ? arrayBufferToBase64Url(credential.rawId)
+      : credential.id;
+
+    if (!encodedId) {
+      return {
+        success: false,
+        prfSupported: false,
+        error: 'Unable to read WebAuthn credential identifier.'
+      };
+    }
+
+    saveBiometricCredentialId(encodedId);
+
+    const extResults = (credential.getClientExtensionResults?.() || {}) as any;
+    const prfResult = extResults?.prf;
+    const prfEnabled = Boolean(prfResult?.enabled);
+    let prfSecret: ArrayBuffer | undefined = prfResult?.results?.first;
+
+    // Many authenticators report prf.enabled=true on create() and emit results.first on get()
+    if (prfEnabled && !prfSecret && prfSalt) {
+      const assertionRes = await authenticateWithBiometricPrf(encodedId, prfSalt);
+      if (assertionRes.success && assertionRes.prfSecret) {
+        prfSecret = assertionRes.prfSecret;
       }
     }
 
-    return { success: false, error: 'Registration cancelled or failed.' };
+    return {
+      success: true,
+      credentialId: encodedId,
+      prfSupported: Boolean(prfSecret),
+      prfSecret
+    };
   } catch (err: any) {
     return {
       success: false,
+      prfSupported: false,
       error:
         err.name === 'NotAllowedError'
           ? 'Biometric prompt was cancelled or blocked by browser permissions.'
@@ -142,13 +208,13 @@ export async function enrollBiometricCredential(
 }
 
 /**
- * Prompts the device's hardware biometric scanner (Touch ID, Face ID, Fingerprint).
- * Only succeeds if biometric verification is verified by the device's hardware enclave.
+ * Prompts the hardware biometric scanner (Touch ID, Face ID, Fingerprint)
+ * and evaluates the WebAuthn PRF extension when a salt is provided.
  */
-export async function authenticateWithBiometrics(): Promise<{
-  success: boolean;
-  error?: string;
-}> {
+export async function authenticateWithBiometricPrf(
+  credentialId?: string,
+  prfSalt?: Uint8Array
+): Promise<BiometricPrfAuthResult> {
   try {
     if (!window.PublicKeyCredential) {
       throw new Error('WebAuthn not supported on this browser');
@@ -157,31 +223,49 @@ export async function authenticateWithBiometrics(): Promise<{
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
 
-    const credId = localStorage.getItem(BIOMETRIC_CRED_STORAGE_KEY);
-    const allowCredentials = credId
+    const resolvedCredId = credentialId || localStorage.getItem(BIOMETRIC_CRED_STORAGE_KEY);
+    const allowCredentials = resolvedCredId
       ? [
           {
             type: 'public-key' as const,
-            id: base64UrlToUint8Array(credId)
+            id: base64UrlToUint8Array(resolvedCredId) as BufferSource
           }
         ]
       : undefined;
 
-    const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        rpId: window.location.hostname,
-        allowCredentials,
-        userVerification: 'required',
-        timeout: 60000
-      }
-    });
+    const publicKeyOptions: PublicKeyCredentialRequestOptions = {
+      challenge,
+      rpId: window.location.hostname,
+      allowCredentials,
+      userVerification: 'required',
+      timeout: 60000
+    };
 
-    if (assertion) {
-      return { success: true };
+    if (prfSalt) {
+      (publicKeyOptions as any).extensions = {
+        prf: {
+          eval: {
+            first: prfSalt as BufferSource
+          }
+        }
+      };
     }
 
-    return { success: false, error: 'Biometric verification failed.' };
+    const assertion = (await navigator.credentials.get({
+      publicKey: publicKeyOptions
+    })) as PublicKeyCredential | null;
+
+    if (!assertion) {
+      return { success: false, error: 'Biometric verification failed.' };
+    }
+
+    const extResults = (assertion.getClientExtensionResults?.() || {}) as any;
+    const prfSecret: ArrayBuffer | undefined = extResults?.prf?.results?.first;
+
+    return {
+      success: true,
+      prfSecret
+    };
   } catch (err: any) {
     return {
       success: false,
@@ -193,33 +277,18 @@ export async function authenticateWithBiometrics(): Promise<{
   }
 }
 
-/**
- * Authenticates with existing enrolled biometric credential, or enrolls one first
- * if the user has a platform authenticator but hasn't enrolled on this device yet.
- */
-export async function verifyOrEnrollBiometrics(
+export async function enrollBiometricCredential(
   userName: string = 'Vault Owner',
   userEmail: string = 'vault@family.local'
-): Promise<{ success: boolean; enrolledNow?: boolean; error?: string }> {
-  const status = await checkBiometricSupport();
-  if (!status.isSupported || !status.isPlatformAvailable) {
-    return {
-      success: false,
-      error: 'Hardware biometric authenticator (Touch ID / Face ID / Fingerprint) is unavailable on this device or browser context.'
-    };
-  }
+): Promise<{ success: boolean; error?: string }> {
+  const res = await enrollBiometricWithPrf(userName, userEmail);
+  return { success: res.success, error: res.error };
+}
 
-  if (status.hasEnrolledCredential) {
-    const authRes = await authenticateWithBiometrics();
-    if (authRes.success) {
-      return { success: true };
-    }
-    return authRes;
-  }
-
-  const enrollRes = await enrollBiometricCredential(userName, userEmail);
-  if (enrollRes.success) {
-    return { success: true, enrolledNow: true };
-  }
-  return enrollRes;
+export async function authenticateWithBiometrics(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const res = await authenticateWithBiometricPrf();
+  return { success: res.success, error: res.error };
 }

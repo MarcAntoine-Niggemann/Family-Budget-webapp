@@ -13,23 +13,35 @@ import {
   Play,
   CheckCircle2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  KeyRound,
+  Lock
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { QrCodeScannerModal } from '../components/QrCodeScannerModal';
 import { PWAInstallButton } from '../components/PWAInstallButton';
-import { checkBiometricSupport, BiometricStatus } from '../utils/biometricKeyvault';
+import {
+  BiometricStatus,
+  checkBiometricSupport,
+  enrollBiometricWithPrf
+} from '../utils/biometricKeyvault';
+import { generateRandomBytes } from '../utils/crypto';
 import { BYOB_FIRESTORE_RULES } from './FirebaseSyncScreen';
 
 export const LoginScreen: React.FC = () => {
   const {
     savedByobConfig,
-    authInitialized,
-    firebaseUser,
+    vaultLockMeta,
+    hasSavedVault,
+    isVaultUnlocked,
+    biometricGateVerified,
+    legacyPlaintextConfig,
     startDemoMode,
-    connectAndSyncByob,
-    unlockSavedByobWithBiometrics,
-    loginSavedByobWithGoogle,
+    lockVault,
+    unlockVaultWithBiometrics,
+    unlockVaultWithPin,
+    setupProtectedVaultAndConnect,
+    continueUnlockedByobWithGoogle,
     forgetByobConfig,
     language,
     setLanguage,
@@ -38,24 +50,37 @@ export const LoginScreen: React.FC = () => {
 
   const isFr = language === 'fr';
 
-  // If user already configured BYOB Firestore, show the Fingerprint Unlock view by default
-  const [viewMode, setViewMode] = useState<'BIOMETRIC_UNLOCK' | 'SETUP'>(
-    savedByobConfig ? 'BIOMETRIC_UNLOCK' : 'SETUP'
+  const [viewMode, setViewMode] = useState<'VAULT_UNLOCK' | 'SETUP'>(
+    hasSavedVault ? 'VAULT_UNLOCK' : 'SETUP'
   );
   const [setupTab, setSetupTab] = useState<'BYOB' | 'DEMO'>('BYOB');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
 
-  // BYOB form fields
-  const [familyName, setFamilyName] = useState(savedByobConfig?.familyName || 'Private Family Vault');
-  const [projectId, setProjectId] = useState(savedByobConfig?.projectId || '');
-  const [apiKey, setApiKey] = useState(savedByobConfig?.apiKey || '');
-  const [applicationId, setApplicationId] = useState(savedByobConfig?.applicationId || '');
+  // BYOB form fields (populated from unlocked config or legacy plaintext migration only)
+  const initialSource = savedByobConfig || legacyPlaintextConfig;
+  const [familyName, setFamilyName] = useState(initialSource?.familyName || 'Private Family Vault');
+  const [projectId, setProjectId] = useState(initialSource?.projectId || '');
+  const [apiKey, setApiKey] = useState(initialSource?.apiKey || '');
+  const [applicationId, setApplicationId] = useState(initialSource?.applicationId || '');
+
+  // Unlock screen PIN state
+  const [unlockPin, setUnlockPin] = useState('');
+  const [showPinUnlock, setShowPinUnlock] = useState(false);
+
+  // Mandatory Setup Protection state
+  const [setupCredId, setSetupCredId] = useState<string | undefined>(undefined);
+  const [setupPrfSecret, setSetupPrfSecret] = useState<ArrayBuffer | undefined>(undefined);
+  const [setupPrfSalt, setSetupPrfSalt] = useState<Uint8Array | undefined>(undefined);
+  const [setupPrfChecked, setSetupPrfChecked] = useState(false);
+  const [enableBackupPin, setEnableBackupPin] = useState(false);
+  const [setupPin, setSetupPin] = useState('');
+  const [setupPinConfirm, setSetupPinConfirm] = useState('');
 
   // Status / Feedback states
   const [isLoading, setIsLoading] = useState(false);
+  const [isEnrollingBio, setIsEnrollingBio] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [noticeMsg, setNoticeMsg] = useState<string | null>(null);
-  const [biometricVerified, setBiometricVerified] = useState(false);
   const [biometricStatus, setBiometricStatus] = useState<BiometricStatus>({
     isSupported: false,
     isPlatformAvailable: false,
@@ -67,25 +92,31 @@ export const LoginScreen: React.FC = () => {
 
   const autoPromptAttemptedRef = useRef(false);
 
-  // Sync viewMode if savedByobConfig changes (e.g., forgotten or loaded)
+  // Keep form fields synced only after vault unlock or for legacy migration
   useEffect(() => {
-    if (!savedByobConfig) {
+    const source = savedByobConfig || legacyPlaintextConfig;
+    if (!hasSavedVault && !source) {
       setViewMode('SETUP');
       setProjectId('');
       setApiKey('');
       setApplicationId('');
       setFamilyName('Private Family Vault');
-      setBiometricVerified(false);
+      setUnlockPin('');
+      setShowPinUnlock(false);
       autoPromptAttemptedRef.current = false;
-    } else {
-      setProjectId(savedByobConfig.projectId);
-      setApiKey(savedByobConfig.apiKey);
-      setApplicationId(savedByobConfig.applicationId || '');
-      setFamilyName(savedByobConfig.familyName || 'Private Family Vault');
+    } else if (source) {
+      setProjectId(source.projectId);
+      setApiKey(source.apiKey);
+      setApplicationId(source.applicationId || '');
+      setFamilyName(source.familyName || 'Private Family Vault');
     }
-  }, [savedByobConfig]);
 
-  // Check hardware biometric availability & auto-prompt directly when BYOB is already configured
+    if (hasSavedVault && !isVaultUnlocked) {
+      setViewMode('VAULT_UNLOCK');
+    }
+  }, [hasSavedVault, isVaultUnlocked, savedByobConfig, legacyPlaintextConfig]);
+
+  // Check hardware biometric capability & auto-prompt once when locked vault has an enrolled credential
   useEffect(() => {
     let active = true;
 
@@ -95,24 +126,24 @@ export const LoginScreen: React.FC = () => {
       setBiometricStatus(status);
 
       if (
-        savedByobConfig &&
-        viewMode === 'BIOMETRIC_UNLOCK' &&
-        authInitialized &&
+        hasSavedVault &&
+        !isVaultUnlocked &&
+        viewMode === 'VAULT_UNLOCK' &&
+        vaultLockMeta?.credentialId &&
         status.isPlatformAvailable &&
-        status.hasEnrolledCredential &&
         !autoPromptAttemptedRef.current
       ) {
         autoPromptAttemptedRef.current = true;
         setIsLoading(true);
         setErrorMsg(null);
         try {
-          const res = await unlockSavedByobWithBiometrics();
+          const res = await unlockVaultWithBiometrics();
           if (!active) return;
-          if (res.biometricVerified) {
-            setBiometricVerified(true);
-          }
           if (!res.success && res.error) {
-            if (res.needsGoogleAuth) {
+            if (res.needsPinForDecrypt) {
+              setShowPinUnlock(true);
+              setNoticeMsg(res.error);
+            } else if (res.needsGoogleAuth) {
               setNoticeMsg(res.error);
             } else {
               setErrorMsg(res.error);
@@ -129,7 +160,7 @@ export const LoginScreen: React.FC = () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedByobConfig, viewMode, authInitialized]);
+  }, [hasSavedVault, isVaultUnlocked, viewMode, vaultLockMeta?.credentialId]);
 
   const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
 
@@ -152,12 +183,10 @@ export const LoginScreen: React.FC = () => {
     setNoticeMsg(null);
     setIsLoading(true);
     try {
-      const res = await unlockSavedByobWithBiometrics();
-      if (res.biometricVerified) {
-        setBiometricVerified(true);
-      }
-      if (res.redirecting) {
-        setNoticeMsg(res.error || (isFr ? 'Redirection Google en cours...' : 'Redirecting to Google...'));
+      const res = await unlockVaultWithBiometrics();
+      if (res.needsPinForDecrypt) {
+        setShowPinUnlock(true);
+        setNoticeMsg(res.error || null);
         return;
       }
       if (!res.success && res.error) {
@@ -172,12 +201,32 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  const handleSavedByobGoogleSignIn = async () => {
+  const handlePinUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg(null);
     setNoticeMsg(null);
     setIsLoading(true);
     try {
-      const res = await loginSavedByobWithGoogle();
+      const res = await unlockVaultWithPin(unlockPin);
+      setUnlockPin('');
+      if (!res.success && res.error) {
+        if (res.needsGoogleAuth) {
+          setNoticeMsg(res.error);
+        } else {
+          setErrorMsg(res.error);
+        }
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUnlockedGoogleContinue = async () => {
+    setErrorMsg(null);
+    setNoticeMsg(null);
+    setIsLoading(true);
+    try {
+      const res = await continueUnlockedByobWithGoogle();
       if (res.redirecting) {
         setNoticeMsg(res.error || (isFr ? 'Redirection Google en cours...' : 'Redirecting to Google...'));
         return;
@@ -187,6 +236,46 @@ export const LoginScreen: React.FC = () => {
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSetupEnrollBiometrics = async () => {
+    setErrorMsg(null);
+    setNoticeMsg(null);
+    setIsEnrollingBio(true);
+    try {
+      const prfSalt = generateRandomBytes(32);
+      const res = await enrollBiometricWithPrf(
+        familyName.trim() || 'Vault Owner',
+        'vault@family.local',
+        prfSalt
+      );
+      setSetupPrfChecked(true);
+      if (!res.success || !res.credentialId) {
+        setErrorMsg(res.error || (isFr ? 'Échec de l’enregistrement biométrique.' : 'Biometric enrollment failed.'));
+        return;
+      }
+      setSetupCredId(res.credentialId);
+      if (res.prfSupported && res.prfSecret) {
+        setSetupPrfSecret(res.prfSecret);
+        setSetupPrfSalt(prfSalt);
+        showToast(
+          isFr
+            ? 'Clé matérielle WebAuthn PRF activée pour le chiffrement !'
+            : 'Hardware WebAuthn PRF key ready for encryption!'
+        );
+      } else {
+        setSetupPrfSecret(undefined);
+        setSetupPrfSalt(undefined);
+        setEnableBackupPin(true);
+        setNoticeMsg(
+          isFr
+            ? 'Empreinte enregistrée comme barrière d’accès. Ce navigateur ne supporte pas WebAuthn PRF : définissez un code PIN (6 caractères min.) pour chiffrer les données locales.'
+            : 'Fingerprint enrolled as access gate. This browser does not support WebAuthn PRF: set a Vault PIN (min. 6 characters) to encrypt local storage.'
+        );
+      }
+    } finally {
+      setIsEnrollingBio(false);
     }
   };
 
@@ -204,17 +293,65 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
+    // If vault is already unlocked (editing config), skip re-enrollment and connect directly
+    if (isVaultUnlocked && hasSavedVault) {
+      setIsLoading(true);
+      try {
+        const res = await continueUnlockedByobWithGoogle({
+          projectId: projectId.trim(),
+          apiKey: apiKey.trim(),
+          applicationId: applicationId.trim(),
+          familyName: familyName.trim()
+        });
+        if (res.redirecting) {
+          setNoticeMsg(res.error || (isFr ? 'Redirection vers Google en cours...' : 'Redirecting to Google...'));
+          return;
+        }
+        if (!res.success && res.error) {
+          setErrorMsg(res.error);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    const hasPrf = Boolean(setupCredId && setupPrfSecret && setupPrfSalt);
+    const needPin = !hasPrf || enableBackupPin;
+
+    if (needPin) {
+      if (setupPin.trim().length < 6) {
+        setErrorMsg(
+          isFr
+            ? 'Un code PIN de 6 caractères minimum est requis pour chiffrer votre coffre local.'
+            : 'A Vault PIN of at least 6 characters is required to encrypt your local vault.'
+        );
+        return;
+      }
+      if (setupPin.trim() !== setupPinConfirm.trim()) {
+        setErrorMsg(
+          isFr ? 'Les deux codes PIN saisis ne correspondent pas.' : 'The Vault PIN entries do not match.'
+        );
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
-      const isSameProject = savedByobConfig?.projectId?.trim() === projectId.trim();
-      const res = await connectAndSyncByob(
+      const res = await setupProtectedVaultAndConnect(
         {
           projectId: projectId.trim(),
           apiKey: apiKey.trim(),
           applicationId: applicationId.trim(),
           familyName: familyName.trim()
         },
-        { resetLocalData: !isSameProject }
+        {
+          biometricCredId: setupCredId,
+          prfSecret: setupPrfSecret,
+          prfSalt: setupPrfSalt,
+          pin: needPin ? setupPin.trim() : undefined
+        },
+        { resetLocalData: true }
       );
 
       if (res.redirecting) {
@@ -247,10 +384,10 @@ export const LoginScreen: React.FC = () => {
         setErrorMsg(null);
         setNoticeMsg(
           isFr
-            ? `Coffre BYOB « ${data.projectId} » importé. Connectez-vous avec votre compte Google pour accéder aux données.`
-            : `BYOB Vault "${data.projectId}" imported. Sign in with your Google account to access Firestore.`
+            ? `Coffre BYOB « ${data.projectId} » importé. Protégez-le avec votre empreinte ou code PIN avant de vous connecter.`
+            : `BYOB Vault "${data.projectId}" imported. Protect it with your fingerprint or PIN before signing in.`
         );
-        showToast(isFr ? 'Identifiants BYOB chargés — Connexion requise' : 'BYOB credentials loaded — Sign-in required');
+        showToast(isFr ? 'Identifiants BYOB chargés' : 'BYOB credentials loaded');
         return;
       }
     } catch {
@@ -263,10 +400,42 @@ export const LoginScreen: React.FC = () => {
   const handleForgetByob = async () => {
     setErrorMsg(null);
     setNoticeMsg(null);
+    setUnlockPin('');
+    setShowPinUnlock(false);
+    setSetupCredId(undefined);
+    setSetupPrfSecret(undefined);
+    setSetupPrfSalt(undefined);
+    setSetupPin('');
+    setSetupPinConfirm('');
     await forgetByobConfig();
     setViewMode('SETUP');
     setSetupTab('BYOB');
   };
+
+  const encryptionLabel = (() => {
+    if (!vaultLockMeta) return 'AES-256-GCM';
+    switch (vaultLockMeta.encryptionMode) {
+      case 'WEBAUTHN_PRF':
+        return isFr ? 'AES-256-GCM · Clé matérielle WebAuthn PRF' : 'AES-256-GCM · Hardware WebAuthn PRF Key';
+      case 'HYBRID':
+        return isFr ? 'AES-256-GCM · Biométrie PRF + Code PIN' : 'AES-256-GCM · Biometric PRF + Vault PIN';
+      case 'PIN_WRAPPED':
+        return vaultLockMeta.credentialId
+          ? isFr
+            ? 'AES-256-GCM · Empreinte + Code PIN'
+            : 'AES-256-GCM · Fingerprint + Vault PIN'
+          : isFr
+          ? 'AES-256-GCM · Code PIN du coffre'
+          : 'AES-256-GCM · Vault PIN Protected';
+    }
+  })();
+
+  const hasSetupPrf = Boolean(setupCredId && setupPrfSecret && setupPrfSalt);
+  const showSetupPinInputs = !hasSetupPrf || enableBackupPin;
+  const setupProtectionReady =
+    isVaultUnlocked ||
+    hasSetupPrf ||
+    (setupPin.trim().length >= 6 && setupPin.trim() === setupPinConfirm.trim());
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6">
@@ -281,8 +450,8 @@ export const LoginScreen: React.FC = () => {
               <h1 className="text-xl font-bold text-white tracking-tight">Budget Family</h1>
               <p className="text-xs text-slate-400">
                 {isFr
-                  ? 'Firestore privé (BYOB) avec cache delta local ou Mode Démo'
-                  : 'Private Firestore (BYOB) with local delta cache, or Demo Mode'}
+                  ? 'Coffre chiffré AES-256-GCM · Firestore privé (BYOB) ou Démo'
+                  : 'AES-256-GCM Encrypted Vault · Private Firestore (BYOB) or Demo'}
               </p>
             </div>
           </div>
@@ -301,45 +470,57 @@ export const LoginScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* VIEW A: SAVED BYOB FIRESTORE — FINGERPRINT UNLOCK DIRECTLY */}
-        {viewMode === 'BIOMETRIC_UNLOCK' && savedByobConfig ? (
+        {/* VIEW A: SAVED ENCRYPTED VAULT — MANDATORY BIOMETRIC / PIN GATE BEFORE GOOGLE SIGN-IN */}
+        {viewMode === 'VAULT_UNLOCK' && hasSavedVault ? (
           <div className="space-y-5">
             <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-4 text-center">
               <div
                 className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border transition ${
-                  biometricVerified
+                  isVaultUnlocked
                     ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                    : biometricGateVerified
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
                     : 'bg-teal-500/15 border-teal-500/30 text-teal-400'
                 }`}
               >
-                {biometricVerified ? (
+                {isVaultUnlocked ? (
                   <CheckCircle2 className="w-8 h-8" />
-                ) : (
+                ) : vaultLockMeta?.credentialId && !biometricGateVerified && !showPinUnlock ? (
                   <Fingerprint className="w-8 h-8" />
+                ) : (
+                  <Lock className="w-8 h-8" />
                 )}
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <h2 className="text-lg font-bold text-white">
-                  {savedByobConfig.familyName || 'Private Family Vault'}
+                  {isVaultUnlocked && savedByobConfig
+                    ? savedByobConfig.familyName || 'Private Family Vault'
+                    : isFr
+                    ? 'Coffre Local Chiffré & Verrouillé'
+                    : 'Encrypted Vault Locked'}
                 </h2>
-                <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
-                  <span className="font-mono text-teal-300">{savedByobConfig.projectId}</span>
-                  {firebaseUser?.email && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span>{firebaseUser.email}</span>
-                    </>
+
+                <div className="text-xs text-slate-400">
+                  {isVaultUnlocked && savedByobConfig ? (
+                    <span className="font-mono text-teal-300">{savedByobConfig.projectId}</span>
+                  ) : (
+                    <span>{encryptionLabel}</span>
                   )}
                 </div>
+
                 <p className="text-xs text-slate-400 pt-1">
-                  {biometricVerified
+                  {isVaultUnlocked
                     ? isFr
-                      ? 'Empreinte vérifiée. Finalisez la connexion à votre compte Google pour ouvrir Firestore.'
-                      : 'Fingerprint verified. Complete Google Sign-In to open your Firestore vault.'
+                      ? 'Clé de chiffrement déverrouillée. Finalisez l’authentification Google pour synchroniser Firestore.'
+                      : 'Encryption key unlocked. Complete Google Sign-In to open your Firestore vault.'
+                    : biometricGateVerified
+                    ? isFr
+                      ? 'Empreinte vérifiée. Saisissez votre code PIN pour déchiffrer la clé locale.'
+                      : 'Fingerprint verified. Enter your Vault PIN to decrypt the local vault key.'
                     : isFr
-                    ? 'Coffre Firestore déjà configuré. Authentifiez-vous avec votre empreinte digitale pour vous connecter.'
-                    : 'Firestore vault already configured. Verify your fingerprint to connect directly.'}
+                    ? 'Le déverrouillage biométrique ou par code PIN est obligatoire avant d’accéder au coffre ou à Google.'
+                    : 'Biometric or Vault PIN verification is required before accessing the vault or Google Sign-In.'}
                 </p>
               </div>
 
@@ -367,54 +548,84 @@ export const LoginScreen: React.FC = () => {
                 </div>
               )}
 
-              {/* Primary Action: Fingerprint OR Google completion if biometric already passed */}
-              {!biometricVerified ? (
-                <div className="space-y-2.5 pt-1">
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    onClick={handleFingerprintUnlock}
-                    className="w-full py-3.5 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer"
-                  >
-                    {isLoading ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>{isFr ? 'Vérification & Connexion...' : 'Verifying & Connecting...'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Fingerprint className="w-5 h-5" />
-                        <span>
-                          {biometricStatus.hasEnrolledCredential
-                            ? isFr
-                              ? 'Déverrouiller avec l’Empreinte / Face ID'
-                              : 'Unlock with Fingerprint / Face ID'
-                            : isFr
-                            ? 'Enregistrer l’Empreinte & Se Connecter'
-                            : 'Verify Fingerprint & Connect'}
-                        </span>
-                      </>
-                    )}
-                  </button>
+              {/* STEP 1: LOCAL VAULT UNLOCK (NO GOOGLE BYPASS!) */}
+              {!isVaultUnlocked ? (
+                <div className="space-y-3 pt-1">
+                  {vaultLockMeta?.credentialId && !biometricGateVerified && (
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={handleFingerprintUnlock}
+                      className="w-full py-3.5 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 whitespace-nowrap cursor-pointer"
+                    >
+                      {isLoading ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>{isFr ? 'Vérification biométrique...' : 'Verifying Biometrics...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Fingerprint className="w-5 h-5" />
+                          <span>
+                            {isFr ? 'Déverrouiller avec Empreinte / Face ID' : 'Unlock with Fingerprint / Face ID'}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    onClick={handleSavedByobGoogleSignIn}
-                    className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs transition flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer"
-                  >
-                    <GoogleLogo />
-                    <span>
-                      {isFr ? 'Se connecter avec mon compte Google' : 'Sign in with Google Account'}
-                    </span>
-                  </button>
+                  {vaultLockMeta?.wrappedDekPin &&
+                    (showPinUnlock || !vaultLockMeta?.credentialId || biometricGateVerified) && (
+                      <form onSubmit={handlePinUnlock} className="space-y-2.5 text-left">
+                        <label className="block text-xs font-medium text-slate-300">
+                          {isFr ? 'Code PIN du coffre' : 'Vault PIN'}
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="password"
+                            required
+                            autoFocus
+                            value={unlockPin}
+                            onChange={e => setUnlockPin(e.target.value)}
+                            placeholder={isFr ? 'Saisir votre code PIN...' : 'Enter Vault PIN...'}
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-teal-500"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isLoading || !unlockPin.trim()}
+                            className="px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                            <span>{isFr ? 'Déverrouiller' : 'Unlock'}</span>
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                  {vaultLockMeta?.credentialId &&
+                    vaultLockMeta?.wrappedDekPin &&
+                    !showPinUnlock &&
+                    !biometricGateVerified && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setErrorMsg(null);
+                          setShowPinUnlock(true);
+                        }}
+                        className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-semibold text-xs transition flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+                      >
+                        <KeyRound className="w-3.5 h-3.5 text-teal-400" />
+                        <span>{isFr ? 'Utiliser le code PIN du coffre' : 'Unlock with Vault PIN instead'}</span>
+                      </button>
+                    )}
                 </div>
               ) : (
+                /* STEP 2: VAULT UNLOCKED — GOOGLE SIGN-IN REVEALED ONLY NOW */
                 <button
                   type="button"
                   disabled={isLoading}
-                  onClick={handleSavedByobGoogleSignIn}
-                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer"
+                  onClick={handleUnlockedGoogleContinue}
+                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 whitespace-nowrap cursor-pointer"
                 >
                   {isLoading ? (
                     <>
@@ -457,19 +668,32 @@ export const LoginScreen: React.FC = () => {
             {/* Secondary navigation actions */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-xs">
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMsg(null);
-                    setNoticeMsg(null);
-                    setViewMode('SETUP');
-                    setSetupTab('BYOB');
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-teal-400" />
-                  <span>{isFr ? 'Modifier Config Firestore' : 'Edit Firestore Config'}</span>
-                </button>
+                {isVaultUnlocked && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorMsg(null);
+                        setNoticeMsg(null);
+                        setViewMode('SETUP');
+                        setSetupTab('BYOB');
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-teal-400" />
+                      <span>{isFr ? 'Modifier Config Firestore' : 'Edit Firestore Config'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={lockVault}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-teal-400" />
+                      <span>{isFr ? 'Verrouiller' : 'Lock Vault'}</span>
+                    </button>
+                  </>
+                )}
 
                 <button
                   type="button"
@@ -492,66 +716,98 @@ export const LoginScreen: React.FC = () => {
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 font-medium transition whitespace-nowrap cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>{isFr ? 'Oublier ce coffre' : 'Forget Config'}</span>
+                <span>{isFr ? 'Oublier ce coffre' : 'Forget Vault'}</span>
               </button>
             </div>
           </div>
         ) : (
-          /* VIEW B: INITIAL SETUP — CHOOSE PRIVATE FIRESTORE (BYOB) OR DEMO MODE */
+          /* VIEW B: INITIAL SETUP (OR UNLOCKED CONFIG EDIT / DEMO TAB) */
           <div className="space-y-5">
-            {savedByobConfig && (
+            {hasSavedVault && (
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
                 <div className="text-slate-300">
                   <span className="text-slate-400">{isFr ? 'Coffre configuré :' : 'Configured vault:'} </span>
-                  <span className="font-mono text-teal-300">{savedByobConfig.projectId}</span>
+                  <span className="font-mono text-teal-300">
+                    {isVaultUnlocked && savedByobConfig
+                      ? savedByobConfig.projectId
+                      : isFr
+                      ? 'Chiffré & verrouillé'
+                      : 'Encrypted & locked'}
+                  </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
                     setErrorMsg(null);
                     setNoticeMsg(null);
-                    setViewMode('BIOMETRIC_UNLOCK');
+                    setViewMode('VAULT_UNLOCK');
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 font-semibold transition cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 font-semibold transition whitespace-nowrap cursor-pointer"
                 >
                   <Fingerprint className="w-3.5 h-3.5" />
-                  <span>{isFr ? 'Retour Empreinte' : 'Fingerprint Unlock'}</span>
+                  <span>{isFr ? 'Retour au Coffre' : 'Back to Vault'}</span>
+                </button>
+              </div>
+            )}
+
+            {legacyPlaintextConfig && !hasSavedVault && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-200 text-xs flex items-start justify-between gap-3 leading-relaxed">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    {isFr
+                      ? 'Ancienne configuration non chiffrée détectée dans le navigateur. Enregistrez votre empreinte ou un code PIN ci-dessous pour la chiffrer en AES-256-GCM.'
+                      : 'Unencrypted legacy vault configuration detected in browser storage. Enroll your fingerprint or set a Vault PIN below to encrypt it with AES-256-GCM.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleForgetByob}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  {isFr ? 'Effacer' : 'Wipe'}
                 </button>
               </div>
             )}
 
             {/* Join via QR Shortcut */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
-                  <QrCode className="w-5 h-5" />
+            {(!hasSavedVault || isVaultUnlocked) && (
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
+                    <QrCode className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="font-semibold text-xs text-white block">
+                      {isFr ? 'Rejoindre une Famille existante' : 'Join an Existing Family Vault'}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {isFr
+                        ? 'Importez la configuration Firestore via QR Code'
+                        : 'Import Firestore BYOB credentials via QR Code'}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className="font-semibold text-xs text-white block">
-                    {isFr ? 'Rejoindre une Famille existante' : 'Join an Existing Family Vault'}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    {isFr
-                      ? 'Importez la configuration Firestore via QR Code'
-                      : 'Import Firestore BYOB credentials via QR Code'}
-                  </span>
-                </div>
-              </div>
 
-              <button
-                type="button"
-                onClick={() => setIsScannerOpen(true)}
-                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-teal-300 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                {isFr ? 'Scanner QR Code' : 'Scan QR Code'}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScannerOpen(true)}
+                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-teal-300 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  {isFr ? 'Scanner QR Code' : 'Scan QR Code'}
+                </button>
+              </div>
+            )}
 
             {/* 2-Mode Switcher (Private Firestore BYOB vs Demo Mode) */}
             <div className="grid grid-cols-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => {
+                  if (hasSavedVault && !isVaultUnlocked) {
+                    setViewMode('VAULT_UNLOCK');
+                    return;
+                  }
                   setSetupTab('BYOB');
                   setErrorMsg(null);
                 }}
@@ -585,8 +841,8 @@ export const LoginScreen: React.FC = () => {
               <form onSubmit={handleConnectByob} className="space-y-4">
                 <p className="text-xs text-slate-400 leading-relaxed">
                   {isFr
-                    ? 'Connectez votre propre projet Firebase / Firestore. Une authentification Google est requise avant tout accès. Un cache local synchronisé en delta évite de tout recharger à chaque ouverture (effacé à la déconnexion).'
-                    : 'Configure your own Firebase / Firestore project. Google account sign-in is required before accessing anything. A local delta cache avoids full reloads on each launch and is erased on logout.'}
+                    ? 'Connectez votre propre projet Firebase / Firestore. Vos identifiants et le cache delta local sont chiffrés en AES-256-GCM via votre empreinte matérielle (WebAuthn PRF) ou code PIN, et effacés à la déconnexion.'
+                    : 'Configure your own Firebase / Firestore project. Your credentials and local delta cache are encrypted with AES-256-GCM via hardware WebAuthn PRF biometrics or a Vault PIN, and erased on explicit logout.'}
                 </p>
 
                 {currentHostname && (
@@ -715,27 +971,149 @@ export const LoginScreen: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Mandatory Local Vault Protection Enrollment (only when creating/upgrading a vault) */}
+                {!isVaultUnlocked && (
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-white block">
+                          {isFr ? 'Protection Obligatoire du Coffre Local' : 'Mandatory Local Vault Protection'}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {isFr
+                            ? 'Requis avant toute sauvegarde locale et connexion Google'
+                            : 'Required before local storage persistence or Google Sign-In'}
+                        </span>
+                      </div>
+                      {hasSetupPrf && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      )}
+                    </div>
+
+                    {biometricStatus.isPlatformAvailable ? (
+                      <button
+                        type="button"
+                        disabled={isEnrollingBio}
+                        onClick={handleSetupEnrollBiometrics}
+                        className={`w-full py-2.5 px-3.5 rounded-xl border text-xs font-semibold transition flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
+                          hasSetupPrf
+                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                            : setupCredId
+                            ? 'bg-teal-500/15 border-teal-500/40 text-teal-200'
+                            : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-teal-300'
+                        }`}
+                      >
+                        <Fingerprint className="w-4 h-4" />
+                        <span>
+                          {isEnrollingBio
+                            ? isFr
+                              ? 'Enregistrement matériel...'
+                              : 'Enrolling hardware key...'
+                            : hasSetupPrf
+                            ? isFr
+                              ? 'Empreinte WebAuthn PRF activée (Clé matérielle)'
+                              : 'WebAuthn PRF Fingerprint Active (Hardware Key)'
+                            : setupCredId
+                            ? isFr
+                              ? 'Empreinte enregistrée (barrière d’accès)'
+                              : 'Fingerprint Enrolled (Access Gate)'
+                            : isFr
+                            ? 'Enregistrer l’Empreinte / Face ID'
+                            : 'Enroll Fingerprint / Face ID'}
+                        </span>
+                      </button>
+                    ) : (
+                      <p className="text-[11px] text-slate-400">
+                        {isFr
+                          ? 'Capteur biométrique matériel non disponible dans ce navigateur — un code PIN est requis.'
+                          : 'Hardware biometric sensor unavailable in this browser — a Vault PIN is required.'}
+                      </p>
+                    )}
+
+                    {hasSetupPrf && (
+                      <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={enableBackupPin}
+                          onChange={e => setEnableBackupPin(e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-900 text-teal-500 focus:ring-teal-500"
+                        />
+                        <span>
+                          {isFr
+                            ? 'Ajouter un code PIN de secours (recommandé avant connexion Google)'
+                            : 'Add a backup Vault PIN (recommended fallback before Google Sign-In)'}
+                        </span>
+                      </label>
+                    )}
+
+                    {showSetupPinInputs && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                            {isFr ? 'Code PIN du coffre (6+ car.)' : 'Vault PIN (6+ chars)'}
+                          </label>
+                          <input
+                            type="password"
+                            required={!hasSetupPrf || enableBackupPin}
+                            minLength={6}
+                            value={setupPin}
+                            onChange={e => setSetupPin(e.target.value)}
+                            placeholder="••••••"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                            {isFr ? 'Confirmer le code PIN' : 'Confirm Vault PIN'}
+                          </label>
+                          <input
+                            type="password"
+                            required={!hasSetupPrf || enableBackupPin}
+                            minLength={6}
+                            value={setupPinConfirm}
+                            onChange={e => setSetupPinConfirm(e.target.value)}
+                            placeholder="••••••"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {setupPrfChecked && !hasSetupPrf && (
+                      <p className="text-[11px] text-amber-300/90">
+                        {isFr
+                          ? 'WebAuthn PRF non supporté par ce navigateur : votre code PIN dérive la clé AES-256-GCM.'
+                          : 'WebAuthn PRF is unsupported in this browser: your Vault PIN derives the AES-256-GCM key.'}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  disabled={isLoading}
-                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-3 disabled:opacity-60 cursor-pointer"
+                  disabled={isLoading || !setupProtectionReady}
+                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-3 disabled:opacity-50 whitespace-nowrap cursor-pointer"
                 >
                   {isLoading ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin text-teal-600" />
                       <span>
                         {isFr
-                          ? 'Authentification Google & Connexion Firestore...'
-                          : 'Signing in with Google & Connecting Firestore...'}
+                          ? 'Chiffrement & Connexion Google...'
+                          : 'Encrypting Vault & Signing in...'}
                       </span>
                     </>
                   ) : (
                     <>
                       <GoogleLogo />
                       <span>
-                        {isFr
-                          ? 'Se connecter avec Google & Firestore'
-                          : 'Sign in with Google & Connect Firestore'}
+                        {isVaultUnlocked
+                          ? isFr
+                            ? 'Enregistrer & Se connecter avec Google'
+                            : 'Save & Sign in with Google'
+                          : isFr
+                          ? 'Chiffrer le Coffre & Se connecter avec Google'
+                          : 'Encrypt Vault & Sign in with Google'}
                       </span>
                     </>
                   )}

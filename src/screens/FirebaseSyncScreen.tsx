@@ -18,7 +18,9 @@ import {
   Plus,
   Pencil,
   Fingerprint,
-  Trash2
+  Trash2,
+  Lock,
+  KeyRound
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { ShareVaultQrModal } from '../components/ShareVaultQrModal';
@@ -27,9 +29,7 @@ import { CategoryIcon } from '../components/CategoryIcon';
 import { AccountEntity, AccountType } from '../types';
 import {
   BiometricStatus,
-  checkBiometricSupport,
-  clearBiometricCredential,
-  enrollBiometricCredential
+  checkBiometricSupport
 } from '../utils/biometricKeyvault';
 
 export const BYOB_FIRESTORE_RULES = `rules_version = '2';
@@ -79,6 +79,7 @@ export const FirebaseSyncScreen: React.FC = () => {
   const {
     sessionMode,
     config,
+    vaultLockMeta,
     updateConfig,
     accounts,
     currency,
@@ -90,8 +91,13 @@ export const FirebaseSyncScreen: React.FC = () => {
     setLanguage,
     firebaseUser,
     loginWithGoogle,
+    lockVault,
     logout,
     forgetByobConfig,
+    enrollOrUpdateBiometrics,
+    updateVaultPin,
+    removeVaultPin,
+    removeBiometrics,
     showToast
   } = useBudget();
 
@@ -112,6 +118,9 @@ export const FirebaseSyncScreen: React.FC = () => {
     hasEnrolledCredential: false
   });
   const [biometricLoading, setBiometricLoading] = useState(false);
+  const [newVaultPin, setNewVaultPin] = useState('');
+  const [confirmVaultPin, setConfirmVaultPin] = useState('');
+  const [pinSaving, setPinSaving] = useState(false);
 
   useEffect(() => {
     checkBiometricSupport().then(setBiometricStatus);
@@ -159,17 +168,18 @@ export const FirebaseSyncScreen: React.FC = () => {
   const handleEnrollFingerprint = async () => {
     setBiometricLoading(true);
     try {
-      const res = await enrollBiometricCredential(
-        firebaseUser?.displayName || config.currentUserName || 'Vault Owner',
-        firebaseUser?.email || config.currentUserEmail || 'vault@family.local'
-      );
+      const res = await enrollOrUpdateBiometrics();
       const updated = await checkBiometricSupport();
       setBiometricStatus(updated);
       if (res.success) {
         showToast(
-          isFr
-            ? 'Empreinte enregistrée pour la reconnexion rapide !'
-            : 'Fingerprint enrolled for instant unlock!'
+          res.prfSupported
+            ? isFr
+              ? 'Empreinte WebAuthn PRF enregistrée (clé matérielle active) !'
+              : 'WebAuthn PRF fingerprint enrolled (hardware key active)!'
+            : isFr
+            ? 'Empreinte enregistrée (associée à votre code PIN) !'
+            : 'Fingerprint enrolled (paired with your Vault PIN)!'
         );
       } else if (res.error) {
         showToast(res.error);
@@ -180,10 +190,48 @@ export const FirebaseSyncScreen: React.FC = () => {
   };
 
   const handleRemoveFingerprint = async () => {
-    clearBiometricCredential();
+    const res = await removeBiometrics();
     const updated = await checkBiometricSupport();
     setBiometricStatus(updated);
-    showToast(isFr ? 'Empreinte supprimée de cet appareil' : 'Fingerprint credential removed from this device');
+    if (res.success) {
+      showToast(isFr ? 'Empreinte supprimée de cet appareil' : 'Fingerprint credential removed from this device');
+    } else if (res.error) {
+      showToast(res.error);
+    }
+  };
+
+  const handleSavePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newVaultPin.trim().length < 6) {
+      showToast(isFr ? 'Le code PIN doit contenir 6 caractères minimum.' : 'Vault PIN must be at least 6 characters.');
+      return;
+    }
+    if (newVaultPin.trim() !== confirmVaultPin.trim()) {
+      showToast(isFr ? 'Les deux codes PIN ne correspondent pas.' : 'Vault PIN entries do not match.');
+      return;
+    }
+    setPinSaving(true);
+    try {
+      const res = await updateVaultPin(newVaultPin.trim());
+      if (res.success) {
+        setNewVaultPin('');
+        setConfirmVaultPin('');
+        showToast(isFr ? 'Code PIN du coffre mis à jour' : 'Vault PIN updated');
+      } else if (res.error) {
+        showToast(res.error);
+      }
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  const handleRemovePin = async () => {
+    const res = await removeVaultPin();
+    if (res.success) {
+      showToast(isFr ? 'Code PIN retiré — clé biométrique stricte active' : 'Vault PIN removed — strict biometric key active');
+    } else if (res.error) {
+      showToast(res.error);
+    }
   };
 
   const lastSyncDateStr = syncState.lastPushTimestamp
@@ -202,19 +250,34 @@ export const FirebaseSyncScreen: React.FC = () => {
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             {isFr
-              ? 'Gestion de la famille, des membres RBAC, de l’empreinte digitale et de la synchronisation Firestore'
-              : 'Family members RBAC, fingerprint unlock, and Cloud Firestore synchronization'}
+              ? 'Chiffrement local AES-256-GCM, membres RBAC, biométrie et synchronisation Firestore'
+              : 'AES-256-GCM local encryption, family RBAC, biometrics, and Cloud Firestore sync'}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => logout()}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-200 font-semibold text-xs transition self-start sm:self-auto cursor-pointer"
-        >
-          <LogOut className="w-4 h-4" />
-          <span>{isFr ? 'Déconnexion (effacer données locales)' : 'Log Out (Erase Local Data)'}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {isFirestoreMode && (
+            <button
+              type="button"
+              onClick={() => lockVault()}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5 text-teal-400" />
+              <span>{isFr ? 'Verrouiller le coffre' : 'Lock Vault'}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-200 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>
+              {isFr ? 'Déconnexion (effacer données & Open Banking)' : 'Log Out (Erase Data & Open Banking)'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Cloud & Outbox Sync Status Card */}
@@ -386,59 +449,126 @@ export const FirebaseSyncScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Biometric Fingerprint Enrollment for BYOB */}
+        {/* Encrypted Vault Security: Biometrics + Vault PIN */}
         {isFirestoreMode && isByobConfigured && (
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
-                <Fingerprint className="w-5 h-5" />
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
+                  <Fingerprint className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="font-semibold text-xs text-white block">
+                    {isFr ? 'Chiffrement Local & Verrouillage du Coffre' : 'Local AES-256-GCM Encryption & Vault Lock'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 block">
+                    {vaultLockMeta?.encryptionMode === 'WEBAUTHN_PRF'
+                      ? isFr
+                        ? 'Clé matérielle WebAuthn PRF stricte — aucune donnée en clair dans le navigateur.'
+                        : 'Strict WebAuthn PRF hardware key — zero plaintext in browser storage.'
+                      : vaultLockMeta?.encryptionMode === 'HYBRID'
+                      ? isFr
+                        ? 'Mode Hybride : Clé matérielle WebAuthn PRF + Code PIN de secours.'
+                        : 'Hybrid Mode: WebAuthn PRF hardware key + backup Vault PIN.'
+                      : isFr
+                      ? 'Clé chiffrée par Code PIN (PBKDF2-SHA256) — vérifiée avant connexion Google.'
+                      : 'PIN-wrapped encryption key (PBKDF2-SHA256) — enforced before Google Sign-In.'}
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">
+                    {isFr
+                      ? 'Les données financières et clés Open Banking restent chiffrées à la fermeture et sont effacées uniquement lors de la déconnexion.'
+                      : 'Financial cache and Open Banking keys/mappings stay encrypted on app close and are wiped only on explicit Log Out.'}
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="font-semibold text-xs text-white block">
-                  {isFr ? 'Connexion directe par Empreinte / Face ID' : 'Direct Fingerprint / Face ID Login'}
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  {biometricStatus.hasEnrolledCredential
-                    ? isFr
-                      ? 'Empreinte enregistrée sur cet appareil — demandée directement à la prochaine connexion.'
-                      : 'Fingerprint enrolled on this device — prompted directly on next sign-in.'
-                    : biometricStatus.isPlatformAvailable
-                    ? isFr
-                      ? 'Enregistrez votre empreinte pour déverrouiller ce coffre directement.'
-                      : 'Enroll your device fingerprint to unlock this vault directly.'
-                    : isFr
-                    ? 'Capteur biométrique matériel non détecté dans ce navigateur.'
-                    : 'Hardware biometric authenticator not detected in this browser.'}
-                </span>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                disabled={biometricLoading || !biometricStatus.isPlatformAvailable}
-                onClick={handleEnrollFingerprint}
-                className="px-3.5 py-2 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-300 font-semibold text-xs transition disabled:opacity-40 cursor-pointer"
-              >
-                {biometricStatus.hasEnrolledCredential
-                  ? isFr
-                    ? 'Ré-enregistrer Empreinte'
-                    : 'Re-enroll Fingerprint'
-                  : isFr
-                  ? 'Activer l’Empreinte'
-                  : 'Enroll Fingerprint'}
-              </button>
-
-              {biometricStatus.hasEnrolledCredential && (
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={handleRemoveFingerprint}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-xs transition cursor-pointer"
+                  disabled={biometricLoading || !biometricStatus.isPlatformAvailable}
+                  onClick={handleEnrollFingerprint}
+                  className="px-3.5 py-2 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-300 font-semibold text-xs transition disabled:opacity-40 whitespace-nowrap cursor-pointer"
                 >
-                  {isFr ? 'Retirer' : 'Remove'}
+                  {vaultLockMeta?.credentialId
+                    ? isFr
+                      ? 'Ré-enregistrer Empreinte'
+                      : 'Re-enroll Fingerprint'
+                    : isFr
+                    ? 'Activer l’Empreinte'
+                    : 'Enroll Fingerprint'}
                 </button>
-              )}
+
+                {vaultLockMeta?.credentialId && vaultLockMeta?.wrappedDekPin && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveFingerprint}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+                  >
+                    {isFr ? 'Retirer' : 'Remove'}
+                  </button>
+                )}
+              </div>
             </div>
+
+            <form
+              onSubmit={handleSavePin}
+              className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-end gap-3"
+            >
+              <div className="flex-1">
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  {vaultLockMeta?.wrappedDekPin
+                    ? isFr
+                      ? 'Changer le Code PIN du coffre (6+ car.)'
+                      : 'Change Vault PIN (6+ chars)'
+                    : isFr
+                    ? 'Ajouter un Code PIN de secours (6+ car.)'
+                    : 'Add Backup Vault PIN (6+ chars)'}
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  value={newVaultPin}
+                  onChange={e => setNewVaultPin(e.target.value)}
+                  placeholder="••••••"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div className="flex-1">
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  {isFr ? 'Confirmer le Code PIN' : 'Confirm Vault PIN'}
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  value={confirmVaultPin}
+                  onChange={e => setConfirmVaultPin(e.target.value)}
+                  placeholder="••••••"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="submit"
+                  disabled={pinSaving || newVaultPin.trim().length < 6}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition disabled:opacity-40 whitespace-nowrap cursor-pointer"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-teal-400" />
+                  <span>{isFr ? 'Enregistrer PIN' : 'Save PIN'}</span>
+                </button>
+
+                {vaultLockMeta?.wrappedDekPin && vaultLockMeta?.wrappedDekPrf && (
+                  <button
+                    type="button"
+                    onClick={handleRemovePin}
+                    className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/15 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+                  >
+                    {isFr ? 'Retirer PIN' : 'Remove PIN'}
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
         )}
 

@@ -6,11 +6,20 @@ import {
   CategorizationRuleEntity,
   FamilyMemberEntity,
   FirebaseConfigEntity,
+  OpenBankingConfig,
+  SyncOutboxEntity,
   SyncStateEntity
 } from '../types';
+import {
+  EncryptedEnvelope,
+  decryptJsonWithKey,
+  encryptJsonWithKey,
+  isEncryptedEnvelopeString
+} from './crypto';
 
 export const BYOB_CONFIG_STORAGE_KEY = 'fbv_byob_config';
 export const BIOMETRIC_CRED_STORAGE_KEY = 'fbv_biometric_cred_id';
+export const VAULT_LOCK_META_KEY = 'fbv_vault_lock_meta';
 
 export const CACHE_STORAGE_KEYS = {
   PROJECT_ID: 'fbv_cache_project_id',
@@ -35,13 +44,76 @@ export interface SavedByobConfig {
   familyName?: string;
 }
 
-/**
- * Loads the user's saved BYOB Firestore connection configuration.
- */
-export function loadByobConfig(): SavedByobConfig | null {
+export type VaultEncryptionMode = 'WEBAUTHN_PRF' | 'PIN_WRAPPED' | 'HYBRID';
+
+export interface VaultLockMeta {
+  v: 2;
+  encryptionMode: VaultEncryptionMode;
+  credentialId?: string;
+  prfSaltBase64?: string;
+  hkdfSaltBase64?: string;
+  wrappedDekPrf?: EncryptedEnvelope;
+  pinSaltBase64?: string;
+  wrappedDekPin?: EncryptedEnvelope;
+  updatedAt: number;
+}
+
+export function loadVaultLockMeta(): VaultLockMeta | null {
+  try {
+    const raw = localStorage.getItem(VAULT_LOCK_META_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as VaultLockMeta;
+    if (
+      parsed &&
+      parsed.v === 2 &&
+      (parsed.wrappedDekPrf || parsed.wrappedDekPin)
+    ) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveVaultLockMeta(meta: VaultLockMeta): void {
+  try {
+    localStorage.setItem(VAULT_LOCK_META_KEY, JSON.stringify(meta));
+    if (meta.credentialId) {
+      localStorage.setItem(BIOMETRIC_CRED_STORAGE_KEY, meta.credentialId);
+    } else {
+      localStorage.removeItem(BIOMETRIC_CRED_STORAGE_KEY);
+    }
+  } catch (e) {
+    console.error('Failed to save vault lock metadata:', e);
+  }
+}
+
+export function clearVaultLockMeta(): void {
+  try {
+    localStorage.removeItem(VAULT_LOCK_META_KEY);
+  } catch {
+    // Ignore
+  }
+}
+
+export function hasEncryptedByobConfig(): boolean {
   try {
     const raw = localStorage.getItem(BYOB_CONFIG_STORAGE_KEY);
-    if (!raw) return null;
+    const meta = loadVaultLockMeta();
+    return Boolean(meta && isEncryptedEnvelopeString(raw));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detects pre-upgrade plaintext BYOB configurations so the UI can force encryption setup.
+ */
+export function loadLegacyPlaintextByobConfig(): SavedByobConfig | null {
+  try {
+    const raw = localStorage.getItem(BYOB_CONFIG_STORAGE_KEY);
+    if (!raw || isEncryptedEnvelopeString(raw)) return null;
     const parsed = JSON.parse(raw) as SavedByobConfig;
     if (
       parsed &&
@@ -63,17 +135,44 @@ export function loadByobConfig(): SavedByobConfig | null {
   }
 }
 
-export function saveByobConfig(cfg: SavedByobConfig): void {
+export async function saveEncryptedByobConfig(
+  cfg: SavedByobConfig,
+  dek: CryptoKey
+): Promise<void> {
+  const sanitized: SavedByobConfig = {
+    projectId: cfg.projectId.trim(),
+    apiKey: cfg.apiKey.trim(),
+    applicationId: cfg.applicationId?.trim() || '',
+    familyName: cfg.familyName?.trim() || 'Private Family Vault'
+  };
+  const encrypted = await encryptJsonWithKey(sanitized, dek);
+  localStorage.setItem(BYOB_CONFIG_STORAGE_KEY, encrypted);
+}
+
+export async function loadEncryptedByobConfig(
+  dek: CryptoKey
+): Promise<SavedByobConfig | null> {
   try {
-    const sanitized: SavedByobConfig = {
-      projectId: cfg.projectId.trim(),
-      apiKey: cfg.apiKey.trim(),
-      applicationId: cfg.applicationId?.trim() || '',
-      familyName: cfg.familyName?.trim() || 'Private Family Vault'
-    };
-    localStorage.setItem(BYOB_CONFIG_STORAGE_KEY, JSON.stringify(sanitized));
-  } catch (e) {
-    console.error('Failed to save BYOB Firestore config:', e);
+    const raw = localStorage.getItem(BYOB_CONFIG_STORAGE_KEY);
+    if (!raw || !isEncryptedEnvelopeString(raw)) return null;
+    const parsed = await decryptJsonWithKey<SavedByobConfig>(raw, dek);
+    if (
+      parsed &&
+      typeof parsed.projectId === 'string' &&
+      typeof parsed.apiKey === 'string' &&
+      parsed.projectId.trim() &&
+      parsed.apiKey.trim()
+    ) {
+      return {
+        projectId: parsed.projectId.trim(),
+        apiKey: parsed.apiKey.trim(),
+        applicationId: parsed.applicationId?.trim() || '',
+        familyName: parsed.familyName?.trim() || 'Private Family Vault'
+      };
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -85,22 +184,53 @@ export function clearByobConfig(): void {
   }
 }
 
-export function loadCachedData<T>(key: string, fallback: T): T {
+export function loadLanguagePreference(): 'fr' | 'en' {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch (e) {
-    console.error(`Failed to load ${key} from local cache:`, e);
-    return fallback;
+    const raw = localStorage.getItem(CACHE_STORAGE_KEYS.LANGUAGE);
+    if (raw === 'en' || raw === '"en"') return 'en';
+    return 'fr';
+  } catch {
+    return 'fr';
   }
 }
 
-export function saveCachedData<T>(key: string, data: T): void {
+export function saveLanguagePreference(lang: 'fr' | 'en'): void {
   try {
-    localStorage.setItem(key, JSON.stringify(data));
+    localStorage.setItem(CACHE_STORAGE_KEYS.LANGUAGE, lang);
+  } catch {
+    // Ignore
+  }
+}
+
+export async function saveEncryptedCachedData<T>(
+  key: string,
+  data: T,
+  dek: CryptoKey
+): Promise<void> {
+  try {
+    const encrypted = await encryptJsonWithKey(data, dek);
+    localStorage.setItem(key, encrypted);
   } catch (e) {
-    console.error(`Failed to save ${key} to local cache:`, e);
+    console.error(`Failed to encrypt & save ${key} to local cache:`, e);
+  }
+}
+
+export async function loadEncryptedCachedData<T>(
+  key: string,
+  fallback: T,
+  dek: CryptoKey
+): Promise<T> {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    if (!isEncryptedEnvelopeString(raw)) {
+      // Never hydrate unencrypted financial payloads into an encrypted vault session
+      return fallback;
+    }
+    return await decryptJsonWithKey<T>(raw, dek);
+  } catch (e) {
+    console.error(`Failed to decrypt ${key} from local cache:`, e);
+    return fallback;
   }
 }
 
@@ -112,36 +242,79 @@ export interface ByobLocalCacheSnapshot {
   rules: CategorizationRuleEntity[];
   members: FamilyMemberEntity[];
   syncState: SyncStateEntity;
-  outbox: any[];
+  outbox: SyncOutboxEntity[];
+  openBankingConfig?: OpenBankingConfig;
+  currency?: string;
   familyName?: string;
 }
 
 /**
- * Loads the locally cached Firestore BYOB dataset for a given projectId so
- * returning users can perform incremental delta sync instead of reloading everything.
+ * Decrypts and loads the locally cached Firestore BYOB dataset for a given projectId
+ * using the in-memory vault DEK so returning users can perform incremental delta sync.
  */
-export function loadByobLocalCache(projectId: string): ByobLocalCacheSnapshot | null {
+export async function loadEncryptedByobLocalCache(
+  projectId: string,
+  dek: CryptoKey
+): Promise<ByobLocalCacheSnapshot | null> {
   try {
-    const cachedProjectId = loadCachedData<string>(CACHE_STORAGE_KEYS.PROJECT_ID, '');
+    const cachedProjectId = await loadEncryptedCachedData<string>(
+      CACHE_STORAGE_KEYS.PROJECT_ID,
+      '',
+      dek
+    );
     if (!cachedProjectId || cachedProjectId !== projectId.trim()) {
       return null;
     }
 
-    const syncState = loadCachedData<SyncStateEntity | null>(CACHE_STORAGE_KEYS.SYNC_STATE, null);
+    const syncState = await loadEncryptedCachedData<SyncStateEntity | null>(
+      CACHE_STORAGE_KEYS.SYNC_STATE,
+      null,
+      dek
+    );
     if (!syncState || !syncState.lastPullTimestamp) {
       return null;
     }
 
+    const [
+      accounts,
+      transactions,
+      categories,
+      budgets,
+      rules,
+      members,
+      outbox,
+      openBankingConfig,
+      currency,
+      familyName
+    ] = await Promise.all([
+      loadEncryptedCachedData<AccountEntity[]>(CACHE_STORAGE_KEYS.ACCOUNTS, [], dek),
+      loadEncryptedCachedData<TransactionEntity[]>(CACHE_STORAGE_KEYS.TRANSACTIONS, [], dek),
+      loadEncryptedCachedData<CategoryEntity[]>(CACHE_STORAGE_KEYS.CATEGORIES, [], dek),
+      loadEncryptedCachedData<CategoryBudgetEntity[]>(CACHE_STORAGE_KEYS.BUDGETS, [], dek),
+      loadEncryptedCachedData<CategorizationRuleEntity[]>(CACHE_STORAGE_KEYS.RULES, [], dek),
+      loadEncryptedCachedData<FamilyMemberEntity[]>(CACHE_STORAGE_KEYS.MEMBERS, [], dek),
+      loadEncryptedCachedData<SyncOutboxEntity[]>(CACHE_STORAGE_KEYS.OUTBOX, [], dek),
+      loadEncryptedCachedData<OpenBankingConfig | undefined>(
+        CACHE_STORAGE_KEYS.OPEN_BANKING,
+        undefined,
+        dek
+      ),
+      loadEncryptedCachedData<string>(CACHE_STORAGE_KEYS.CURRENCY, '€', dek),
+      loadEncryptedCachedData<string>(CACHE_STORAGE_KEYS.FAMILY_NAME, '', dek)
+    ]);
+
     return {
-      accounts: loadCachedData<AccountEntity[]>(CACHE_STORAGE_KEYS.ACCOUNTS, []),
-      transactions: loadCachedData<TransactionEntity[]>(CACHE_STORAGE_KEYS.TRANSACTIONS, []),
-      categories: loadCachedData<CategoryEntity[]>(CACHE_STORAGE_KEYS.CATEGORIES, []),
-      budgets: loadCachedData<CategoryBudgetEntity[]>(CACHE_STORAGE_KEYS.BUDGETS, []),
-      rules: loadCachedData<CategorizationRuleEntity[]>(CACHE_STORAGE_KEYS.RULES, []),
-      members: loadCachedData<FamilyMemberEntity[]>(CACHE_STORAGE_KEYS.MEMBERS, []),
+      accounts,
+      transactions,
+      categories,
+      budgets,
+      rules,
+      members,
       syncState,
-      outbox: loadCachedData<any[]>(CACHE_STORAGE_KEYS.OUTBOX, []),
-      familyName: loadCachedData<string>(CACHE_STORAGE_KEYS.FAMILY_NAME, '')
+      outbox,
+      openBankingConfig,
+      currency,
+      familyName
     };
   } catch {
     return null;
@@ -149,9 +322,12 @@ export function loadByobLocalCache(projectId: string): ByobLocalCacheSnapshot | 
 }
 
 /**
- * Erases all local browser data (cached financial collections, sync state,
- * outbox, sessionStorage, pending OAuth payloads). By default preserves only
- * the BYOB Firestore configuration and WebAuthn credential ID.
+ * Erases local browser data on explicit Log Out or Forget Vault:
+ * - Always clears sessionStorage, financial collections, sync state, outbox, AND Open Banking config
+ *   (keys + account mappings).
+ * - When preserveByob is true (normal Log Out), retains only the encrypted BYOB Firestore config,
+ *   vault lock metadata, WebAuthn credential ID, and language preference.
+ * - Never runs automatically on tab/window close so encrypted delta cache stays available when unlocked.
  */
 export function purgeLocalData(options: { preserveByob?: boolean } = { preserveByob: true }): void {
   const preserveByob = options.preserveByob !== false;
@@ -163,11 +339,18 @@ export function purgeLocalData(options: { preserveByob?: boolean } = { preserveB
   }
 
   try {
+    const preservedKeys = new Set<string>([
+      BYOB_CONFIG_STORAGE_KEY,
+      VAULT_LOCK_META_KEY,
+      BIOMETRIC_CRED_STORAGE_KEY,
+      CACHE_STORAGE_KEYS.LANGUAGE
+    ]);
+
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key) continue;
-      if (preserveByob && (key === BYOB_CONFIG_STORAGE_KEY || key === BIOMETRIC_CRED_STORAGE_KEY)) {
+      if (preserveByob && preservedKeys.has(key)) {
         continue;
       }
       if (key.startsWith('fbv_')) {

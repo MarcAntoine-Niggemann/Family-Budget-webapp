@@ -16,18 +16,41 @@ import {
 import {
   CACHE_STORAGE_KEYS,
   SavedByobConfig,
+  VaultLockMeta,
   clearByobConfig,
+  clearVaultLockMeta,
   getEmptyConfig,
   getEmptySyncState,
   getInitialSeedData,
-  loadByobConfig,
-  loadByobLocalCache,
-  loadCachedData,
+  hasEncryptedByobConfig,
+  loadEncryptedByobConfig,
+  loadEncryptedByobLocalCache,
+  loadLanguagePreference,
+  loadLegacyPlaintextByobConfig,
+  loadVaultLockMeta,
   purgeLocalData,
-  saveByobConfig,
-  saveCachedData
+  saveEncryptedByobConfig,
+  saveEncryptedCachedData,
+  saveLanguagePreference,
+  saveVaultLockMeta
 } from '../utils/storage';
-import { clearBiometricCredential, verifyOrEnrollBiometrics } from '../utils/biometricKeyvault';
+import {
+  authenticateWithBiometricPrf,
+  clearBiometricCredential,
+  enrollBiometricWithPrf
+} from '../utils/biometricKeyvault';
+import {
+  base64ToUint8,
+  deriveKekFromPin,
+  deriveKekFromPrfSecret,
+  exportDekRaw,
+  generateRandomBytes,
+  generateRawDek,
+  importDekFromRaw,
+  uint8ToBase64,
+  unwrapDekWithKek,
+  wrapDekWithKek
+} from '../utils/crypto';
 import { ParsedBankRow } from '../utils/csvParser';
 import { executeBidirectionalSync, resetFirebaseInstances, SyncResult } from '../services/firebaseSyncService';
 import {
@@ -47,9 +70,32 @@ import {
 
 export type SessionMode = 'DEMO' | 'FIRESTORE' | null;
 
+export interface VaultProtectionInput {
+  biometricCredId?: string;
+  prfSecret?: ArrayBuffer;
+  prfSalt?: Uint8Array;
+  pin?: string;
+}
+
+export interface VaultActionResult {
+  success: boolean;
+  redirecting?: boolean;
+  vaultUnlocked?: boolean;
+  biometricVerified?: boolean;
+  needsPinForDecrypt?: boolean;
+  needsGoogleAuth?: boolean;
+  error?: string;
+  message?: string;
+}
+
 interface BudgetContextType {
   sessionMode: SessionMode;
   savedByobConfig: SavedByobConfig | null;
+  vaultLockMeta: VaultLockMeta | null;
+  hasSavedVault: boolean;
+  isVaultUnlocked: boolean;
+  biometricGateVerified: boolean;
+  legacyPlaintextConfig: SavedByobConfig | null;
   authInitialized: boolean;
 
   accounts: AccountEntity[];
@@ -75,20 +121,26 @@ interface BudgetContextType {
   dismissToast: () => void;
 
   startDemoMode: (lang?: 'fr' | 'en') => void;
+  lockVault: () => void;
   logout: () => Promise<void>;
   forgetByobConfig: () => Promise<void>;
-  unlockSavedByobWithBiometrics: () => Promise<{
-    success: boolean;
-    redirecting?: boolean;
-    biometricVerified?: boolean;
-    needsGoogleAuth?: boolean;
-    error?: string;
-  }>;
-  loginSavedByobWithGoogle: () => Promise<{
-    success: boolean;
-    redirecting?: boolean;
-    error?: string;
-  }>;
+  unlockVaultWithBiometrics: () => Promise<VaultActionResult>;
+  unlockVaultWithPin: (pin: string) => Promise<VaultActionResult>;
+  setupProtectedVaultAndConnect: (
+    byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
+    protection: VaultProtectionInput,
+    options?: { resetLocalData?: boolean }
+  ) => Promise<VaultActionResult>;
+  continueUnlockedByobWithGoogle: (overrideByob?: {
+    projectId: string;
+    apiKey: string;
+    applicationId?: string;
+    familyName?: string;
+  }) => Promise<VaultActionResult>;
+  enrollOrUpdateBiometrics: () => Promise<{ success: boolean; prfSupported?: boolean; error?: string }>;
+  updateVaultPin: (newPin: string) => Promise<{ success: boolean; error?: string }>;
+  removeVaultPin: () => Promise<{ success: boolean; error?: string }>;
+  removeBiometrics: () => Promise<{ success: boolean; error?: string }>;
 
   addTransaction: (tx: Omit<TransactionEntity, 'id' | 'updatedAt' | 'isDeleted'>) => number;
   updateTransaction: (tx: TransactionEntity) => void;
@@ -126,10 +178,6 @@ interface BudgetContextType {
   importCsvTransactions: (records: ParsedBankRow[], targetAccountId: string) => number;
   updateConfig: (patch: Partial<FirebaseConfigEntity>) => void;
   syncWithFirebaseNow: (options?: { forceFullPull?: boolean; resetCacheBeforePull?: boolean }) => Promise<void>;
-  connectAndSyncByob: (
-    byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
-    options?: { resetLocalData?: boolean }
-  ) => Promise<{ success: boolean; redirecting?: boolean; error?: string; message?: string }>;
   resetToMockData: (lang?: 'fr' | 'en') => void;
 
   updateOpenBankingConfig: (patch: Partial<OpenBankingConfig>) => void;
@@ -143,16 +191,21 @@ interface BudgetContextType {
 const BudgetContext = createContext<BudgetContextType | undefined>(undefined);
 
 export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [savedByobConfig, setSavedByobConfig] = useState<SavedByobConfig | null>(() => loadByobConfig());
-  const [sessionMode, setSessionMode] = useState<SessionMode>(null);
-  const [authInitialized, setAuthInitialized] = useState<boolean>(() => !loadByobConfig());
-
-  const [language, setLangState] = useState<'fr' | 'en'>(() =>
-    loadCachedData<'fr' | 'en'>(CACHE_STORAGE_KEYS.LANGUAGE, 'fr')
+  const [vaultLockMeta, setVaultLockMeta] = useState<VaultLockMeta | null>(() => loadVaultLockMeta());
+  const [hasSavedVault, setHasSavedVault] = useState<boolean>(() => hasEncryptedByobConfig());
+  const [legacyPlaintextConfig, setLegacyPlaintextConfig] = useState<SavedByobConfig | null>(() =>
+    hasEncryptedByobConfig() ? null : loadLegacyPlaintextByobConfig()
   );
+  const [isVaultUnlocked, setIsVaultUnlocked] = useState<boolean>(false);
+  const [biometricGateVerified, setBiometricGateVerified] = useState<boolean>(false);
+  const [savedByobConfig, setSavedByobConfig] = useState<SavedByobConfig | null>(null);
+  const [sessionMode, setSessionMode] = useState<SessionMode>(null);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(true);
+
+  const [language, setLangState] = useState<'fr' | 'en'>(() => loadLanguagePreference());
   const [currency, setCurrencyState] = useState<string>('€');
 
-  // Empty before login; hydrated from local BYOB cache + delta sync on Firestore auth, or seed data on Demo
+  // Empty before unlock & login; hydrated strictly from encrypted local cache + delta sync on unlock
   const [accounts, setAccounts] = useState<AccountEntity[]>([]);
   const [transactions, setTransactions] = useState<TransactionEntity[]>([]);
   const [categories, setCategories] = useState<CategoryEntity[]>([]);
@@ -160,7 +213,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [rules, setRules] = useState<CategorizationRuleEntity[]>([]);
   const [members, setMembers] = useState<FamilyMemberEntity[]>([]);
   const [outbox, setOutbox] = useState<SyncOutboxEntity[]>([]);
-  const [config, setConfig] = useState<FirebaseConfigEntity>(() => getEmptyConfig(loadByobConfig()));
+  const [config, setConfig] = useState<FirebaseConfigEntity>(() => getEmptyConfig(null));
   const [syncState, setSyncState] = useState<SyncStateEntity>(() => getEmptySyncState());
   const [openBankingConfig, setOpenBankingConfig] = useState<OpenBankingConfig>(DEFAULT_OPEN_BANKING_CONFIG);
 
@@ -170,25 +223,42 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [firebaseUser, setFirebaseUser] = useState<AuthUserInfo | null>(null);
 
   const isSyncingRef = useRef(false);
+  const activeDekRef = useRef<CryptoKey | null>(null);
+  const persistCounterRef = useRef(0);
 
-  // Persist local cache ONLY while actively authenticated in BYOB Firestore mode (never in Demo or before login)
+  // Persist AES-256-GCM encrypted local cache ONLY while unlocked & authenticated in BYOB Firestore mode
   useEffect(() => {
-    if (sessionMode !== 'FIRESTORE' || !config.projectId?.trim()) return;
-    saveCachedData(CACHE_STORAGE_KEYS.PROJECT_ID, config.projectId.trim());
-    saveCachedData(CACHE_STORAGE_KEYS.FAMILY_NAME, config.familyName);
-    saveCachedData(CACHE_STORAGE_KEYS.ACCOUNTS, accounts);
-    saveCachedData(CACHE_STORAGE_KEYS.TRANSACTIONS, transactions);
-    saveCachedData(CACHE_STORAGE_KEYS.CATEGORIES, categories);
-    saveCachedData(CACHE_STORAGE_KEYS.BUDGETS, budgets);
-    saveCachedData(CACHE_STORAGE_KEYS.RULES, rules);
-    saveCachedData(CACHE_STORAGE_KEYS.MEMBERS, members);
-    saveCachedData(CACHE_STORAGE_KEYS.SYNC_STATE, syncState);
-    saveCachedData(CACHE_STORAGE_KEYS.OUTBOX, outbox);
-    saveCachedData(CACHE_STORAGE_KEYS.OPEN_BANKING, openBankingConfig);
-    saveCachedData(CACHE_STORAGE_KEYS.CURRENCY, currency);
-    saveCachedData(CACHE_STORAGE_KEYS.LANGUAGE, language);
+    const dek = activeDekRef.current;
+    if (sessionMode !== 'FIRESTORE' || !isVaultUnlocked || !dek || !config.projectId?.trim()) {
+      return;
+    }
+
+    const opId = ++persistCounterRef.current;
+    const projectIdTrimmed = config.projectId.trim();
+
+    const persistEncryptedCache = async () => {
+      if (opId !== persistCounterRef.current || activeDekRef.current !== dek) return;
+      await Promise.all([
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.PROJECT_ID, projectIdTrimmed, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.FAMILY_NAME, config.familyName, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.ACCOUNTS, accounts, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.TRANSACTIONS, transactions, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.CATEGORIES, categories, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.BUDGETS, budgets, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.RULES, rules, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.MEMBERS, members, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.SYNC_STATE, syncState, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.OUTBOX, outbox, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.OPEN_BANKING, openBankingConfig, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.CURRENCY, currency, dek)
+      ]);
+      saveLanguagePreference(language);
+    };
+
+    persistEncryptedCache();
   }, [
     sessionMode,
+    isVaultUnlocked,
     config.projectId,
     config.familyName,
     accounts,
@@ -283,7 +353,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSyncState(result.updatedSyncState);
   };
 
-  // Handle Google redirect OAuth return on mount + subscribe to Firebase Auth for active BYOB project
+  // Handle Google redirect OAuth return on mount + subscribe to Firebase Auth ONLY after vault unlock
   useEffect(() => {
     const pendingByob = consumePendingByobConfig();
     if (pendingByob && pendingByob.projectId && pendingByob.apiKey) {
@@ -292,32 +362,34 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         apiKey: pendingByob.apiKey,
         applicationId: pendingByob.applicationId
       };
-      checkRedirectAuthResult(tempCfg).then(async user => {
+      checkRedirectAuthResult(tempCfg).then(user => {
         if (user && user.email) {
-          await completeByobSetupWithUser(
-            {
-              projectId: pendingByob.projectId,
-              apiKey: pendingByob.apiKey,
-              applicationId: pendingByob.applicationId,
-              familyName: pendingByob.familyName
-            },
-            user,
-            pendingByob.resetLocalData
+          setFirebaseUser(user);
+          showToast(
+            language === 'fr'
+              ? 'Connexion Google validée. Déverrouillez le coffre avec votre empreinte ou code PIN.'
+              : 'Google Sign-In completed. Unlock your vault with your fingerprint or PIN.'
           );
         }
       });
     }
 
-    const activeProjectId = config.projectId?.trim() || savedByobConfig?.projectId?.trim() || '';
-    const activeApiKey = config.apiKey?.trim() || savedByobConfig?.apiKey?.trim() || '';
-    const activeAppId = config.applicationId?.trim() || savedByobConfig?.applicationId?.trim() || '';
+    const activeProjectId = isVaultUnlocked
+      ? config.projectId?.trim() || savedByobConfig?.projectId?.trim() || ''
+      : '';
+    const activeApiKey = isVaultUnlocked
+      ? config.apiKey?.trim() || savedByobConfig?.apiKey?.trim() || ''
+      : '';
+    const activeAppId = isVaultUnlocked
+      ? config.applicationId?.trim() || savedByobConfig?.applicationId?.trim() || ''
+      : '';
 
     if (!activeProjectId || !activeApiKey) {
-      setFirebaseUser(null);
       setAuthInitialized(true);
       return;
     }
 
+    setAuthInitialized(false);
     const unsub = subscribeToAuth(
       { projectId: activeProjectId, apiKey: activeApiKey, applicationId: activeAppId },
       user => {
@@ -346,7 +418,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.projectId, config.apiKey, config.applicationId, savedByobConfig?.projectId, savedByobConfig?.apiKey]);
+  }, [isVaultUnlocked, config.projectId, config.apiKey, config.applicationId, savedByobConfig?.projectId, savedByobConfig?.apiKey]);
 
   // Auto-sync pending mutations to Firestore when in FIRESTORE mode
   useEffect(() => {
@@ -403,6 +475,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const setLanguage = (lang: 'fr' | 'en') => {
     setLangState(lang);
+    saveLanguagePreference(lang);
   };
 
   const setCurrency = (cur: string) => {
@@ -462,33 +535,69 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setCurrentScreen('DASHBOARD');
   };
 
-  const logout = async () => {
-    const activeByob = loadByobConfig() || savedByobConfig;
-    await signOutGoogle(config);
-    await resetFirebaseInstances();
-    purgeLocalData({ preserveByob: true });
-    const latestByob = loadByobConfig() || activeByob;
-    setSavedByobConfig(latestByob);
-    eraseAllSessionMemory(latestByob);
-    showToast(
-      language === 'fr'
-        ? 'Déconnecté — toutes les données locales ont été effacées.'
-        : 'Logged out — all local data erased.'
-    );
-  };
-
-  const forgetByobConfig = async () => {
-    await signOutGoogle(config);
-    await resetFirebaseInstances();
-    clearByobConfig();
-    clearBiometricCredential();
-    purgeLocalData({ preserveByob: false });
+  /**
+   * Locks the vault immediately (wiping the in-memory DEK and React financial state),
+   * while preserving encrypted localStorage delta cache and Open Banking config
+   * plus the active Firebase Auth session for fast biometric/PIN re-entry.
+   */
+  const lockVault = () => {
+    activeDekRef.current = null;
+    setIsVaultUnlocked(false);
+    setBiometricGateVerified(false);
     setSavedByobConfig(null);
     eraseAllSessionMemory(null);
     showToast(
       language === 'fr'
-        ? 'Configuration Firestore BYOB oubliée et données effacées.'
-        : 'Saved Firestore BYOB configuration cleared.'
+        ? 'Coffre verrouillé — clé de chiffrement effacée de la mémoire.'
+        : 'Vault locked — encryption key cleared from memory.'
+    );
+  };
+
+  /**
+   * Explicit user Log Out:
+   * - Signs out of Firebase Auth
+   * - Permanently erases all financial cache AND Open Banking config (keys + account mappings)
+   * - Preserves ONLY the AES-256-GCM encrypted BYOB vault config and lock metadata.
+   */
+  const logout = async () => {
+    const targetCfg = savedByobConfig || config;
+    await signOutGoogle(targetCfg);
+    await resetFirebaseInstances();
+    purgeLocalData({ preserveByob: true });
+    activeDekRef.current = null;
+    setIsVaultUnlocked(false);
+    setBiometricGateVerified(false);
+    setSavedByobConfig(null);
+    setVaultLockMeta(loadVaultLockMeta());
+    setHasSavedVault(hasEncryptedByobConfig());
+    eraseAllSessionMemory(null);
+    showToast(
+      language === 'fr'
+        ? 'Déconnecté — données financières et clés Open Banking effacées.'
+        : 'Logged out — financial data and Open Banking keys erased.'
+    );
+  };
+
+  const forgetByobConfig = async () => {
+    const targetCfg = savedByobConfig || config;
+    await signOutGoogle(targetCfg);
+    await resetFirebaseInstances();
+    clearByobConfig();
+    clearVaultLockMeta();
+    clearBiometricCredential();
+    purgeLocalData({ preserveByob: false });
+    activeDekRef.current = null;
+    setIsVaultUnlocked(false);
+    setBiometricGateVerified(false);
+    setSavedByobConfig(null);
+    setVaultLockMeta(null);
+    setHasSavedVault(false);
+    setLegacyPlaintextConfig(null);
+    eraseAllSessionMemory(null);
+    showToast(
+      language === 'fr'
+        ? 'Configuration BYOB oubliée et toutes les données effacées.'
+        : 'Saved Firestore BYOB configuration and all local data cleared.'
     );
   };
 
@@ -984,9 +1093,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateConfig = (patch: Partial<FirebaseConfigEntity>) => {
     setConfig(prev => ({ ...prev, ...patch }));
-    if (patch.familyName && sessionMode === 'FIRESTORE' && savedByobConfig) {
+    if (patch.familyName && sessionMode === 'FIRESTORE' && savedByobConfig && activeDekRef.current) {
       const updated = { ...savedByobConfig, familyName: patch.familyName };
-      saveByobConfig(updated);
+      saveEncryptedByobConfig(updated, activeDekRef.current).catch(err =>
+        console.error('Failed to re-encrypt updated vault name:', err)
+      );
       setSavedByobConfig(updated);
     }
     showToast(language === 'fr' ? 'Configuration mise à jour' : 'Configuration updated');
@@ -1075,8 +1186,20 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const completeByobSetupWithUser = async (
     byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
     user: AuthUserInfo,
-    resetLocalData: boolean
+    resetLocalData: boolean,
+    dekOverride?: CryptoKey
   ): Promise<{ success: boolean; error?: string; message?: string }> => {
+    const dek = dekOverride || activeDekRef.current;
+    if (!dek) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Clé de chiffrement locale indisponible. Veuillez déverrouiller le coffre.'
+            : 'Local vault encryption key is unavailable. Please unlock your vault.'
+      };
+    }
+
     const cleanByob: SavedByobConfig = {
       projectId: byob.projectId.trim(),
       apiKey: byob.apiKey.trim(),
@@ -1084,8 +1207,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       familyName: byob.familyName?.trim() || 'Private Family Vault'
     };
 
-    saveByobConfig(cleanByob);
+    await saveEncryptedByobConfig(cleanByob, dek);
     setSavedByobConfig(cleanByob);
+    setHasSavedVault(true);
+    setLegacyPlaintextConfig(null);
 
     const adminMember: FamilyMemberEntity = {
       id: user.uid,
@@ -1096,8 +1221,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       firestoreSynced: true
     };
 
-    // Check if we have a valid local cache for this exact BYOB projectId so we can do incremental delta sync!
-    const localCache = !resetLocalData ? loadByobLocalCache(cleanByob.projectId) : null;
+    // Decrypt local delta cache if connecting to the same projectId and not resetting
+    const localCache = !resetLocalData
+      ? await loadEncryptedByobLocalCache(cleanByob.projectId, dek)
+      : null;
 
     let syncAccounts: AccountEntity[] = [];
     let syncTxs: TransactionEntity[] = [];
@@ -1121,14 +1248,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         lastSyncStatus: 'SYNCING',
         lastSyncMessage:
           language === 'fr'
-            ? 'Cache local chargé — Synchronisation delta Firestore...'
-            : 'Local cache loaded — Delta syncing Firestore...'
+            ? 'Cache chiffré déverrouillé — Synchronisation delta Firestore...'
+            : 'Encrypted cache unlocked — Delta syncing Firestore...'
       };
 
-      setOpenBankingConfig(
-        loadCachedData<OpenBankingConfig>(CACHE_STORAGE_KEYS.OPEN_BANKING, DEFAULT_OPEN_BANKING_CONFIG)
-      );
-      setCurrencyState(loadCachedData<string>(CACHE_STORAGE_KEYS.CURRENCY, '€'));
+      setOpenBankingConfig(localCache.openBankingConfig || DEFAULT_OPEN_BANKING_CONFIG);
+      setCurrencyState(localCache.currency || '€');
       setAccounts(syncAccounts);
       setTransactions(syncTxs);
       setCategories(syncCats);
@@ -1164,7 +1289,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const nextConfig: FirebaseConfigEntity = {
       ...config,
-      familyName: (localCache?.familyName || cleanByob.familyName || 'Private Family Vault'),
+      familyName: localCache?.familyName || cleanByob.familyName || 'Private Family Vault',
       projectId: cleanByob.projectId,
       apiKey: cleanByob.apiKey,
       applicationId: cleanByob.applicationId || '',
@@ -1204,10 +1329,22 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       members: syncMembers
     });
 
-    if (result.success) {
+    const isOfflineWithCache =
+      !result.success &&
+      typeof navigator !== 'undefined' &&
+      !navigator.onLine &&
+      localCache !== null;
+
+    if (result.success || isOfflineWithCache) {
       setSessionMode('FIRESTORE');
       setCurrentScreen('DASHBOARD');
-      showToast(result.message);
+      showToast(
+        isOfflineWithCache
+          ? language === 'fr'
+            ? 'Mode hors-ligne : cache chiffré local chargé.'
+            : 'Offline mode: encrypted local cache loaded.'
+          : result.message
+      );
       return { success: true, message: result.message };
     } else {
       showToast(result.message);
@@ -1215,69 +1352,47 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const connectAndSyncByob = async (
-    byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
-    options?: { resetLocalData?: boolean }
-  ): Promise<{ success: boolean; redirecting?: boolean; error?: string; message?: string }> => {
-    // Reuse local cache if connecting to the exact same projectId unless resetLocalData is explicitly forced
-    const isSameProject = savedByobConfig?.projectId?.trim() === byob.projectId.trim();
-    const shouldReset = options?.resetLocalData !== undefined ? options.resetLocalData : !isSameProject;
-
-    const tempCfg: Partial<FirebaseConfigEntity> = {
-      projectId: byob.projectId.trim(),
-      apiKey: byob.apiKey.trim(),
-      applicationId: byob.applicationId?.trim() || ''
-    };
-
-    const res = await signInWithGoogle(tempCfg, {
-      projectId: byob.projectId.trim(),
-      apiKey: byob.apiKey.trim(),
-      applicationId: byob.applicationId?.trim() || '',
-      familyName: byob.familyName?.trim() || 'Private Family Vault',
-      resetLocalData: shouldReset
-    });
-
-    if (res.redirecting) {
-      return { success: false, redirecting: true, error: res.error };
-    }
-
-    if (!res.success || !res.user) {
+  /**
+   * Finalizes local unlock once DEK has been unwrapped/derived in memory.
+   * Decrypts BYOB config, waits for Firebase Auth persistence, and opens Dashboard if already signed in.
+   */
+  const finalizeLocalUnlock = async (dek: CryptoKey): Promise<VaultActionResult> => {
+    const decryptedByob = await loadEncryptedByobConfig(dek);
+    if (!decryptedByob) {
       return {
         success: false,
-        error: res.error || (language === 'fr' ? 'Échec de l’authentification Google' : 'Google authentication failed')
+        error:
+          language === 'fr'
+            ? 'Impossible de déchiffrer la configuration du coffre.'
+            : 'Failed to decrypt saved vault configuration.'
       };
     }
 
-    return await completeByobSetupWithUser(byob, res.user, shouldReset);
-  };
+    activeDekRef.current = dek;
+    setSavedByobConfig(decryptedByob);
+    setIsVaultUnlocked(true);
+    setBiometricGateVerified(false);
+    setConfig(prev => ({
+      ...getEmptyConfig(decryptedByob),
+      ...prev,
+      projectId: decryptedByob.projectId,
+      apiKey: decryptedByob.apiKey,
+      applicationId: decryptedByob.applicationId || '',
+      familyName: decryptedByob.familyName || 'Private Family Vault',
+      isConfigured: true,
+      isBiometricLockEnabled: true
+    }));
 
-  const unlockSavedByobWithBiometrics = async (): Promise<{
-    success: boolean;
-    redirecting?: boolean;
-    biometricVerified?: boolean;
-    needsGoogleAuth?: boolean;
-    error?: string;
-  }> => {
-    const targetByob = savedByobConfig || loadByobConfig();
-    if (!targetByob) {
-      return {
-        success: false,
-        error: language === 'fr' ? 'Aucune configuration Firestore BYOB enregistrée.' : 'No saved Firestore BYOB configuration found.'
-      };
+    const auth = getOrInitAuth(decryptedByob);
+    if (auth) {
+      try {
+        await auth.authStateReady();
+      } catch {
+        // Ignore authStateReady failure and fall back to currentUser check
+      }
     }
 
-    const bioRes = await verifyOrEnrollBiometrics(
-      targetByob.familyName || 'Vault Owner',
-      firebaseUser?.email || 'vault@family.local'
-    );
-
-    if (!bioRes.success) {
-      return { success: false, error: bioRes.error };
-    }
-
-    const auth = getOrInitAuth(targetByob);
     const activeFbUser = auth?.currentUser;
-
     if (activeFbUser && activeFbUser.email) {
       const userInfo: AuthUserInfo = {
         uid: activeFbUser.uid,
@@ -1285,11 +1400,314 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         displayName: activeFbUser.displayName,
         photoURL: activeFbUser.photoURL
       };
-      // Pass resetLocalData = false so existing local cache is hydrated and only delta changes are pulled
-      const syncRes = await completeByobSetupWithUser(targetByob, userInfo, false);
+      const syncRes = await completeByobSetupWithUser(decryptedByob, userInfo, false, dek);
       return {
         success: syncRes.success,
+        vaultUnlocked: true,
         biometricVerified: true,
+        error: syncRes.error
+      };
+    }
+
+    return {
+      success: false,
+      vaultUnlocked: true,
+      biometricVerified: true,
+      needsGoogleAuth: true,
+      error:
+        language === 'fr'
+          ? 'Coffre déchiffré. Connectez-vous avec votre compte Google pour ouvrir Firestore.'
+          : 'Vault decrypted. Sign in with your Google account to open your Firestore vault.'
+    };
+  };
+
+  const unlockVaultWithBiometrics = async (): Promise<VaultActionResult> => {
+    const meta = vaultLockMeta || loadVaultLockMeta();
+    if (!meta || !hasEncryptedByobConfig()) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Aucun coffre chiffré enregistré sur cet appareil.'
+            : 'No encrypted vault found on this device.'
+      };
+    }
+
+    if (!meta.credentialId) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Aucune empreinte biométrique configurée sur ce coffre. Utilisez votre code PIN.'
+            : 'No biometric credential enrolled for this vault. Use your Vault PIN.'
+      };
+    }
+
+    const prfSalt = meta.prfSaltBase64 ? base64ToUint8(meta.prfSaltBase64) : undefined;
+    const authRes = await authenticateWithBiometricPrf(meta.credentialId, prfSalt);
+
+    if (!authRes.success) {
+      return { success: false, error: authRes.error };
+    }
+
+    if (meta.wrappedDekPrf && meta.hkdfSaltBase64) {
+      if (!authRes.prfSecret) {
+        if (meta.wrappedDekPin) {
+          setBiometricGateVerified(true);
+          return {
+            success: false,
+            biometricVerified: true,
+            needsPinForDecrypt: true,
+            error:
+              language === 'fr'
+                ? 'Empreinte vérifiée, mais la clé matérielle PRF est indisponible. Saisissez votre code PIN.'
+                : 'Fingerprint verified, but hardware PRF key was not returned. Enter your Vault PIN to decrypt.'
+          };
+        }
+        return {
+          success: false,
+          biometricVerified: true,
+          error:
+            language === 'fr'
+              ? 'Cet authenticateur n’a pas fourni la clé matérielle WebAuthn PRF requise.'
+              : 'This authenticator did not return the required WebAuthn PRF key material.'
+        };
+      }
+
+      try {
+        const kek = await deriveKekFromPrfSecret(authRes.prfSecret, base64ToUint8(meta.hkdfSaltBase64));
+        const rawDek = await unwrapDekWithKek(meta.wrappedDekPrf, kek);
+        const dek = await importDekFromRaw(rawDek, true);
+        return await finalizeLocalUnlock(dek);
+      } catch {
+        return {
+          success: false,
+          biometricVerified: true,
+          error:
+            language === 'fr'
+              ? 'Échec du déchiffrement avec cette empreinte matérielle.'
+              : 'Failed to unwrap vault key with this biometric credential.'
+        };
+      }
+    }
+
+    // Standard WebAuthn gate without PRF: biometric verified presence, now PIN unwraps DEK
+    setBiometricGateVerified(true);
+    return {
+      success: false,
+      biometricVerified: true,
+      needsPinForDecrypt: true,
+      error:
+        language === 'fr'
+          ? 'Empreinte vérifiée. Saisissez votre code PIN pour déchiffrer le stockage local.'
+          : 'Fingerprint verified. Enter your Vault PIN to decrypt local storage.'
+    };
+  };
+
+  const unlockVaultWithPin = async (pin: string): Promise<VaultActionResult> => {
+    const cleanPin = pin.trim();
+    if (!cleanPin) {
+      return {
+        success: false,
+        error: language === 'fr' ? 'Veuillez saisir votre code PIN.' : 'Please enter your Vault PIN.'
+      };
+    }
+
+    const meta = vaultLockMeta || loadVaultLockMeta();
+    if (!meta || !meta.wrappedDekPin || !meta.pinSaltBase64 || !hasEncryptedByobConfig()) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Aucun code PIN configuré pour ce coffre. Utilisez votre empreinte biométrique.'
+            : 'No Vault PIN is configured for this vault. Unlock with your fingerprint.'
+      };
+    }
+
+    try {
+      const kek = await deriveKekFromPin(cleanPin, base64ToUint8(meta.pinSaltBase64));
+      const rawDek = await unwrapDekWithKek(meta.wrappedDekPin, kek);
+      const dek = await importDekFromRaw(rawDek, true);
+      return await finalizeLocalUnlock(dek);
+    } catch {
+      return {
+        success: false,
+        error: language === 'fr' ? 'Code PIN du coffre incorrect.' : 'Incorrect Vault PIN.'
+      };
+    }
+  };
+
+  /**
+   * Configures mandatory local AES-256-GCM encryption (WebAuthn PRF biometric key and/or Vault PIN),
+   * encrypts the BYOB config before disk persistence, and then runs Google Sign-In.
+   */
+  const setupProtectedVaultAndConnect = async (
+    byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
+    protection: VaultProtectionInput,
+    options?: { resetLocalData?: boolean }
+  ): Promise<VaultActionResult> => {
+    const hasPrf = Boolean(protection.biometricCredId && protection.prfSecret && protection.prfSalt);
+    const cleanPin = protection.pin?.trim() || '';
+    const hasPin = cleanPin.length >= 6;
+
+    if (!hasPrf && !hasPin) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Protection requise : enregistrez une empreinte WebAuthn PRF ou définissez un code PIN (6 caractères min.).'
+            : 'Protection required: enroll a WebAuthn PRF fingerprint or set a Vault PIN (min. 6 characters).'
+      };
+    }
+
+    const cleanByob: SavedByobConfig = {
+      projectId: byob.projectId.trim(),
+      apiKey: byob.apiKey.trim(),
+      applicationId: byob.applicationId?.trim() || '',
+      familyName: byob.familyName?.trim() || 'Private Family Vault'
+    };
+
+    const rawDek = generateRawDek();
+    const meta: VaultLockMeta = {
+      v: 2,
+      encryptionMode: hasPrf && hasPin ? 'HYBRID' : hasPrf ? 'WEBAUTHN_PRF' : 'PIN_WRAPPED',
+      credentialId: protection.biometricCredId,
+      updatedAt: Date.now()
+    };
+
+    if (hasPrf && protection.prfSecret && protection.prfSalt) {
+      const hkdfSalt = generateRandomBytes(16);
+      const kekPrf = await deriveKekFromPrfSecret(protection.prfSecret, hkdfSalt);
+      meta.prfSaltBase64 = uint8ToBase64(protection.prfSalt);
+      meta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
+      meta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
+    }
+
+    if (hasPin) {
+      const pinSalt = generateRandomBytes(16);
+      const kekPin = await deriveKekFromPin(cleanPin, pinSalt);
+      meta.pinSaltBase64 = uint8ToBase64(pinSalt);
+      meta.wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
+    }
+
+    const dek = await importDekFromRaw(rawDek, true);
+
+    saveVaultLockMeta(meta);
+    setVaultLockMeta(meta);
+    await saveEncryptedByobConfig(cleanByob, dek);
+
+    activeDekRef.current = dek;
+    setSavedByobConfig(cleanByob);
+    setHasSavedVault(true);
+    setIsVaultUnlocked(true);
+    setLegacyPlaintextConfig(null);
+
+    const isSameProject = savedByobConfig?.projectId?.trim() === cleanByob.projectId;
+    const shouldReset = options?.resetLocalData !== undefined ? options.resetLocalData : !isSameProject;
+
+    const googleRes = await signInWithGoogle(cleanByob, {
+      projectId: cleanByob.projectId,
+      apiKey: cleanByob.apiKey,
+      applicationId: cleanByob.applicationId || '',
+      familyName: cleanByob.familyName || 'Private Family Vault',
+      resetLocalData: shouldReset
+    });
+
+    if (googleRes.redirecting) {
+      return {
+        success: false,
+        redirecting: true,
+        vaultUnlocked: true,
+        error: googleRes.error
+      };
+    }
+
+    if (!googleRes.success || !googleRes.user) {
+      return {
+        success: false,
+        vaultUnlocked: true,
+        needsGoogleAuth: true,
+        error:
+          googleRes.error ||
+          (language === 'fr' ? 'Échec de l’authentification Google' : 'Google authentication failed')
+      };
+    }
+
+    const syncRes = await completeByobSetupWithUser(cleanByob, googleRes.user, shouldReset, dek);
+    return {
+      success: syncRes.success,
+      vaultUnlocked: true,
+      error: syncRes.error,
+      message: syncRes.message
+    };
+  };
+
+  /**
+   * Proceeds with Google Sign-In ONLY AFTER the vault DEK is already unlocked in memory.
+   */
+  const continueUnlockedByobWithGoogle = async (overrideByob?: {
+    projectId: string;
+    apiKey: string;
+    applicationId?: string;
+    familyName?: string;
+  }): Promise<VaultActionResult> => {
+    const dek = activeDekRef.current;
+    if (!isVaultUnlocked || !dek) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Déverrouillage local requis (empreinte ou code PIN) avant la connexion Google.'
+            : 'Local unlock (fingerprint or PIN) is required before Google Sign-In.'
+      };
+    }
+
+    const targetByob = overrideByob
+      ? {
+          projectId: overrideByob.projectId.trim(),
+          apiKey: overrideByob.apiKey.trim(),
+          applicationId: overrideByob.applicationId?.trim() || '',
+          familyName: overrideByob.familyName?.trim() || 'Private Family Vault'
+        }
+      : savedByobConfig || (await loadEncryptedByobConfig(dek));
+
+    if (!targetByob) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Configuration du coffre introuvable.'
+            : 'Vault configuration not found.'
+      };
+    }
+
+    const isSameProject = savedByobConfig?.projectId?.trim() === targetByob.projectId;
+    if (overrideByob) {
+      await saveEncryptedByobConfig(targetByob, dek);
+      setSavedByobConfig(targetByob);
+    }
+
+    const auth = getOrInitAuth(targetByob);
+    if (auth) {
+      try {
+        await auth.authStateReady();
+      } catch {
+        // Ignore
+      }
+    }
+
+    const existingUser = auth?.currentUser;
+    if (existingUser && existingUser.email && isSameProject) {
+      const userInfo: AuthUserInfo = {
+        uid: existingUser.uid,
+        email: existingUser.email,
+        displayName: existingUser.displayName,
+        photoURL: existingUser.photoURL
+      };
+      const syncRes = await completeByobSetupWithUser(targetByob, userInfo, false, dek);
+      return {
+        success: syncRes.success,
+        vaultUnlocked: true,
         error: syncRes.error
       };
     }
@@ -1299,14 +1717,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       apiKey: targetByob.apiKey,
       applicationId: targetByob.applicationId || '',
       familyName: targetByob.familyName || 'Private Family Vault',
-      resetLocalData: false
+      resetLocalData: !isSameProject
     });
 
     if (googleRes.redirecting) {
       return {
         success: false,
         redirecting: true,
-        biometricVerified: true,
+        vaultUnlocked: true,
         error: googleRes.error
       };
     }
@@ -1314,53 +1732,187 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!googleRes.success || !googleRes.user) {
       return {
         success: false,
-        biometricVerified: true,
+        vaultUnlocked: true,
         needsGoogleAuth: true,
-        error:
-          googleRes.error ||
-          (language === 'fr'
-            ? 'Empreinte vérifiée. Cliquez sur « Se connecter avec Google » pour ouvrir votre session Firestore.'
-            : 'Fingerprint verified. Click "Sign in with Google" to open your Firestore session.')
+        error: googleRes.error
       };
     }
 
-    const syncRes = await completeByobSetupWithUser(targetByob, googleRes.user, false);
+    const syncRes = await completeByobSetupWithUser(targetByob, googleRes.user, !isSameProject, dek);
     return {
       success: syncRes.success,
-      biometricVerified: true,
+      vaultUnlocked: true,
       error: syncRes.error
     };
   };
 
-  const loginSavedByobWithGoogle = async (): Promise<{
+  const enrollOrUpdateBiometrics = async (): Promise<{
     success: boolean;
-    redirecting?: boolean;
+    prfSupported?: boolean;
     error?: string;
   }> => {
-    const targetByob = savedByobConfig || loadByobConfig();
-    if (!targetByob) {
+    const dek = activeDekRef.current;
+    const currentMeta = vaultLockMeta || loadVaultLockMeta();
+    if (!dek || !currentMeta) {
       return {
         success: false,
-        error: language === 'fr' ? 'Aucune configuration Firestore BYOB enregistrée.' : 'No saved Firestore BYOB configuration found.'
+        error: language === 'fr' ? 'Le coffre doit être déverrouillé.' : 'Vault must be unlocked.'
       };
     }
 
-    const auth = getOrInitAuth(targetByob);
-    const existingUser = auth?.currentUser;
-    if (existingUser && existingUser.email) {
-      const userInfo: AuthUserInfo = {
-        uid: existingUser.uid,
-        email: existingUser.email,
-        displayName: existingUser.displayName,
-        photoURL: existingUser.photoURL
-      };
-      return await completeByobSetupWithUser(targetByob, userInfo, false);
+    const prfSalt = generateRandomBytes(32);
+    const enrollRes = await enrollBiometricWithPrf(
+      firebaseUser?.displayName || config.currentUserName || 'Vault Owner',
+      firebaseUser?.email || config.currentUserEmail || 'vault@family.local',
+      prfSalt
+    );
+
+    if (!enrollRes.success || !enrollRes.credentialId) {
+      return { success: false, error: enrollRes.error };
     }
 
-    return await connectAndSyncByob(targetByob, { resetLocalData: false });
+    if (!enrollRes.prfSupported && !currentMeta.wrappedDekPin) {
+      return {
+        success: false,
+        prfSupported: false,
+        error:
+          language === 'fr'
+            ? 'Ce navigateur ne supporte pas WebAuthn PRF. Définissez d’abord un code PIN de secours.'
+            : 'This browser does not support WebAuthn PRF. Set a backup Vault PIN first.'
+      };
+    }
+
+    const rawDek = await exportDekRaw(dek);
+    const nextMeta: VaultLockMeta = {
+      ...currentMeta,
+      credentialId: enrollRes.credentialId,
+      updatedAt: Date.now()
+    };
+
+    if (enrollRes.prfSupported && enrollRes.prfSecret) {
+      const hkdfSalt = generateRandomBytes(16);
+      const kekPrf = await deriveKekFromPrfSecret(enrollRes.prfSecret, hkdfSalt);
+      nextMeta.prfSaltBase64 = uint8ToBase64(prfSalt);
+      nextMeta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
+      nextMeta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
+      nextMeta.encryptionMode = nextMeta.wrappedDekPin ? 'HYBRID' : 'WEBAUTHN_PRF';
+    } else {
+      delete nextMeta.prfSaltBase64;
+      delete nextMeta.hkdfSaltBase64;
+      delete nextMeta.wrappedDekPrf;
+      nextMeta.encryptionMode = 'PIN_WRAPPED';
+    }
+
+    saveVaultLockMeta(nextMeta);
+    setVaultLockMeta(nextMeta);
+    return { success: true, prfSupported: enrollRes.prfSupported };
+  };
+
+  const updateVaultPin = async (newPin: string): Promise<{ success: boolean; error?: string }> => {
+    const cleanPin = newPin.trim();
+    if (cleanPin.length < 6) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Le code PIN doit contenir au moins 6 caractères.'
+            : 'Vault PIN must be at least 6 characters.'
+      };
+    }
+
+    const dek = activeDekRef.current;
+    const currentMeta = vaultLockMeta || loadVaultLockMeta();
+    if (!dek || !currentMeta) {
+      return {
+        success: false,
+        error: language === 'fr' ? 'Le coffre doit être déverrouillé.' : 'Vault must be unlocked.'
+      };
+    }
+
+    const rawDek = await exportDekRaw(dek);
+    const pinSalt = generateRandomBytes(16);
+    const kekPin = await deriveKekFromPin(cleanPin, pinSalt);
+    const wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
+
+    const nextMeta: VaultLockMeta = {
+      ...currentMeta,
+      pinSaltBase64: uint8ToBase64(pinSalt),
+      wrappedDekPin,
+      encryptionMode: currentMeta.wrappedDekPrf ? 'HYBRID' : 'PIN_WRAPPED',
+      updatedAt: Date.now()
+    };
+
+    saveVaultLockMeta(nextMeta);
+    setVaultLockMeta(nextMeta);
+    return { success: true };
+  };
+
+  const removeVaultPin = async (): Promise<{ success: boolean; error?: string }> => {
+    const currentMeta = vaultLockMeta || loadVaultLockMeta();
+    if (!currentMeta) return { success: false };
+    if (!currentMeta.wrappedDekPrf) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Impossible de retirer le code PIN sans clé biométrique WebAuthn PRF active.'
+            : 'Cannot remove Vault PIN unless WebAuthn PRF hardware key is active.'
+      };
+    }
+
+    const nextMeta: VaultLockMeta = {
+      ...currentMeta,
+      encryptionMode: 'WEBAUTHN_PRF',
+      updatedAt: Date.now()
+    };
+    delete nextMeta.pinSaltBase64;
+    delete nextMeta.wrappedDekPin;
+
+    saveVaultLockMeta(nextMeta);
+    setVaultLockMeta(nextMeta);
+    return { success: true };
+  };
+
+  const removeBiometrics = async (): Promise<{ success: boolean; error?: string }> => {
+    const currentMeta = vaultLockMeta || loadVaultLockMeta();
+    if (!currentMeta) return { success: false };
+    if (!currentMeta.wrappedDekPin) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Définissez d’abord un code PIN avant de retirer votre empreinte.'
+            : 'Set a Vault PIN first before removing fingerprint unlock.'
+      };
+    }
+
+    clearBiometricCredential();
+    const nextMeta: VaultLockMeta = {
+      ...currentMeta,
+      encryptionMode: 'PIN_WRAPPED',
+      updatedAt: Date.now()
+    };
+    delete nextMeta.credentialId;
+    delete nextMeta.prfSaltBase64;
+    delete nextMeta.hkdfSaltBase64;
+    delete nextMeta.wrappedDekPrf;
+
+    saveVaultLockMeta(nextMeta);
+    setVaultLockMeta(nextMeta);
+    return { success: true };
   };
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!isVaultUnlocked || !activeDekRef.current) {
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? 'Déverrouillez le coffre avant de vous connecter avec Google.'
+            : 'Unlock your vault before signing in with Google.'
+      };
+    }
+
     const res = await signInWithGoogle(config);
     if (res.success && res.user) {
       setFirebaseUser(res.user);
@@ -1441,6 +1993,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       value={{
         sessionMode,
         savedByobConfig,
+        vaultLockMeta,
+        hasSavedVault,
+        isVaultUnlocked,
+        biometricGateVerified,
+        legacyPlaintextConfig,
         authInitialized,
 
         accounts: accounts.filter(a => !a.isDeleted),
@@ -1466,10 +2023,17 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         dismissToast,
 
         startDemoMode,
+        lockVault,
         logout,
         forgetByobConfig,
-        unlockSavedByobWithBiometrics,
-        loginSavedByobWithGoogle,
+        unlockVaultWithBiometrics,
+        unlockVaultWithPin,
+        setupProtectedVaultAndConnect,
+        continueUnlockedByobWithGoogle,
+        enrollOrUpdateBiometrics,
+        updateVaultPin,
+        removeVaultPin,
+        removeBiometrics,
 
         addTransaction,
         updateTransaction,
@@ -1498,7 +2062,6 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         importCsvTransactions,
         updateConfig,
         syncWithFirebaseNow,
-        connectAndSyncByob,
         resetToMockData,
 
         updateOpenBankingConfig,

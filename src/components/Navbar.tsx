@@ -15,7 +15,8 @@ import {
   Wallet,
   Shield,
   QrCode,
-  LogOut
+  LogOut,
+  Lock
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { AppScreen } from '../types';
@@ -39,6 +40,7 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
     syncState,
     syncWithFirebaseNow,
     firebaseUser,
+    lockVault,
     logout
   } = useBudget();
 
@@ -206,11 +208,27 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
               <span className="hidden sm:inline">{isFr ? 'Ajouter' : 'New Entry'}</span>
             </button>
 
-            {/* Logout Button (erases all local data except BYOB config) */}
+            {/* Lock Vault (keeps encrypted cache, drops RAM key) */}
+            {sessionMode === 'FIRESTORE' && (
+              <button
+                onClick={() => lockVault()}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-teal-300 text-xs font-semibold transition whitespace-nowrap cursor-pointer"
+                title={isFr ? 'Verrouiller le coffre (conserve le cache chiffré)' : 'Lock Vault (keep encrypted cache)'}
+              >
+                <Lock className="w-4 h-4" />
+                <span className="hidden xl:inline">{isFr ? 'Verrouiller' : 'Lock'}</span>
+              </button>
+            )}
+
+            {/* Logout Button (erases financial data & Open Banking config, preserves encrypted BYOB config) */}
             <button
               onClick={() => logout()}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-rose-500/15 border border-slate-700/50 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-semibold transition whitespace-nowrap cursor-pointer"
-              title={isFr ? 'Déconnexion (efface les données locales)' : 'Log Out (erase local data)'}
+              title={
+                isFr
+                  ? 'Déconnexion (efface les données financières et clés Open Banking)'
+                  : 'Log Out (erase financial data & Open Banking keys)'
+              }
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden lg:inline">{isFr ? 'Déconnexion' : 'Log Out'}</span>
