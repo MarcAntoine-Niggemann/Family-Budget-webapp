@@ -1,13 +1,15 @@
 import {
   CategorizationRuleEntity,
   CategoryBudgetEntity,
-  CategoryEntity
+  CategoryEntity,
+  TransactionEntity
 } from '../types';
 
 export interface ParsedBankRow {
   id: string;
   dateMillis: number;
   dateStr: string;
+  isoDate: string; // YYYY-MM-DD
   originalLabel: string;
   cleanTitle: string;
   amount: number; // negative for expense, positive for income
@@ -31,6 +33,12 @@ export interface CsvParseResult {
   errors: string[];
 }
 
+export interface DuplicateMatchInfo {
+  isDuplicate: boolean;
+  matchedTransactionId?: number;
+  reason?: 'BANK_IMPORT_MATCH' | 'OPEN_BANKING_MATCH';
+}
+
 export function normalizeText(text: string): string {
   if (!text) return '';
   return text
@@ -40,20 +48,27 @@ export function normalizeText(text: string): string {
     .trim();
 }
 
+function normalizeLabelForMatch(text: string): string {
+  return normalizeText(text).replace(/\s+/g, ' ');
+}
+
 function detectDelimiter(sampleLines: string[]): string {
   let semicolons = 0;
   let commas = 0;
   let tabs = 0;
 
-  for (const line of sampleLines.slice(0, 5)) {
-    semicolons += (line.match(/;/g) || []).length;
-    commas += (line.match(/,/g) || []).length;
-    tabs += (line.match(/\t/g) || []).length;
+  for (const line of sampleLines.slice(0, 25)) {
+    // Strip quoted segments and French decimal commas (e.g. "1305,45") before counting delimiters
+    const unquoted = line.replace(/"[^"]*"/g, '').replace(/(\d),(\d)/g, '$1.$2');
+    semicolons += (unquoted.match(/;/g) || []).length;
+    commas += (unquoted.match(/,/g) || []).length;
+    tabs += (unquoted.match(/\t/g) || []).length;
   }
 
-  if (semicolons >= commas && semicolons >= tabs) return ';';
-  if (tabs >= commas && tabs >= semicolons) return '\t';
-  return ',';
+  if (semicolons >= commas && semicolons >= tabs && semicolons > 0) return ';';
+  if (tabs >= commas && tabs >= semicolons && tabs > 0) return '\t';
+  if (commas > 0) return ',';
+  return ';';
 }
 
 function parseAmount(raw: string): number | null {
@@ -62,8 +77,22 @@ function parseAmount(raw: string): number | null {
     .replace(/€/g, '')
     .replace(/EUR/gi, '')
     .replace(/\$/g, '')
-    .replace(/\s/g, '')
+    .replace(/£/g, '')
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/[\s\u00A0\u202F]/g, '')
     .trim();
+
+  if (!clean) return null;
+
+  // Handle accounting negatives like "(10,00)" or trailing minus like "10,00-"
+  let forceNegative = false;
+  if (/^\(.+\)$/.test(clean)) {
+    clean = clean.slice(1, -1);
+    forceNegative = true;
+  } else if (/^-?[\d.,]+-$/.test(clean)) {
+    clean = clean.slice(0, -1);
+    forceNegative = true;
+  }
 
   // Handle French vs US notation: e.g. -1.250,50 vs -1,250.50
   if (clean.includes(',') && clean.includes('.')) {
@@ -77,24 +106,41 @@ function parseAmount(raw: string): number | null {
   }
 
   const num = parseFloat(clean);
-  return isNaN(num) ? null : num;
+  if (isNaN(num)) return null;
+  return forceNegative ? -Math.abs(num) : num;
 }
 
-function parseDate(raw: string): { millis: number; dateStr: string } | null {
+function buildParsedDate(year: number, monthIndex: number, day: number): { millis: number; dateStr: string; isoDate: string } | null {
+  const d = new Date(year, monthIndex, day);
+  if (
+    isNaN(d.getTime()) ||
+    d.getFullYear() !== year ||
+    d.getMonth() !== monthIndex ||
+    d.getDate() !== day
+  ) {
+    return null;
+  }
+  const dd = String(day).padStart(2, '0');
+  const mm = String(monthIndex + 1).padStart(2, '0');
+  return {
+    millis: d.getTime(),
+    dateStr: `${dd}/${mm}/${year}`,
+    isoDate: `${year}-${mm}-${dd}`
+  };
+}
+
+function parseDate(raw: string): { millis: number; dateStr: string; isoDate: string } | null {
   if (!raw) return null;
   const clean = raw.trim();
 
-  // Common date formats: DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, DD.MM.YYYY, MM/DD/YYYY
   // 1. DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   const euroMatch = clean.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})/);
   if (euroMatch) {
     const day = parseInt(euroMatch[1], 10);
     const month = parseInt(euroMatch[2], 10) - 1;
     const year = parseInt(euroMatch[3], 10);
-    const d = new Date(year, month, day);
-    if (!isNaN(d.getTime())) {
-      return { millis: d.getTime(), dateStr: `${String(day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}` };
-    }
+    const built = buildParsedDate(year, month, day);
+    if (built) return built;
   }
 
   // 2. YYYY-MM-DD or YYYY/MM/DD
@@ -103,20 +149,26 @@ function parseDate(raw: string): { millis: number; dateStr: string } | null {
     const year = parseInt(isoMatch[1], 10);
     const month = parseInt(isoMatch[2], 10) - 1;
     const day = parseInt(isoMatch[3], 10);
-    const d = new Date(year, month, day);
-    if (!isNaN(d.getTime())) {
-      return { millis: d.getTime(), dateStr: `${String(day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}` };
-    }
+    const built = buildParsedDate(year, month, day);
+    if (built) return built;
+  }
+
+  // 3. DD/MM/YY
+  const shortEuroMatch = clean.match(/^(\d{1,2})[./\-](\d{1,2})[./\-](\d{2})$/);
+  if (shortEuroMatch) {
+    const day = parseInt(shortEuroMatch[1], 10);
+    const month = parseInt(shortEuroMatch[2], 10) - 1;
+    const twoDigitYear = parseInt(shortEuroMatch[3], 10);
+    const year = twoDigitYear >= 70 ? 1900 + twoDigitYear : 2000 + twoDigitYear;
+    const built = buildParsedDate(year, month, day);
+    if (built) return built;
   }
 
   // Fallback to Date.parse
   const timestamp = Date.parse(clean);
   if (!isNaN(timestamp)) {
     const d = new Date(timestamp);
-    return {
-      millis: d.getTime(),
-      dateStr: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-    };
+    return buildParsedDate(d.getFullYear(), d.getMonth(), d.getDate());
   }
 
   return null;
@@ -225,7 +277,43 @@ function splitCsvLine(line: string, delimiter: string): string[] {
     }
   }
   result.push(current.trim());
-  return result.map(t => t.replace(/^["']|["']$/g, '').trim());
+  return result.map(t => {
+    const trimmed = t.trim();
+    if (
+      (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    ) {
+      return trimmed.slice(1, -1).trim();
+    }
+    return trimmed;
+  });
+}
+
+function findDateColumnIndex(normTokens: string[]): number {
+  const exact = normTokens.findIndex(t => t === 'DATE' || t === 'DATE_OPERATION' || t === 'OPERATION_DATE');
+  if (exact !== -1) return exact;
+
+  const opDate = normTokens.findIndex(t => /DATE.*OP|OP.*DATE|BOOKING/.test(t));
+  if (opDate !== -1) return opDate;
+
+  const genericDate = normTokens.findIndex(t => /\bDATE\b/.test(t) && !/VALEUR/.test(t));
+  if (genericDate !== -1) return genericDate;
+
+  return normTokens.findIndex(t => /DATE|OPERATION_DATE|DATE_OPERATION|VALEUR/.test(t));
+}
+
+function findLabelColumnIndex(normTokens: string[], excludeIndices: number[]): number {
+  const isAllowed = (idx: number) => idx !== -1 && !excludeIndices.includes(idx);
+
+  const primary = normTokens.findIndex(
+    (t, idx) =>
+      isAllowed(idx) && /LIBELL|DESCRIPTION|LABEL|MERCHANT|PAYEE|NARRATIVE|MEMO/.test(t)
+  );
+  if (primary !== -1) return primary;
+
+  return normTokens.findIndex(
+    (t, idx) => isAllowed(idx) && /DETAIL|OPERATION/.test(t)
+  );
 }
 
 export function parseBankStatementCsv(
@@ -253,7 +341,7 @@ export function parseBankStatementCsv(
 
   const delimiter = detectDelimiter(lines);
 
-  // Scan up to the first 10 lines to locate the header row
+  // Scan up to the first 25 lines to locate the header row
   let headerIndex = -1;
   let dateColIdx = -1;
   let labelColIdx = -1;
@@ -263,17 +351,19 @@ export function parseBankStatementCsv(
   let detectedType: 'MAIN_ACCOUNT' | 'CREDIT_CARD' | 'GENERIC' = 'GENERIC';
   let headers: string[] = [];
 
-  for (let i = 0; i < Math.min(10, lines.length); i++) {
+  for (let i = 0; i < Math.min(25, lines.length); i++) {
     const rawTokens = splitCsvLine(lines[i], delimiter);
     const normTokens = rawTokens.map(normalizeText);
 
-    const dIdx = normTokens.findIndex(t => /DATE|OPERATION_DATE|DATE_OPERATION|VALEUR/.test(t));
-    const lIdx = normTokens.findIndex(t => /LIBELL|DESCRIPTION|LABEL|DETAIL|OPERATION|MERCHANT|PAYEE|MEMO|NARRATIVE/.test(t));
-    const aIdx = normTokens.findIndex(t => /MONTANT|AMOUNT|TOTAL|VALEUR_EUR/.test(t));
+    const dIdx = findDateColumnIndex(normTokens);
     const debIdx = normTokens.findIndex(t => /DEBIT|DEPENSE|SORTIE/.test(t));
     const credIdx = normTokens.findIndex(t => /CREDIT|RECETTE|ENTREE/.test(t));
+    const aIdx = normTokens.findIndex(
+      (t, idx) => idx !== dIdx && /MONTANT|AMOUNT|TOTAL|VALEUR_EUR/.test(t)
+    );
+    const lIdx = findLabelColumnIndex(normTokens, [dIdx, debIdx, credIdx, aIdx]);
 
-    if (dIdx !== -1 && lIdx !== -1 && (aIdx !== -1 || (debIdx !== -1 && credIdx !== -1))) {
+    if (dIdx !== -1 && lIdx !== -1 && (aIdx !== -1 || debIdx !== -1 || credIdx !== -1)) {
       headerIndex = i;
       headers = rawTokens;
       dateColIdx = dIdx;
@@ -284,7 +374,7 @@ export function parseBankStatementCsv(
 
       if (normTokens.some(t => /SOLDE|BALANCE/.test(t))) {
         detectedType = 'MAIN_ACCOUNT';
-      } else if (normTokens.some(t => /CARTE|CARD|CB/.test(t))) {
+      } else if (normTokens.some(t => /CARTE|CARD|\bCB\b/.test(t))) {
         detectedType = 'CREDIT_CARD';
       }
       break;
@@ -317,23 +407,36 @@ export function parseBankStatementCsv(
     let isExpense = true;
 
     if (amountColIdx !== -1 && rawTokens[amountColIdx] !== undefined) {
-      amount = parseAmount(rawTokens[amountColIdx]);
-      if (amount !== null) {
-        isExpense = amount < 0;
+      const parsedSingle = parseAmount(rawTokens[amountColIdx]);
+      if (parsedSingle !== null) {
+        amount = parsedSingle;
+        isExpense = parsedSingle < 0;
       }
-    } else if (debitColIdx !== -1 && creditColIdx !== -1) {
-      const debit = parseAmount(rawTokens[debitColIdx]);
-      const credit = parseAmount(rawTokens[creditColIdx]);
-      if (debit !== null && debit > 0) {
+    }
+
+    if (amount === null && (debitColIdx !== -1 || creditColIdx !== -1)) {
+      const debit =
+        debitColIdx !== -1 && rawTokens[debitColIdx] !== undefined
+          ? parseAmount(rawTokens[debitColIdx])
+          : null;
+      const credit =
+        creditColIdx !== -1 && rawTokens[creditColIdx] !== undefined
+          ? parseAmount(rawTokens[creditColIdx])
+          : null;
+
+      if (debit !== null && debit !== 0) {
         amount = -Math.abs(debit);
         isExpense = true;
-      } else if (credit !== null && credit > 0) {
+      } else if (credit !== null && credit !== 0) {
         amount = Math.abs(credit);
         isExpense = false;
       }
     }
 
-    if (amount === null || isNaN(amount)) continue;
+    if (amount === null || isNaN(amount)) {
+      errors.push(`Line ${i + 1}: could not parse amount`);
+      continue;
+    }
 
     // Apply auto-categorization
     const match = categorizeLabel(rawLabel, rules, categories, budgets);
@@ -351,9 +454,10 @@ export function parseBankStatementCsv(
     }
 
     parsedRecords.push({
-      id: `row_${i}_${Date.now()}`,
+      id: `row_${i}_${parsedDate.isoDate}_${Math.round(amount * 100)}`,
       dateMillis: parsedDate.millis,
       dateStr: parsedDate.dateStr,
+      isoDate: parsedDate.isoDate,
       originalLabel: rawLabel,
       cleanTitle,
       amount,
@@ -377,4 +481,94 @@ export function parseBankStatementCsv(
     detectedAccountType: detectedType,
     errors
   };
+}
+
+function toLocalIsoDate(ms: number): string {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function toUtcIsoDate(ms: number): string {
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function isSameImportDate(tx: TransactionEntity, row: ParsedBankRow): boolean {
+  if (toLocalIsoDate(tx.date) === row.isoDate) return true;
+  if (tx.source === 'OPEN_BANKING' && toUtcIsoDate(tx.date) === row.isoDate) return true;
+  // Cross-timezone tolerance for local-midnight timestamps (same calendar day across timezones, < 14h)
+  return Math.abs(tx.date - row.dateMillis) <= 14 * 3600 * 1000;
+}
+
+function isMatchingLabel(tx: TransactionEntity, row: ParsedBankRow): boolean {
+  const rowOrig = normalizeLabelForMatch(row.originalLabel);
+  const rowClean = normalizeLabelForMatch(row.cleanTitle);
+  const txOrig = normalizeLabelForMatch(tx.originalBankLabel || '');
+  const txTitle = normalizeLabelForMatch(tx.title || '');
+
+  if (txOrig && rowOrig && txOrig === rowOrig) return true;
+  if (!txOrig && txTitle && (txTitle === rowClean || txTitle === rowOrig)) return true;
+
+  if (tx.source === 'OPEN_BANKING') {
+    const compareTarget = txOrig || txTitle;
+    if (compareTarget && rowOrig) {
+      if (compareTarget.includes(rowOrig) || rowOrig.includes(compareTarget)) return true;
+      const wordsA = compareTarget.split(' ').filter(w => w.length >= 4);
+      const wordsB = rowOrig.split(' ').filter(w => w.length >= 4);
+      if (wordsA.some(w => wordsB.includes(w))) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Performs 1-to-1 duplicate detection for parsed CSV rows against already-imported
+ * transactions in the target account. Using a consumed-ID set preserves legitimate
+ * same-day identical transactions (e.g. two identical coffees on the same day) when
+ * they appear multiple times in the CSV without yet existing in the ledger.
+ */
+export function detectCsvDuplicates(
+  rows: ParsedBankRow[],
+  existingTransactions: TransactionEntity[],
+  targetAccountId: string
+): Map<string, DuplicateMatchInfo> {
+  const results = new Map<string, DuplicateMatchInfo>();
+  const consumedTxIds = new Set<number>();
+
+  const candidateExisting = existingTransactions.filter(
+    tx =>
+      !tx.isDeleted &&
+      !tx.parentId &&
+      tx.accountId === targetAccountId &&
+      (tx.source === 'BANK_IMPORT' || tx.source === 'OPEN_BANKING')
+  );
+
+  for (const row of rows) {
+    const match = candidateExisting.find(tx => {
+      if (consumedTxIds.has(tx.id)) return false;
+      if (Math.abs(tx.amount - row.amount) >= 0.005) return false;
+      if (!isSameImportDate(tx, row)) return false;
+      return isMatchingLabel(tx, row);
+    });
+
+    if (match) {
+      consumedTxIds.add(match.id);
+      results.set(row.id, {
+        isDuplicate: true,
+        matchedTransactionId: match.id,
+        reason: match.source === 'OPEN_BANKING' ? 'OPEN_BANKING_MATCH' : 'BANK_IMPORT_MATCH'
+      });
+    } else {
+      results.set(row.id, { isDuplicate: false });
+    }
+  }
+
+  return results;
 }

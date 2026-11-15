@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Upload,
   FileText,
@@ -16,10 +16,11 @@ import {
   ExternalLink,
   HelpCircle,
   ShieldCheck,
-  Check
+  Check,
+  Copy
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { parseBankStatementCsv, CsvParseResult } from '../utils/csvParser';
+import { parseBankStatementCsv, detectCsvDuplicates, CsvParseResult } from '../utils/csvParser';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { OpenBankingConfigModal } from '../components/OpenBankingConfigModal';
 import { MOCK_SANDBOX_ACCOUNTS } from '../services/openBankingService';
@@ -54,9 +55,30 @@ export const CsvImportScreen: React.FC = () => {
   const [rawCsvText, setRawCsvText] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(activeAccounts[0]?.id || 'acc_main_checking');
   const [parseResult, setParseResult] = useState<CsvParseResult | null>(null);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const duplicateMap = useMemo(() => {
+    if (!parseResult || parseResult.parsedRecords.length === 0) {
+      return new Map();
+    }
+    return detectCsvDuplicates(parseResult.parsedRecords, transactions, selectedAccountId);
+  }, [parseResult, transactions, selectedAccountId]);
+
+  useEffect(() => {
+    if (!parseResult) {
+      setSelectedRowIds(new Set());
+      return;
+    }
+    const nonDuplicateIds = new Set(
+      parseResult.parsedRecords
+        .filter(r => !duplicateMap.get(r.id)?.isDuplicate)
+        .map(r => r.id)
+    );
+    setSelectedRowIds(nonDuplicateIds);
+  }, [parseResult, duplicateMap]);
 
   const sampleCsvCheckingFr = `Date;Libelle;Montant;Solde
 12/11/2026;CARREFOUR MARKET ST MARTIN;-85.40;4164.60
@@ -173,10 +195,39 @@ export const CsvImportScreen: React.FC = () => {
     }
   };
 
+  const handleToggleRow = (rowId: string) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleAllNew = () => {
+    if (!parseResult) return;
+    const nonDuplicateRows = parseResult.parsedRecords.filter(
+      r => !duplicateMap.get(r.id)?.isDuplicate
+    );
+    const targetPool = nonDuplicateRows.length > 0 ? nonDuplicateRows : parseResult.parsedRecords;
+    const allSelected = targetPool.every(r => selectedRowIds.has(r.id));
+    if (allSelected) {
+      setSelectedRowIds(new Set());
+    } else {
+      setSelectedRowIds(new Set(targetPool.map(r => r.id)));
+    }
+  };
+
   const handleCommitImport = () => {
     if (!parseResult || parseResult.parsedRecords.length === 0) return;
-    importCsvTransactions(parseResult.parsedRecords, selectedAccountId);
+    const recordsToImport = parseResult.parsedRecords.filter(r => selectedRowIds.has(r.id));
+    if (recordsToImport.length === 0) return;
+    importCsvTransactions(recordsToImport, selectedAccountId, { skipDuplicates: false });
     setParseResult(null);
+    setSelectedRowIds(new Set());
     setRawCsvText('');
     setSelectedFileName(null);
     setFileError(null);
@@ -386,114 +437,229 @@ export const CsvImportScreen: React.FC = () => {
           </div>
 
           {/* Parse Results Preview Table */}
-          {parseResult && (
-            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-300 flex items-center justify-center">
-                    <CheckCircle2 className="w-5 h-5 text-teal-400" />
+          {parseResult && (() => {
+            const totalCount = parseResult.parsedRecords.length;
+            const duplicateCount = parseResult.parsedRecords.filter(
+              r => duplicateMap.get(r.id)?.isDuplicate
+            ).length;
+            const newCount = totalCount - duplicateCount;
+            const selectedCount = parseResult.parsedRecords.filter(r =>
+              selectedRowIds.has(r.id)
+            ).length;
+            const nonDuplicatePool = parseResult.parsedRecords.filter(
+              r => !duplicateMap.get(r.id)?.isDuplicate
+            );
+            const togglePool = nonDuplicatePool.length > 0 ? nonDuplicatePool : parseResult.parsedRecords;
+            const allPoolSelected =
+              togglePool.length > 0 && togglePool.every(r => selectedRowIds.has(r.id));
+
+            return (
+              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                        totalCount === 0
+                          ? 'bg-rose-500/20 text-rose-300'
+                          : newCount === 0
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'bg-teal-500/20 text-teal-300'
+                      }`}
+                    >
+                      {totalCount === 0 ? (
+                        <AlertCircle className="w-5 h-5 text-rose-400" />
+                      ) : newCount === 0 ? (
+                        <ShieldCheck className="w-5 h-5 text-amber-400" />
+                      ) : (
+                        <CheckCircle2 className="w-5 h-5 text-teal-400" />
+                      )}
+                    </div>
+                    <div>
+                      <h2 className="font-bold text-white text-sm">
+                        {isFr
+                          ? `${totalCount} opération${totalCount > 1 ? 's' : ''} détectée${totalCount > 1 ? 's' : ''}`
+                          : `${totalCount} transaction${totalCount > 1 ? 's' : ''} discovered`}
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        {(() => {
+                          const autoCount = parseResult.parsedRecords.filter(
+                            r => !duplicateMap.get(r.id)?.isDuplicate && r.matchedCategoryId > 0 && r.matchedBudgetId > 0
+                          ).length;
+                          const dupText =
+                            duplicateCount > 0
+                              ? isFr
+                                ? ` · ${duplicateCount} doublon${duplicateCount > 1 ? 's' : ''} détecté${duplicateCount > 1 ? 's' : ''}`
+                                : ` · ${duplicateCount} duplicate${duplicateCount > 1 ? 's' : ''} detected`
+                              : '';
+                          return isFr
+                            ? `Séparateur : "${parseResult.delimiter}" · ${newCount} nouvelle${newCount > 1 ? 's' : ''}${dupText} · ${autoCount} catégorisée${autoCount > 1 ? 's' : ''}`
+                            : `Delimiter: "${parseResult.delimiter}" · ${newCount} new${dupText} · ${autoCount} auto-categorized`;
+                        })()}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="font-bold text-white text-sm">
-                      {isFr
-                        ? `${parseResult.totalRows} opérations détectées`
-                        : `${parseResult.totalRows} transactions discovered`}
-                    </h2>
-                    <p className="text-xs text-slate-400">
-                      {(() => {
-                        const autoCount = parseResult.parsedRecords.filter(
-                          r => r.matchedCategoryId > 0 && r.matchedBudgetId > 0
-                        ).length;
-                        const unassignedCount = parseResult.parsedRecords.length - autoCount;
-                        return isFr
-                          ? `Séparateur : "${parseResult.delimiter}" · ${autoCount} catégorisées · ${unassignedCount} à catégoriser après import`
-                          : `Delimiter: "${parseResult.delimiter}" · ${autoCount} auto-categorized · ${unassignedCount} unassigned`;
-                      })()}
-                    </p>
-                  </div>
+
+                  <button
+                    onClick={handleCommitImport}
+                    disabled={selectedCount === 0}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
+                  >
+                    <span>
+                      {selectedCount === 0
+                        ? isFr
+                          ? 'Aucune nouvelle opération'
+                          : 'Nothing New to Import'
+                        : isFr
+                        ? `Importer (${selectedCount})`
+                        : `Commit Import (${selectedCount})`}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 </div>
 
-                <button
-                  onClick={handleCommitImport}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
-                >
-                  <span>{isFr ? 'Confirmer et Importer' : 'Commit Import'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
+                {duplicateCount > 0 && (
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-200">
+                    <Copy className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>
+                      {isFr
+                        ? `${duplicateCount} opération${duplicateCount > 1 ? 's' : ''} déjà présente${duplicateCount > 1 ? 's' : ''} sur ce compte ${duplicateCount > 1 ? 'ont été décochées' : 'a été décochée'} automatiquement. Cochez une ligne pour l’importer quand même (ex. 2 achats identiques le même jour).`
+                        : `${duplicateCount} transaction${duplicateCount > 1 ? 's' : ''} already present in this account ${duplicateCount > 1 ? 'were' : 'was'} unchecked automatically. Check any row to import it anyway (e.g. two identical purchases on the same day).`}
+                    </span>
+                  </div>
+                )}
 
-              {/* Transactions Preview Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                      <th className="py-2.5 px-3">{isFr ? 'Date' : 'Date'}</th>
-                      <th className="py-2.5 px-3">{isFr ? 'Libellé' : 'Description'}</th>
-                      <th className="py-2.5 px-3">
-                        {isFr ? 'Catégorie & Sous-catégorie' : 'Category & Sub-category'}
-                      </th>
-                      <th className="py-2.5 px-3 text-right">{isFr ? 'Montant' : 'Amount'}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {parseResult.parsedRecords.map(rec => {
-                      const isUnassigned = !rec.matchedCategoryId || !rec.matchedBudgetId;
-                      return (
-                        <tr key={rec.id} className="hover:bg-slate-800/30 transition">
-                          <td className="py-3 px-3 text-slate-300 font-mono tabular-nums whitespace-nowrap">
-                            {rec.dateStr}
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="font-semibold text-white">{rec.cleanTitle}</div>
-                            <div className="text-[11px] font-mono text-slate-500 truncate max-w-xs">
-                              {rec.originalLabel}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3">
-                            {isUnassigned ? (
-                              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300">
-                                <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                <span>
-                                  {isFr
-                                    ? 'À catégoriser après import'
-                                    : 'Unassigned (assign after import)'}
-                                </span>
-                              </span>
-                            ) : (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
-                                  <CategoryIcon
-                                    name={rec.matchedCategoryIcon}
-                                    className="w-3.5 h-3.5 text-teal-400 shrink-0"
-                                  />
-                                  <span>{rec.matchedCategoryName}</span>
-                                  <span className="text-slate-600">·</span>
-                                  <span className="text-teal-300">{rec.matchedBudgetTitle}</span>
-                                </span>
-                                {rec.matchedRulePattern && (
-                                  <span className="text-[10px] font-mono text-slate-400">
-                                    ⚡ {rec.matchedRulePattern}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td
-                            className={`py-3 px-3 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
-                              rec.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
-                            }`}
-                          >
-                            {rec.amount < 0 ? '' : '+'}
-                            {rec.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
-                          </td>
+                {totalCount === 0 ? (
+                  <div className="py-6 text-center text-xs text-slate-400">
+                    {isFr
+                      ? 'Aucune opération valide n’a pu être extraite. Vérifiez le format des colonnes (Date, Libellé, Montant ou Débit/Crédit).'
+                      : 'No valid transactions could be parsed. Check your columns (Date, Description, Amount or Debit/Credit).'}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                          <th className="py-2.5 px-2 w-8">
+                            <input
+                              type="checkbox"
+                              checked={allPoolSelected}
+                              onChange={handleToggleAllNew}
+                              aria-label={isFr ? 'Tout sélectionner' : 'Select all'}
+                              className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-950 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                            />
+                          </th>
+                          <th className="py-2.5 px-3">{isFr ? 'Date' : 'Date'}</th>
+                          <th className="py-2.5 px-3">{isFr ? 'Libellé' : 'Description'}</th>
+                          <th className="py-2.5 px-3">
+                            {isFr ? 'Catégorie & Sous-catégorie' : 'Category & Sub-category'}
+                          </th>
+                          <th className="py-2.5 px-3 text-right">{isFr ? 'Montant' : 'Amount'}</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-medium">
+                        {parseResult.parsedRecords.map(rec => {
+                          const isUnassigned = !rec.matchedCategoryId || !rec.matchedBudgetId;
+                          const dupInfo = duplicateMap.get(rec.id);
+                          const isDuplicate = Boolean(dupInfo?.isDuplicate);
+                          const isSelected = selectedRowIds.has(rec.id);
+
+                          return (
+                            <tr
+                              key={rec.id}
+                              onClick={() => handleToggleRow(rec.id)}
+                              className={`cursor-pointer transition ${
+                                isDuplicate && !isSelected
+                                  ? 'opacity-55 bg-slate-950/30 hover:bg-slate-800/30'
+                                  : 'hover:bg-slate-800/30'
+                              }`}
+                            >
+                              <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleRow(rec.id)}
+                                  aria-label={rec.cleanTitle}
+                                  className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-950 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                                />
+                              </td>
+                              <td className="py-3 px-3 text-slate-300 font-mono tabular-nums whitespace-nowrap">
+                                {rec.dateStr}
+                              </td>
+                              <td className="py-3 px-3">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-white">{rec.cleanTitle}</span>
+                                  {isDuplicate && (
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                        isSelected
+                                          ? 'bg-teal-500/15 text-teal-300 border-teal-500/30'
+                                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                      }`}
+                                    >
+                                      <Copy className="w-2.5 h-2.5" />
+                                      <span>
+                                        {isSelected
+                                          ? isFr
+                                            ? 'Doublon potentiel · Inclus'
+                                            : 'Possible duplicate · Included'
+                                          : isFr
+                                          ? 'Doublon'
+                                          : 'Duplicate'}
+                                      </span>
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] font-mono text-slate-500 truncate max-w-xs">
+                                  {rec.originalLabel}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3">
+                                {isUnassigned ? (
+                                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300">
+                                    <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    <span>
+                                      {isFr
+                                        ? 'À catégoriser après import'
+                                        : 'Unassigned (assign after import)'}
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
+                                      <CategoryIcon
+                                        name={rec.matchedCategoryIcon}
+                                        className="w-3.5 h-3.5 text-teal-400 shrink-0"
+                                      />
+                                      <span>{rec.matchedCategoryName}</span>
+                                      <span className="text-slate-600">·</span>
+                                      <span className="text-teal-300">{rec.matchedBudgetTitle}</span>
+                                    </span>
+                                    {rec.matchedRulePattern && (
+                                      <span className="text-[10px] font-mono text-slate-400">
+                                        ⚡ {rec.matchedRulePattern}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                              <td
+                                className={`py-3 px-3 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
+                                  rec.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                                }`}
+                              >
+                                {rec.amount < 0 ? '' : '+'}
+                                {rec.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
 

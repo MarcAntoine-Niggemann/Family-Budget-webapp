@@ -52,7 +52,7 @@ import {
   unwrapDekWithKek,
   wrapDekWithKek
 } from '../utils/crypto';
-import { ParsedBankRow } from '../utils/csvParser';
+import { ParsedBankRow, detectCsvDuplicates } from '../utils/csvParser';
 import { executeBidirectionalSync, resetFirebaseInstances, SyncResult } from '../services/firebaseSyncService';
 import {
   DEFAULT_OPEN_BANKING_CONFIG,
@@ -190,7 +190,11 @@ interface BudgetContextType {
   updateRule: (r: CategorizationRuleEntity) => void;
   deleteRule: (id: number) => void;
 
-  importCsvTransactions: (records: ParsedBankRow[], targetAccountId: string) => number;
+  importCsvTransactions: (
+    records: ParsedBankRow[],
+    targetAccountId: string,
+    options?: { skipDuplicates?: boolean }
+  ) => number;
   updateConfig: (patch: Partial<FirebaseConfigEntity>) => void;
   syncWithFirebaseNow: (options?: { forceFullPull?: boolean; resetCacheBeforePull?: boolean }) => Promise<void>;
   resetToMockData: (lang?: 'fr' | 'en') => void;
@@ -1075,16 +1079,39 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Import CSV
-  const importCsvTransactions = (records: ParsedBankRow[], targetAccountId: string): number => {
+  const importCsvTransactions = (
+    records: ParsedBankRow[],
+    targetAccountId: string,
+    options?: { skipDuplicates?: boolean }
+  ): number => {
     const targetAcc = accounts.find(a => a.id === targetAccountId);
     if (!targetAcc) return 0;
+
+    const skipDuplicates = options?.skipDuplicates ?? true;
+    let rowsToImport = records;
+    let skippedCount = 0;
+
+    if (skipDuplicates && records.length > 0) {
+      const dupMap = detectCsvDuplicates(records, transactions, targetAccountId);
+      rowsToImport = records.filter(r => !dupMap.get(r.id)?.isDuplicate);
+      skippedCount = records.length - rowsToImport.length;
+    }
+
+    if (rowsToImport.length === 0) {
+      showToast(
+        language === 'fr'
+          ? `Aucune nouvelle opération à importer (${skippedCount} doublon(s) ignoré(s))`
+          : `No new transactions to import (${skippedCount} duplicate(s) skipped)`
+      );
+      return 0;
+    }
 
     const now = Date.now();
     let nextId = Math.max(0, ...transactions.map(t => t.id)) + 1;
 
     let balanceDelta = 0;
 
-    const newTxs: TransactionEntity[] = records.map(rec => {
+    const newTxs: TransactionEntity[] = rowsToImport.map(rec => {
       balanceDelta += rec.amount;
 
       return {
@@ -1135,8 +1162,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     showToast(
       language === 'fr'
-        ? `${newTxs.length} opérations bancaires importées dans ${targetAcc.name}`
-        : `${newTxs.length} bank transactions imported into ${targetAcc.name}`
+        ? skippedCount > 0
+          ? `${newTxs.length} opérations importées dans ${targetAcc.name} (${skippedCount} doublon(s) ignoré(s))`
+          : `${newTxs.length} opérations bancaires importées dans ${targetAcc.name}`
+        : skippedCount > 0
+          ? `${newTxs.length} transactions imported into ${targetAcc.name} (${skippedCount} duplicate(s) skipped)`
+          : `${newTxs.length} bank transactions imported into ${targetAcc.name}`
     );
 
     return newTxs.length;
