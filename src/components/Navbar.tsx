@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { AppScreen } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => void }> = ({
   onOpenAddTx,
@@ -152,6 +153,9 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
                 )}
               </button>
             )}
+
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="navbar" />
 
             {/* Language Switcher */}
             <button

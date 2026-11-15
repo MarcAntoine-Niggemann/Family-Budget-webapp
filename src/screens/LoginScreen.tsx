@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { QrCodeScannerModal } from '../components/QrCodeScannerModal';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { checkBiometricSupport, BiometricStatus } from '../utils/biometricKeyvault';
 import { BYOB_FIRESTORE_RULES } from './FirebaseSyncScreen';
 
@@ -286,14 +287,18 @@ export const LoginScreen: React.FC = () => {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setLanguage(isFr ? 'en' : 'fr')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Globe className="w-3.5 h-3.5 text-teal-400" />
-            <span>{language.toUpperCase()}</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <PWAInstallButton variant="login" />
+
+            <button
+              type="button"
+              onClick={() => setLanguage(isFr ? 'en' : 'fr')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5 text-teal-400" />
+              <span>{language.toUpperCase()}</span>
+            </button>
+          </div>
         </div>
 
         {/* VIEW A: SAVED BYOB FIRESTORE — FINGERPRINT UNLOCK DIRECTLY */}

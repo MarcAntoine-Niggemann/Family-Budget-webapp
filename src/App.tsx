@@ -16,6 +16,7 @@ import { EditTransactionModal } from './components/EditTransactionModal';
 import { SplitTransactionModal } from './components/SplitTransactionModal';
 import { TransferModal } from './components/TransferModal';
 import { ShareVaultQrModal } from './components/ShareVaultQrModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { TransactionEntity } from './types';
 import { Check, X } from 'lucide-react';
 
@@ -65,6 +66,7 @@ const AppContent: React.FC = () => {
     return (
       <>
         <LoginScreen />
+        <OfflineIndicator />
         {toastNode}
       </>
     );
@@ -139,6 +141,7 @@ const AppContent: React.FC = () => {
         onClose={() => setIsShareQrOpen(false)}
       />
 
+      <OfflineIndicator />
       {toastNode}
     </div>
   );

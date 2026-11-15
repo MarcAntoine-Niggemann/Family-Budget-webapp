@@ -73,3 +73,22 @@ npm run dev
 # Build for production
 npm run build
 ```
+
+---
+
+## 🌐 Hosting on GitHub Pages as an Installable PWA
+
+Budget Family is configured to deploy automatically to **GitHub Pages** as a standalone **Progressive Web App (PWA)** for mobile (Android / iOS) and desktop.
+
+1. **Push to `main`**: Push this repository to GitHub with `main` as your default branch.
+2. **Enable GitHub Pages**:
+   - Open your GitHub repository → **Settings → Pages**.
+   - Under **Build and deployment → Source**, select **GitHub Actions**.
+   - The included `Deploy PWA to GitHub Pages` workflow automatically detects your repository subpath (`/<repo-name>/`) and publishes `dist/` on every push to `main`.
+3. **Authorize Your GitHub Pages Domain in Firebase**:
+   - Open your **Firebase Console → Authentication → Settings → Authorized domains**.
+   - Add `<your-username>.github.io` (without `https://` or the `/<repo-name>` path) so Google OAuth and WebAuthn Face ID / Fingerprint unlock work on your live Pages URL.
+4. **Install on Device**:
+   - **Android / Chrome / Edge**: Click the in-app **Install App** button in the header or browser address bar.
+   - **iPhone / iPad (Safari)**: Tap **Install iOS** (or Safari's **Share** icon) → **Add to Home Screen**.
+
