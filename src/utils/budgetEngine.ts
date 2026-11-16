@@ -14,6 +14,18 @@ export interface PeriodActualTotals {
   grossIncome: number;
 }
 
+export function isTransactionExcludedFromTotals(tx: TransactionEntity): boolean {
+  return Boolean(tx.isDeleted || tx.isExcluded || tx.isExcludedFromTotals || tx.isSplitParent);
+}
+
+export function isSplitParentTransaction(tx: TransactionEntity): boolean {
+  return Boolean(tx.isSplitParent);
+}
+
+export function isSplitChildTransaction(tx: TransactionEntity): boolean {
+  return tx.parentId !== null && tx.parentId !== undefined && tx.parentId > 0;
+}
+
 /**
  * Computes net and gross actuals for a single sub-category budget line.
  * Opposite-flow transactions (e.g., reimbursements credited to a spending sub-category,
@@ -27,7 +39,7 @@ export function computeSubCategoryActuals(
   let grossIncome = 0;
 
   for (const tx of transactions) {
-    if (tx.isDeleted || tx.isExcluded || tx.isSplitParent) continue;
+    if (isTransactionExcludedFromTotals(tx)) continue;
     if (tx.isInternalTransfer || tx.transferType === 'CARD_SETTLEMENT') continue;
     if (tx.budgetId !== budget.id) continue;
 
@@ -67,7 +79,7 @@ export function computePeriodActualTotals(
   let grossIncome = 0;
 
   for (const tx of transactions) {
-    if (tx.isDeleted || tx.isExcluded || tx.isSplitParent) continue;
+    if (isTransactionExcludedFromTotals(tx)) continue;
     if (tx.isInternalTransfer || tx.transferType === 'CARD_SETTLEMENT') continue;
 
     const absAmt = Math.abs(tx.amount);

@@ -16,8 +16,9 @@ import { EditTransactionModal } from './components/EditTransactionModal';
 import { SplitTransactionModal } from './components/SplitTransactionModal';
 import { TransferModal } from './components/TransferModal';
 import { ShareVaultQrModal } from './components/ShareVaultQrModal';
+import { AccountModal } from './components/AccountModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { TransactionEntity } from './types';
+import { AccountEntity, TransactionEntity } from './types';
 import { Check, X } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -30,10 +31,12 @@ const AppContent: React.FC = () => {
 
   // Modal controls
   const [isAddTxOpen, setIsAddTxOpen] = useState(false);
+  const [addTxPrefill, setAddTxPrefill] = useState<{ accountId?: string; creditCardPeriod?: string } | null>(null);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [isShareQrOpen, setIsShareQrOpen] = useState(false);
   const [selectedTxForEdit, setSelectedTxForEdit] = useState<TransactionEntity | null>(null);
   const [selectedTxForSplit, setSelectedTxForSplit] = useState<TransactionEntity | null>(null);
+  const [accountForEdit, setAccountForEdit] = useState<AccountEntity | null>(null);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -75,7 +78,10 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar
-        onOpenAddTx={() => setIsAddTxOpen(true)}
+        onOpenAddTx={() => {
+          setAddTxPrefill(null);
+          setIsAddTxOpen(true);
+        }}
         onOpenShareQr={() => setIsShareQrOpen(true)}
       />
 
@@ -83,15 +89,22 @@ const AppContent: React.FC = () => {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         {currentScreen === 'DASHBOARD' && (
           <DashboardScreen
-            onOpenAddTx={() => setIsAddTxOpen(true)}
+            onOpenAddTx={() => {
+              setAddTxPrefill(null);
+              setIsAddTxOpen(true);
+            }}
             onOpenTransfer={() => setIsTransferOpen(true)}
             onSelectTransaction={tx => setSelectedTxForEdit(tx)}
+            onEditAccount={acc => setAccountForEdit(acc)}
           />
         )}
 
         {currentScreen === 'TRANSACTIONS' && (
           <TransactionsScreen
-            onOpenAddTx={() => setIsAddTxOpen(true)}
+            onOpenAddTx={() => {
+              setAddTxPrefill(null);
+              setIsAddTxOpen(true);
+            }}
             onSelectTransaction={tx => setSelectedTxForEdit(tx)}
             onOpenSplit={tx => setSelectedTxForSplit(tx)}
           />
@@ -115,7 +128,12 @@ const AppContent: React.FC = () => {
       {/* Modals */}
       <AddTransactionModal
         isOpen={isAddTxOpen}
-        onClose={() => setIsAddTxOpen(false)}
+        initialAccountId={addTxPrefill?.accountId ?? null}
+        initialCreditCardPeriod={addTxPrefill?.creditCardPeriod ?? null}
+        onClose={() => {
+          setIsAddTxOpen(false);
+          setAddTxPrefill(null);
+        }}
       />
 
       <EditTransactionModal
@@ -123,6 +141,12 @@ const AppContent: React.FC = () => {
         transaction={selectedTxForEdit}
         onClose={() => setSelectedTxForEdit(null)}
         onOpenSplit={tx => setSelectedTxForSplit(tx)}
+        onSelectTransaction={tx => setSelectedTxForEdit(tx)}
+        onAddMissingCardTx={(cardId, period) => {
+          setSelectedTxForEdit(null);
+          setAddTxPrefill({ accountId: cardId, creditCardPeriod: period });
+          setIsAddTxOpen(true);
+        }}
       />
 
       <SplitTransactionModal
@@ -134,6 +158,17 @@ const AppContent: React.FC = () => {
       <TransferModal
         isOpen={isTransferOpen}
         onClose={() => setIsTransferOpen(false)}
+        onAddMissingCardTx={(cardId, period) => {
+          setIsTransferOpen(false);
+          setAddTxPrefill({ accountId: cardId, creditCardPeriod: period });
+          setIsAddTxOpen(true);
+        }}
+      />
+
+      <AccountModal
+        isOpen={accountForEdit !== null}
+        account={accountForEdit}
+        onClose={() => setAccountForEdit(null)}
       />
 
       <ShareVaultQrModal

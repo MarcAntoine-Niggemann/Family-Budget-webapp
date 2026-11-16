@@ -23,7 +23,8 @@ import {
   getBudgetMonthlyAmount,
   getMonthLongName,
   getMonthShortName,
-  isBudgetActiveInMonth
+  isBudgetActiveInMonth,
+  isTransactionExcludedFromTotals
 } from '../utils/budgetEngine';
 
 export const BudgetPlannerScreen: React.FC = () => {
@@ -106,9 +107,7 @@ export const BudgetPlannerScreen: React.FC = () => {
   // Active transactions in selected period (Month or Year)
   const periodTx = transactions.filter(
     tx =>
-      !tx.isDeleted &&
-      !tx.isExcluded &&
-      !tx.isSplitParent &&
+      !isTransactionExcludedFromTotals(tx) &&
       tx.date >= periodStartDate &&
       tx.date <= periodEndDate
   );
@@ -117,9 +116,7 @@ export const BudgetPlannerScreen: React.FC = () => {
   const yearlyMonthlySeries = useMemo(() => {
     const yearAllTx = transactions.filter(
       tx =>
-        !tx.isDeleted &&
-        !tx.isExcluded &&
-        !tx.isSplitParent &&
+        !isTransactionExcludedFromTotals(tx) &&
         tx.date >= yearStartDate &&
         tx.date <= yearEndDate
     );

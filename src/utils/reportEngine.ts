@@ -11,7 +11,8 @@ import {
   clampDayToMonth,
   isBudgetScheduledInMonth,
   computeSubCategoryActuals,
-  computePeriodActualTotals
+  computePeriodActualTotals,
+  isTransactionExcludedFromTotals
 } from './budgetEngine';
 
 export interface SubCategoryReportItem {
@@ -182,9 +183,7 @@ export function computeMonthlyReport(
 
   const monthTx = transactions.filter(
     tx =>
-      !tx.isDeleted &&
-      !tx.isExcluded &&
-      !tx.isSplitParent &&
+      !isTransactionExcludedFromTotals(tx) &&
       !tx.isInternalTransfer &&
       tx.transferType !== 'CARD_SETTLEMENT' &&
       tx.date >= startDate &&
@@ -444,9 +443,7 @@ export function computeYearlyReport(
 
   const yearTx = transactions.filter(
     tx =>
-      !tx.isDeleted &&
-      !tx.isExcluded &&
-      !tx.isSplitParent &&
+      !isTransactionExcludedFromTotals(tx) &&
       !tx.isInternalTransfer &&
       tx.transferType !== 'CARD_SETTLEMENT' &&
       tx.date >= startOfYear &&

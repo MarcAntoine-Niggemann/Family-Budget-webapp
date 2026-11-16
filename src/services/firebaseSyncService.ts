@@ -558,7 +558,12 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
           reconciledWithId: raw.reconciledWithId ?? null,
           paymentMethod: raw.paymentMethod || 'CARD',
           notes: raw.notes || '',
-          parentId: raw.parentId ?? null,
+          parentId:
+            raw.parentId !== null && raw.parentId !== undefined && raw.parentId !== ''
+              ? Number.isFinite(Number(raw.parentId)) && Number(raw.parentId) > 0
+                ? Number(raw.parentId)
+                : null
+              : null,
           isSplitParent: Boolean(raw.isSplitParent),
           isSplit: Boolean(raw.isSplit),
           isExcluded: Boolean(raw.isExcluded),

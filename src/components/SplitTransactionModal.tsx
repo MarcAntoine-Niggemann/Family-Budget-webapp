@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, AlertCircle, Equal, RotateCcw, Check } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { TransactionEntity } from '../types';
 
@@ -10,6 +10,7 @@ interface SplitTransactionModalProps {
 }
 
 interface SplitDraft {
+  id?: number;
   categoryId: number;
   categoryName: string;
   budgetId: number;
@@ -23,16 +24,54 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   isOpen,
   onClose
 }) => {
-  const { categories, budgets, splitTransaction, navigateTo, language, currency } = useBudget();
+  const {
+    transactions,
+    categories,
+    budgets,
+    splitTransaction,
+    unsplitTransaction,
+    navigateTo,
+    language,
+    currency
+  } = useBudget();
   const isFr = language === 'fr';
 
   const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
   const activeBudgets = useMemo(() => budgets.filter(b => !b.isDeleted && b.isActive), [budgets]);
 
+  const existingChildren = useMemo(() => {
+    if (!transaction) return [];
+    return transactions
+      .filter(t => !t.isDeleted && t.parentId === transaction.id)
+      .sort((a, b) => a.id - b.id);
+  }, [transactions, transaction]);
+
+  const isEditingExistingSplit = Boolean(
+    transaction && (transaction.isSplitParent || existingChildren.length > 0)
+  );
+
   const [splits, setSplits] = useState<SplitDraft[]>([]);
+  const [confirmUnsplit, setConfirmUnsplit] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !transaction) return;
+    setConfirmUnsplit(false);
+
+    if (existingChildren.length >= 2) {
+      setSplits(
+        existingChildren.map(child => ({
+          id: child.id,
+          categoryId: child.categoryId || 0,
+          categoryName: child.categoryName || '',
+          budgetId: child.budgetId || 0,
+          budgetTitle: child.budgetTitle || '',
+          amount: Math.round(Math.abs(child.amount) * 100) / 100,
+          notes: child.notes || ''
+        }))
+      );
+      return;
+    }
+
     const totalAbsAmount = Math.abs(transaction.amount);
     const matchingFlowBudgets = activeBudgets.filter(b => b.isExpense === transaction.isExpense);
 
@@ -53,8 +92,9 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
       matchingFlowBudgets.find(b => b.categoryId === (secondCat?.id || 0)) ||
       activeBudgets.find(b => b.categoryId === (secondCat?.id || 0));
 
-    const half = Math.round((totalAbsAmount / 2) * 100) / 100;
-    const rest = Math.round((totalAbsAmount - half) * 100) / 100;
+    const totalCents = Math.round(totalAbsAmount * 100);
+    const halfCents = Math.floor(totalCents / 2);
+    const restCents = totalCents - halfCents;
 
     setSplits([
       {
@@ -62,7 +102,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         categoryName: firstCat?.name || '',
         budgetId: firstBudget?.id || 0,
         budgetTitle: firstBudget?.title || '',
-        amount: half,
+        amount: halfCents / 100,
         notes: ''
       },
       {
@@ -70,19 +110,45 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
         categoryName: secondCat?.name || '',
         budgetId: secondBudget?.id || 0,
         budgetTitle: secondBudget?.title || '',
-        amount: rest,
+        amount: restCents / 100,
         notes: ''
       }
     ]);
-  }, [isOpen, transaction]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, transaction?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen || !transaction) return null;
 
   const totalAbsAmount = Math.abs(transaction.amount);
-  const currentSplitsSum = splits.reduce((sum, s) => sum + (s.amount || 0), 0);
+  const currentSplitsSum = splits.reduce((sum, s) => sum + (Number.isFinite(s.amount) ? s.amount : 0), 0);
   const remaining = Math.round((totalAbsAmount - currentSplitsSum) * 100) / 100;
+  const isBalanced = Math.abs(remaining) < 0.01;
   const allCategorized = splits.every(s => s.categoryId > 0 && s.budgetId > 0);
-  const isValid = Math.abs(remaining) < 0.01 && splits.every(s => s.amount > 0) && allCategorized;
+  const isValid = isBalanced && splits.length >= 2 && splits.every(s => s.amount > 0) && allCategorized;
+
+  const handleDivideEqually = () => {
+    if (splits.length < 2) return;
+    const totalCents = Math.round(totalAbsAmount * 100);
+    const count = splits.length;
+    const baseCents = Math.floor(totalCents / count);
+    const extraCents = totalCents - baseCents * count;
+
+    setSplits(prev =>
+      prev.map((s, idx) => ({
+        ...s,
+        amount: (baseCents + (idx < extraCents ? 1 : 0)) / 100
+      }))
+    );
+  };
+
+  const handleApplyRemainingToRow = (idx: number) => {
+    setSplits(prev =>
+      prev.map((s, i) => {
+        if (i !== idx) return s;
+        const targetAmount = Math.max(0.01, Math.round(((s.amount || 0) + remaining) * 100) / 100);
+        return { ...s, amount: targetAmount };
+      })
+    );
+  };
 
   const handleAddSplit = () => {
     const defaultCat =
@@ -94,6 +160,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     const defaultBudget =
       activeBudgets.find(b => b.categoryId === (defaultCat?.id || 0) && b.isExpense === transaction.isExpense) ||
       activeBudgets.find(b => b.categoryId === (defaultCat?.id || 0));
+
     setSplits(prev => [
       ...prev,
       {
@@ -112,6 +179,15 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
     setSplits(prev => prev.filter((_, i) => i !== idx));
   };
 
+  const handleUnsplit = () => {
+    if (!confirmUnsplit) {
+      setConfirmUnsplit(true);
+      return;
+    }
+    unsplitTransaction(transaction.id);
+    onClose();
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValid) return;
@@ -120,49 +196,71 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-      <div className="relative w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+          <div className="min-w-0">
             <h2 className="text-lg font-bold text-white">
-              {isFr ? 'Ventilation de la dépense (Split)' : 'Split Transaction'}
+              {isEditingExistingSplit
+                ? isFr
+                  ? 'Modifier la ventilation (Split)'
+                  : 'Edit Split Transaction'
+                : isFr
+                ? 'Ventilation de la transaction (Split)'
+                : 'Split Transaction'}
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-              {transaction.title} · {totalAbsAmount.toFixed(2)} {currency}
+            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap tabular-nums">
+              <span className="truncate max-w-xs text-slate-200 font-medium">{transaction.title}</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono text-teal-300 font-semibold">
+                {totalAbsAmount.toFixed(2)} {currency}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>{transaction.accountName}</span>
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            aria-label={isFr ? 'Fermer' : 'Close'}
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Sum Indicator */}
-        <div
-          className={`mt-4 p-3 rounded-xl border flex items-center justify-between text-xs font-medium tabular-nums ${
-            isValid
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>
-              {isFr ? 'Total ventilé :' : 'Allocated:'}{' '}
-              <strong className="font-mono">
+        {/* Allocation Summary + Equal Split Action */}
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+          <div className="flex items-center gap-2.5 text-xs font-medium tabular-nums">
+            {isValid ? (
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            )}
+            <div className="flex items-center flex-wrap gap-2">
+              <span className="text-slate-400">{isFr ? 'Ventilé :' : 'Allocated:'}</span>
+              <strong className={`font-mono ${isBalanced ? 'text-emerald-300' : 'text-amber-300'}`}>
                 {currentSplitsSum.toFixed(2)} / {totalAbsAmount.toFixed(2)} {currency}
               </strong>
-            </span>
+              <span aria-hidden="true" className="text-slate-600">·</span>
+              <span className={`font-mono ${isBalanced ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {isBalanced
+                  ? isFr
+                    ? 'Équilibré (100%)'
+                    : 'Balanced (100%)'
+                  : `${isFr ? 'Reste :' : 'Remaining:'} ${remaining > 0 ? '+' : ''}${remaining.toFixed(2)} ${currency}`}
+              </span>
+            </div>
           </div>
-          <span className="font-mono">
-            {Math.abs(remaining) < 0.01
-              ? isFr
-                ? 'Équilibré (100%)'
-                : 'Balanced (100%)'
-              : `${isFr ? 'Reste :' : 'Remaining:'} ${remaining.toFixed(2)} ${currency}`}
-          </span>
+
+          <button
+            type="button"
+            onClick={handleDivideEqually}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-teal-300 transition whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Equal className="w-3.5 h-3.5" />
+            <span>{isFr ? 'Répartir à parts égales' : 'Divide Equally'}</span>
+          </button>
         </div>
 
         {!allCategorized && (
@@ -178,7 +276,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                 onClose();
                 navigateTo('BUDGET_PLANNER');
               }}
-              className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition"
+              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition"
             >
               {isFr ? 'Planificateur' : 'Budget Planner'}
             </button>
@@ -192,24 +290,41 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                 .filter(b => b.categoryId === split.categoryId)
                 .sort((a, b) => Number(b.isExpense === transaction.isExpense) - Number(a.isExpense === transaction.isExpense));
 
+              const canApplyRemaining = !isBalanced && (split.amount || 0) + remaining >= 0.01;
+
               return (
                 <div
-                  key={idx}
-                  className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2.5 relative group"
+                  key={split.id ?? `new-${idx}`}
+                  className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-teal-400">
-                      {isFr ? `Ligne ${idx + 1}` : `Split #${idx + 1}`}
+                      {isFr ? `Sous-opération #${idx + 1}` : `Split Item #${idx + 1}`}
                     </span>
-                    {splits.length > 2 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSplit(idx)}
-                        className="text-slate-500 hover:text-rose-400 transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+
+                    <div className="flex items-center gap-2">
+                      {canApplyRemaining && (
+                        <button
+                          type="button"
+                          onClick={() => handleApplyRemainingToRow(idx)}
+                          className="px-2.5 py-1 rounded-md bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-[11px] font-semibold font-mono tabular-nums text-teal-300 transition whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          {isFr ? 'Appliquer reste' : 'Apply remaining'} ({remaining > 0 ? '+' : ''}
+                          {remaining.toFixed(2)})
+                        </button>
+                      )}
+
+                      {splits.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSplit(idx)}
+                          aria-label={isFr ? 'Supprimer la ligne' : 'Remove split line'}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -224,10 +339,11 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                         required
                         value={split.amount || ''}
                         onChange={e => {
-                          const val = parseFloat(e.target.value) || 0;
+                          const parsed = parseFloat(e.target.value);
+                          const val = Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
                           setSplits(prev => prev.map((s, i) => (i === idx ? { ...s, amount: val } : s)));
                         }}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm font-bold font-mono text-white focus:outline-none focus:border-teal-500"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold font-mono tabular-nums text-white focus:outline-none focus:border-teal-500"
                       />
                     </div>
 
@@ -257,8 +373,11 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                             )
                           );
                         }}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
                       >
+                        <option value={0}>
+                          {isFr ? 'Choisir...' : 'Select...'}
+                        </option>
                         {activeCategories.map(c => (
                           <option key={c.id} value={c.id}>
                             {c.name}
@@ -283,7 +402,7 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                             )
                           );
                         }}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                       >
                         {catBudgets.length === 0 ? (
                           <option value={0}>
@@ -306,13 +425,13 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
                   <div>
                     <input
                       type="text"
-                      placeholder={isFr ? 'Note spécifique pour ce poste...' : 'Note for this split...'}
+                      placeholder={isFr ? 'Note spécifique pour cette sous-opération...' : 'Note for this split item...'}
                       value={split.notes}
                       onChange={e => {
                         const val = e.target.value;
                         setSplits(prev => prev.map((s, i) => (i === idx ? { ...s, notes: val } : s)));
                       }}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1 text-xs text-slate-300 focus:outline-none focus:border-teal-500"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-teal-500"
                     />
                   </div>
                 </div>
@@ -323,27 +442,63 @@ export const SplitTransactionModal: React.FC<SplitTransactionModalProps> = ({
           <button
             type="button"
             onClick={handleAddSplit}
-            className="w-full py-2 rounded-xl border border-dashed border-slate-700 hover:border-teal-500/60 text-slate-400 hover:text-teal-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+            className="w-full py-2.5 rounded-xl border border-dashed border-slate-700 hover:border-teal-500/60 text-slate-300 hover:text-teal-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            {isFr ? 'Ajouter une ligne de ventilation' : 'Add another split item'}
+            <span>
+              {isFr ? 'Ajouter une ligne de ventilation' : 'Add another split item'}
+              {remaining > 0 ? ` (+${remaining.toFixed(2)} ${currency})` : ''}
+            </span>
           </button>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
-            >
-              {isFr ? 'Annuler' : 'Cancel'}
-            </button>
-            <button
-              type="submit"
-              disabled={!isValid}
-              className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95"
-            >
-              {isFr ? 'Confirmer la ventilation' : 'Confirm Split'}
-            </button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-800">
+            <div>
+              {isEditingExistingSplit && (
+                <button
+                  type="button"
+                  onClick={handleUnsplit}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition whitespace-nowrap shrink-0 cursor-pointer ${
+                    confirmUnsplit
+                      ? 'bg-rose-500/20 border-rose-500/50 text-rose-200 hover:bg-rose-500/30'
+                      : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-rose-300 hover:border-rose-500/40'
+                  }`}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>
+                    {confirmUnsplit
+                      ? isFr
+                        ? 'Confirmer l’annulation du split'
+                        : 'Confirm un-split'
+                      : isFr
+                      ? 'Annuler la ventilation'
+                      : 'Un-split transaction'}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition whitespace-nowrap shrink-0"
+              >
+                {isFr ? 'Annuler' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={!isValid}
+                className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                {isEditingExistingSplit
+                  ? isFr
+                    ? 'Enregistrer la ventilation'
+                    : 'Save Split Changes'
+                  : isFr
+                  ? 'Confirmer la ventilation'
+                  : 'Confirm Split'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

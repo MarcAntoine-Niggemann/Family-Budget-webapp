@@ -729,8 +729,8 @@ export const FirebaseSyncScreen: React.FC = () => {
                         <span>
                           ·{' '}
                           {isFr
-                            ? `Arrêté le ${acc.billingCycleClosingDay || 25} / Prél. ${acc.settlementDay || 30}`
-                            : `Closes ${acc.billingCycleClosingDay || 25} / Settles ${acc.settlementDay || 30}`}
+                            ? `Arrêté le ${acc.billingCycleClosingDay || 25}`
+                            : `Closes day ${acc.billingCycleClosingDay || 25}`}
                           {linkedChecking ? ` (${linkedChecking.name})` : ''}
                         </span>
                       )}

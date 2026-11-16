@@ -8,7 +8,8 @@ import {
   doesBudgetTriggerOnDate,
   getBudgetMonthlyAmount,
   getDaysInMonth,
-  isBudgetScheduledInMonth
+  isBudgetScheduledInMonth,
+  isTransactionExcludedFromTotals
 } from './budgetEngine';
 
 export interface TimelineEvent {
@@ -167,9 +168,7 @@ export function computeCashFlowForecast(
   const currentMonthTx = !isCustomStartDate
     ? transactions.filter(
         tx =>
-          !tx.isDeleted &&
-          !tx.isExcluded &&
-          !tx.isSplitParent &&
+          !isTransactionExcludedFromTotals(tx) &&
           tx.date >= startOfTodayMonthMillis &&
           tx.date <= endOfTodayMonthMillis
       )

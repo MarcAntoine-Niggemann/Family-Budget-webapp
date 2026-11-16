@@ -16,6 +16,11 @@ import {
   encryptJsonWithKey,
   isEncryptedEnvelopeString
 } from './crypto';
+import {
+  computeDefaultCardPeriod,
+  parseCardPeriod,
+  shiftCardPeriod
+} from './creditCardPeriod';
 
 export const BYOB_CONFIG_STORAGE_KEY = 'fbv_byob_config';
 export const BIOMETRIC_CRED_STORAGE_KEY = 'fbv_biometric_cred_id';
@@ -462,10 +467,9 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           id: 'acc_card_visa',
           name: 'Visa Premier (Deferred Card)',
           type: 'DEFERRED_CARD',
-          currentBalance: -439.9,
+          currentBalance: -296.9,
           currency: '€',
           billingCycleClosingDay: 25,
-          settlementDay: 30,
           linkedCheckingAccountId: 'acc_main_checking',
           includeInLiquidForecast: false,
           color: 0xff2563eb,
@@ -524,10 +528,9 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           id: 'acc_card_visa',
           name: 'Carte Visa Premier (Différé)',
           type: 'DEFERRED_CARD',
-          currentBalance: -439.9,
+          currentBalance: -296.9,
           currency: '€',
           billingCycleClosingDay: 25,
-          settlementDay: 30,
           linkedCheckingAccountId: 'acc_main_checking',
           includeInLiquidForecast: false,
           color: 0xff2563eb,
@@ -658,6 +661,37 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
   const cardAcc = accounts[1];
   const savingsAcc = accounts[2];
 
+  const currentCardPeriod = computeDefaultCardPeriod(now, 25);
+  const prevCardPeriod = shiftCardPeriod(currentCardPeriod, -1);
+  const parsedPrevPeriod = parseCardPeriod(prevCardPeriod)!;
+  const prevCyclePurchase1Ms = new Date(
+    parsedPrevPeriod.year,
+    parsedPrevPeriod.month1to12 - 1,
+    14,
+    12,
+    0,
+    0,
+    0
+  ).getTime();
+  const prevCyclePurchase2Ms = new Date(
+    parsedPrevPeriod.year,
+    parsedPrevPeriod.month1to12 - 1,
+    20,
+    12,
+    0,
+    0,
+    0
+  ).getTime();
+  const prevCycleSettlementMs = new Date(
+    parsedPrevPeriod.year,
+    parsedPrevPeriod.month1to12 - 1,
+    28,
+    12,
+    0,
+    0,
+    0
+  ).getTime();
+
   const transactions: TransactionEntity[] = isEn
     ? [
         {
@@ -711,6 +745,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           accountName: cardAcc.name,
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
+          creditCardPeriod: computeDefaultCardPeriod(now - 1 * dayMs, 25),
           updatedAt: now,
           isDeleted: false
         },
@@ -737,6 +772,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           accountName: cardAcc.name,
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
+          creditCardPeriod: computeDefaultCardPeriod(now - 2 * dayMs, 25),
           updatedAt: now,
           isDeleted: false
         },
@@ -763,6 +799,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           accountName: cardAcc.name,
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
+          creditCardPeriod: computeDefaultCardPeriod(now - 4 * dayMs, 25),
           updatedAt: now,
           isDeleted: false
         },
@@ -957,6 +994,93 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           accountName: checkingAcc.name,
           updatedAt: now,
           isDeleted: false
+        },
+        {
+          id: 13,
+          title: `Visa Premier Lump-Sum Settlement (${prevCardPeriod})`,
+          originalBankLabel: 'PRLV CARTE DIFFERE VISA PREMIER',
+          amount: -185.0,
+          isExpense: true,
+          categoryId: 0,
+          categoryName: 'Card Settlement',
+          categoryColor: 0xff2563eb,
+          categoryIcon: 'CreditCard',
+          budgetId: 0,
+          budgetTitle: '',
+          date: prevCycleSettlementMs,
+          familyMemberId: primaryUser.id,
+          familyMemberName: primaryUser.name,
+          source: 'BANK_IMPORT',
+          status: 'VERIFIED',
+          paymentMethod: 'Card Settlement',
+          notes: `Monthly deferred card debit (${prevCardPeriod})`,
+          accountId: checkingAcc.id,
+          accountName: checkingAcc.name,
+          targetAccountId: cardAcc.id,
+          targetAccountName: cardAcc.name,
+          settlementCardName: cardAcc.name,
+          billingCycleClosingDay: 25,
+          creditCardPeriod: prevCardPeriod,
+          isInternalTransfer: true,
+          transferType: 'CARD_SETTLEMENT',
+          isExcluded: true,
+          isExcludedFromTotals: true,
+          updatedAt: now,
+          isDeleted: false
+        },
+        {
+          id: 14,
+          title: 'Prior Cycle Fuel & Tolls',
+          originalBankLabel: 'AUTOROUTES & TOTAL VISA',
+          amount: -70.0,
+          isExpense: true,
+          categoryId: 5,
+          categoryName: 'Transport & Fuel',
+          categoryColor: 0xff8b5cf6,
+          categoryIcon: 'Car',
+          budgetId: 109,
+          budgetTitle: 'Fuel & Commute',
+          date: prevCyclePurchase2Ms,
+          familyMemberId: primaryUser.id,
+          familyMemberName: primaryUser.name,
+          source: 'BANK_IMPORT',
+          status: 'VERIFIED',
+          paymentMethod: 'Visa Premier',
+          notes: '',
+          accountId: cardAcc.id,
+          accountName: cardAcc.name,
+          settlementCardName: cardAcc.name,
+          billingCycleClosingDay: 25,
+          creditCardPeriod: prevCardPeriod,
+          updatedAt: now,
+          isDeleted: false
+        },
+        {
+          id: 15,
+          title: 'Prior Cycle Supermarket Order',
+          originalBankLabel: 'CARREFOUR DRIVE VISA',
+          amount: -115.0,
+          isExpense: true,
+          categoryId: 3,
+          categoryName: 'Groceries & Food',
+          categoryColor: 0xfff59e0b,
+          categoryIcon: 'ShoppingCart',
+          budgetId: 104,
+          budgetTitle: 'Supermarket & Groceries',
+          date: prevCyclePurchase1Ms,
+          familyMemberId: secondUser.id,
+          familyMemberName: secondUser.name,
+          source: 'BANK_IMPORT',
+          status: 'VERIFIED',
+          paymentMethod: 'Visa Premier',
+          notes: '',
+          accountId: cardAcc.id,
+          accountName: cardAcc.name,
+          settlementCardName: cardAcc.name,
+          billingCycleClosingDay: 25,
+          creditCardPeriod: prevCardPeriod,
+          updatedAt: now,
+          isDeleted: false
         }
       ]
     : [
@@ -1011,6 +1135,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           accountName: cardAcc.name,
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
+          creditCardPeriod: computeDefaultCardPeriod(now - 1 * dayMs, 25),
           updatedAt: now,
           isDeleted: false
         },
@@ -1037,6 +1162,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           accountName: cardAcc.name,
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
+          creditCardPeriod: computeDefaultCardPeriod(now - 2 * dayMs, 25),
           updatedAt: now,
           isDeleted: false
         },
@@ -1063,6 +1189,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           accountName: cardAcc.name,
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
+          creditCardPeriod: computeDefaultCardPeriod(now - 4 * dayMs, 25),
           updatedAt: now,
           isDeleted: false
         },
@@ -1255,6 +1382,93 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           notes: 'Échéance crédit résidence principale',
           accountId: checkingAcc.id,
           accountName: checkingAcc.name,
+          updatedAt: now,
+          isDeleted: false
+        },
+        {
+          id: 13,
+          title: `Prélèvement Carte Différée Visa Premier (${prevCardPeriod})`,
+          originalBankLabel: 'PRLV CARTE DIFFERE VISA PREMIER',
+          amount: -185.0,
+          isExpense: true,
+          categoryId: 0,
+          categoryName: 'Règlement Carte',
+          categoryColor: 0xff2563eb,
+          categoryIcon: 'CreditCard',
+          budgetId: 0,
+          budgetTitle: '',
+          date: prevCycleSettlementMs,
+          familyMemberId: primaryUser.id,
+          familyMemberName: primaryUser.name,
+          source: 'BANK_IMPORT',
+          status: 'VERIFIED',
+          paymentMethod: 'Prélèvement Carte',
+          notes: `Débit mensuel carte différée (${prevCardPeriod})`,
+          accountId: checkingAcc.id,
+          accountName: checkingAcc.name,
+          targetAccountId: cardAcc.id,
+          targetAccountName: cardAcc.name,
+          settlementCardName: cardAcc.name,
+          billingCycleClosingDay: 25,
+          creditCardPeriod: prevCardPeriod,
+          isInternalTransfer: true,
+          transferType: 'CARD_SETTLEMENT',
+          isExcluded: true,
+          isExcludedFromTotals: true,
+          updatedAt: now,
+          isDeleted: false
+        },
+        {
+          id: 14,
+          title: 'Péages & Carburant cycle précédent',
+          originalBankLabel: 'VINCI AUTOROUTES & TOTAL',
+          amount: -70.0,
+          isExpense: true,
+          categoryId: 5,
+          categoryName: 'Transports & Carburant',
+          categoryColor: 0xff8b5cf6,
+          categoryIcon: 'Car',
+          budgetId: 109,
+          budgetTitle: 'Carburant & Déplacements',
+          date: prevCyclePurchase2Ms,
+          familyMemberId: primaryUser.id,
+          familyMemberName: primaryUser.name,
+          source: 'BANK_IMPORT',
+          status: 'VERIFIED',
+          paymentMethod: 'Carte Visa Premier',
+          notes: '',
+          accountId: cardAcc.id,
+          accountName: cardAcc.name,
+          settlementCardName: cardAcc.name,
+          billingCycleClosingDay: 25,
+          creditCardPeriod: prevCardPeriod,
+          updatedAt: now,
+          isDeleted: false
+        },
+        {
+          id: 15,
+          title: 'Commande Courses Drive cycle précédent',
+          originalBankLabel: 'CARREFOUR DRIVE VISA',
+          amount: -115.0,
+          isExpense: true,
+          categoryId: 3,
+          categoryName: 'Alimentation & Courses',
+          categoryColor: 0xfff59e0b,
+          categoryIcon: 'ShoppingCart',
+          budgetId: 104,
+          budgetTitle: 'Supermarché & Courses',
+          date: prevCyclePurchase1Ms,
+          familyMemberId: secondUser.id,
+          familyMemberName: secondUser.name,
+          source: 'BANK_IMPORT',
+          status: 'VERIFIED',
+          paymentMethod: 'Carte Visa Premier',
+          notes: '',
+          accountId: cardAcc.id,
+          accountName: cardAcc.name,
+          settlementCardName: cardAcc.name,
+          billingCycleClosingDay: 25,
+          creditCardPeriod: prevCardPeriod,
           updatedAt: now,
           isDeleted: false
         }

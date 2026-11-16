@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -11,27 +11,32 @@ import {
   PiggyBank,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
   ShieldCheck,
-  Calendar,
-  Sparkles,
-  HelpCircle
+  HelpCircle,
+  Split,
+  CornerDownRight,
+  Pencil
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { computeNetWorth, computeMonthlyReport } from '../utils/reportEngine';
 import { computeCashFlowForecast } from '../utils/forecastEngine';
+import { isSplitChildTransaction, isTransactionExcludedFromTotals } from '../utils/budgetEngine';
 import { CategoryIcon } from '../components/CategoryIcon';
-import { TransactionEntity } from '../types';
+import { AccountEntity, TransactionEntity } from '../types';
 
 interface DashboardScreenProps {
   onOpenAddTx: () => void;
   onOpenTransfer: () => void;
   onSelectTransaction: (tx: TransactionEntity) => void;
+  onEditAccount?: (acc: AccountEntity) => void;
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onOpenAddTx,
   onOpenTransfer,
-  onSelectTransaction
+  onSelectTransaction,
+  onEditAccount
 }) => {
   const {
     accounts,
@@ -47,6 +52,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   } = useBudget();
 
   const isFr = language === 'fr';
+  const [expandedParentIds, setExpandedParentIds] = useState<Record<number, boolean>>({});
 
   const netWorth = computeNetWorth(accounts);
   const forecast = computeCashFlowForecast(accounts, transactions, budgets, 30, language);
@@ -66,16 +72,35 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const activeCategoryIds = new Set(categories.filter(c => !c.isDeleted).map(c => c.id));
   const activeTransactions = transactions.filter(tx => !tx.isDeleted);
 
-  const recentTransactions = activeTransactions
-    .filter(tx => !activeAccountId || tx.accountId === activeAccountId)
-    .slice(0, 8);
+  const { recentGroups, childrenByParentId } = useMemo(() => {
+    const activeIds = new Set(activeTransactions.map(t => t.id));
+    const childMap = new Map<number, TransactionEntity[]>();
+    for (const tx of activeTransactions) {
+      if (isSplitChildTransaction(tx) && tx.parentId && activeIds.has(tx.parentId)) {
+        const list = childMap.get(tx.parentId) || [];
+        list.push(tx);
+        childMap.set(tx.parentId, list);
+      }
+    }
+    const topLevel = activeTransactions
+      .filter(tx => !(isSplitChildTransaction(tx) && tx.parentId && activeIds.has(tx.parentId)))
+      .filter(tx => !activeAccountId || tx.accountId === activeAccountId)
+      .slice(0, 8);
+    return { recentGroups: topLevel, childrenByParentId: childMap };
+  }, [activeTransactions, activeAccountId]);
 
   const pendingManualCount = activeTransactions.filter(
-    tx => tx.source === 'MANUAL' && tx.status === 'PENDING'
+    tx =>
+      !isTransactionExcludedFromTotals(tx) &&
+      !isSplitChildTransaction(tx) &&
+      tx.source === 'MANUAL' &&
+      tx.status === 'PENDING'
   ).length;
 
   const unassignedCount = activeTransactions.filter(
-    tx => !tx.isSplitParent && (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId))
+    tx =>
+      !isTransactionExcludedFromTotals(tx) &&
+      (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId))
   ).length;
 
   return (
@@ -267,11 +292,27 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                     : 'bg-slate-900/80 hover:bg-slate-900 border-slate-800'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-400">{acc.name}</span>
-                  {acc.type === 'CHECKING' && <Landmark className="w-4 h-4 text-teal-400" />}
-                  {acc.type === 'DEFERRED_CARD' && <CreditCard className="w-4 h-4 text-blue-400" />}
-                  {acc.type === 'SAVINGS' && <PiggyBank className="w-4 h-4 text-emerald-400" />}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-slate-400 truncate">{acc.name}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {onEditAccount && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          onEditAccount(acc);
+                        }}
+                        title={isFr ? 'Configurer le compte' : 'Configure account'}
+                        aria-label={isFr ? `Configurer ${acc.name}` : `Configure ${acc.name}`}
+                        className="p-1 rounded-md text-slate-500 hover:text-teal-300 hover:bg-slate-800 transition cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {acc.type === 'CHECKING' && <Landmark className="w-4 h-4 text-teal-400" />}
+                    {acc.type === 'DEFERRED_CARD' && <CreditCard className="w-4 h-4 text-blue-400" />}
+                    {acc.type === 'SAVINGS' && <PiggyBank className="w-4 h-4 text-emerald-400" />}
+                  </div>
                 </div>
                 <div className="mt-2 text-xl font-bold text-white font-mono tabular-nums">
                   {acc.currentBalance.toLocaleString()} {acc.currency || currency}
@@ -403,95 +444,176 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         </div>
 
         <div className="rounded-2xl bg-slate-900 border border-slate-800 divide-y divide-slate-800/80 overflow-hidden shadow-xl">
-          {recentTransactions.length === 0 ? (
+          {recentGroups.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-sm">
               {isFr ? 'Aucune transaction enregistrée.' : 'No transactions recorded yet.'}
             </div>
           ) : (
-            recentTransactions.map(tx => {
+            recentGroups.map(tx => {
               const txDate = new Date(tx.date);
               const formattedDate = txDate.toLocaleDateString(isFr ? 'fr-FR' : 'en-US', {
                 day: 'numeric',
                 month: 'short'
               });
+              const children = (childrenByParentId.get(tx.id) || []).sort((a, b) => a.id - b.id);
+              const isSplitParent = Boolean(tx.isSplitParent || children.length > 0);
+              const isExpanded = Boolean(expandedParentIds[tx.id]);
               const isUnassigned =
-                !tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId);
+                !isSplitParent &&
+                (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId));
 
               return (
-                <div
-                  key={tx.id}
-                  onClick={() => onSelectTransaction(tx)}
-                  className="p-4 hover:bg-slate-800/40 transition cursor-pointer flex items-center justify-between gap-3 group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {isUnassigned ? (
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
-                        <HelpCircle className="w-5 h-5" />
+                <div key={tx.id}>
+                  <div
+                    onClick={() => onSelectTransaction(tx)}
+                    className="p-4 hover:bg-slate-800/40 transition cursor-pointer flex items-center justify-between gap-3 group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {isSplitParent ? (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            setExpandedParentIds(prev => ({ ...prev, [tx.id]: !isExpanded }));
+                          }}
+                          aria-label={isExpanded ? (isFr ? 'Réduire' : 'Collapse') : (isFr ? 'Déplier' : 'Expand')}
+                          className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 shrink-0 transition cursor-pointer"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-5 h-5" />
+                          ) : (
+                            <ChevronRight className="w-5 h-5" />
+                          )}
+                        </button>
+                      ) : isUnassigned ? (
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                          <HelpCircle className="w-5 h-5" />
+                        </div>
+                      ) : (
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
+                          style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
+                        >
+                          <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm text-white group-hover:text-teal-300 transition truncate">
+                            {tx.title}
+                          </span>
+                          {tx.status === 'PENDING' && (
+                            <span className="text-[11px] font-semibold text-amber-300">
+                              {isFr ? 'En attente' : 'Pending'}
+                            </span>
+                          )}
+                          {tx.status === 'RECONCILED' && (
+                            <span className="text-[11px] font-semibold text-emerald-300">
+                              {isFr ? 'Rapproché ✓' : 'Reconciled ✓'}
+                            </span>
+                          )}
+                          {isSplitParent && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setExpandedParentIds(prev => ({ ...prev, [tx.id]: !isExpanded }));
+                              }}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 hover:text-indigo-200 transition tabular-nums cursor-pointer"
+                            >
+                              <Split className="w-3.5 h-3.5" />
+                              <span>
+                                {isFr ? `Ventilé (${children.length})` : `Split (${children.length})`}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
+                          <span className="tabular-nums">{formattedDate}</span>
+                          <span aria-hidden="true">·</span>
+                          {isSplitParent ? (
+                            <span className="text-indigo-300/90 font-medium">
+                              {isFr ? `${children.length} sous-catégories` : `${children.length} split items`}
+                            </span>
+                          ) : isUnassigned ? (
+                            <span className="text-amber-300 font-medium">
+                              {isFr ? 'À catégoriser' : 'Unassigned'}
+                            </span>
+                          ) : (
+                            <>
+                              <span className="text-slate-300">{tx.categoryName}</span>
+                              {tx.budgetTitle && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="text-teal-300">{tx.budgetTitle}</span>
+                                </>
+                              )}
+                            </>
+                          )}
+                          <span aria-hidden="true">·</span>
+                          <span>{tx.accountName}</span>
+                        </div>
                       </div>
-                    ) : (
+                    </div>
+
+                    <div className="text-right shrink-0">
                       <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
-                        style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
+                        className={`text-sm font-bold font-mono tabular-nums ${
+                          isSplitParent
+                            ? 'text-slate-400 line-through decoration-slate-600'
+                            : tx.amount < 0
+                            ? 'text-slate-100'
+                            : 'text-emerald-400'
+                        }`}
                       >
-                        <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
+                        {tx.amount < 0 ? '' : '+'}
+                        {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
                       </div>
-                    )}
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-sm text-white group-hover:text-teal-300 transition truncate">
-                          {tx.title}
-                        </span>
-                        {tx.status === 'PENDING' && (
-                          <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">
-                            {isFr ? 'En attente' : 'Pending'}
-                          </span>
-                        )}
-                        {tx.status === 'RECONCILED' && (
-                          <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
-                            {isFr ? 'Rapproché ✓' : 'Reconciled ✓'}
-                          </span>
-                        )}
-                        {tx.isSplit && (
-                          <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
-                            Split
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
-                        <span className="tabular-nums">{formattedDate}</span>
-                        <span>·</span>
-                        {isUnassigned ? (
-                          <span className="text-amber-300 font-medium">
-                            {isFr ? 'À catégoriser' : 'Unassigned'}
-                          </span>
-                        ) : (
-                          <>
-                            <span className="text-slate-300">{tx.categoryName}</span>
-                            {tx.budgetTitle && (
-                              <>
-                                <span>·</span>
-                                <span className="text-teal-300">{tx.budgetTitle}</span>
-                              </>
-                            )}
-                          </>
-                        )}
-                        <span>·</span>
-                        <span>{tx.accountName}</span>
-                      </div>
+                      <span className="text-[11px] text-slate-500">{tx.familyMemberName}</span>
                     </div>
                   </div>
 
-                  <div className="text-right shrink-0">
-                    <div
-                      className={`text-sm font-bold font-mono tabular-nums ${
-                        tx.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
-                      }`}
-                    >
-                      {tx.amount < 0 ? '' : '+'}
-                      {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                  {isSplitParent && isExpanded && children.length > 0 && (
+                    <div className="bg-slate-950/60 divide-y divide-slate-800/60 border-t border-slate-800/80">
+                      {children.map(child => (
+                        <div
+                          key={child.id}
+                          onClick={() => onSelectTransaction(child)}
+                          className="pl-8 sm:pl-14 pr-4 py-2.5 hover:bg-slate-800/35 transition cursor-pointer flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <CornerDownRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                            <div
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
+                              style={{ backgroundColor: `#${child.categoryColor.toString(16).slice(-6)}` }}
+                            >
+                              <CategoryIcon name={child.categoryIcon || child.categoryName} className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium text-slate-100 truncate">{child.title}</div>
+                              <div className="text-[11px] text-slate-400 truncate">
+                                <span className="text-slate-300">{child.categoryName}</span>
+                                {child.budgetTitle && (
+                                  <>
+                                    <span aria-hidden="true"> · </span>
+                                    <span className="text-teal-300">{child.budgetTitle}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div
+                            className={`text-xs font-bold font-mono tabular-nums shrink-0 ${
+                              child.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                            }`}
+                          >
+                            {child.amount < 0 ? '' : '+'}
+                            {child.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <span className="text-[11px] text-slate-500">{tx.familyMemberName}</span>
-                  </div>
+                  )}
                 </div>
               );
             })

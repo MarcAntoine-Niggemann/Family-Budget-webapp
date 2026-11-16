@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Search,
   Plus,
@@ -7,11 +7,16 @@ import {
   AlertCircle,
   Split,
   EyeOff,
-  RotateCcw
+  RotateCcw,
+  ChevronRight,
+  ChevronDown,
+  CornerDownRight
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { TransactionEntity } from '../types';
+import { isSplitChildTransaction, isTransactionExcludedFromTotals } from '../utils/budgetEngine';
+import { findDefaultCardForCheckingTx, summarizeCardPeriod } from '../utils/creditCardPeriod';
 
 interface TransactionsScreenProps {
   onOpenAddTx: () => void;
@@ -54,6 +59,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   } = useBudget();
 
   const isFr = language === 'fr';
+  const [expandedParentIds, setExpandedParentIds] = useState<Record<number, boolean>>({});
 
   const {
     dateFrom,
@@ -62,7 +68,8 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
     budgetId: selectedBudgetId,
     searchTerm,
     filterType,
-    filterStatus
+    filterStatus,
+    creditCardPeriod: selectedPeriod = 'ALL'
   } = transactionFilters;
 
   const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
@@ -86,10 +93,22 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   const unassignedCount = useMemo(
     () =>
       activeTransactions.filter(
-        tx => !tx.isSplitParent && (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId))
+        tx =>
+          !isTransactionExcludedFromTotals(tx) &&
+          (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId))
       ).length,
     [activeTransactions, activeCategoryIds]
   );
+
+  const availableCardPeriods = useMemo(() => {
+    const periods = new Set<string>();
+    for (const tx of activeTransactions) {
+      if (tx.creditCardPeriod) {
+        periods.add(tx.creditCardPeriod);
+      }
+    }
+    return Array.from(periods).sort((a, b) => b.localeCompare(a));
+  }, [activeTransactions]);
 
   const isAnyFilterActive = Boolean(
     dateFrom ||
@@ -99,44 +118,54 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       searchTerm.trim() ||
       filterType !== 'ALL' ||
       filterStatus !== 'ALL' ||
+      selectedPeriod !== 'ALL' ||
       activeAccountId
   );
 
-  const filteredTransactions = useMemo(() => {
+  const hasChildTargetedFilter = Boolean(
+    selectedCatId !== 'ALL' || selectedBudgetId !== 'ALL' || searchTerm.trim()
+  );
+
+  const { groupedTransactions, totalFilteredSum } = useMemo(() => {
     const fromMs = parseLocalStartOfDay(dateFrom);
     const toMs = parseLocalEndOfDay(dateTo);
 
-    return activeTransactions.filter(tx => {
-      // Account filter
-      if (activeAccountId && tx.accountId !== activeAccountId) return false;
+    const activeIds = new Set(activeTransactions.map(t => t.id));
+    const childrenByParentId = new Map<number, TransactionEntity[]>();
 
-      // Date range filter (From / To)
+    for (const tx of activeTransactions) {
+      if (isSplitChildTransaction(tx) && tx.parentId && activeIds.has(tx.parentId)) {
+        const list = childrenByParentId.get(tx.parentId) || [];
+        list.push(tx);
+        childrenByParentId.set(tx.parentId, list);
+      }
+    }
+
+    const matchesFilters = (tx: TransactionEntity, isParentRow: boolean): boolean => {
+      if (activeAccountId && tx.accountId !== activeAccountId) return false;
       if (fromMs !== null && tx.date < fromMs) return false;
       if (toMs !== null && tx.date > toMs) return false;
 
-      // Category / Unassigned filter
       const isTxUnassigned =
         !tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId);
       if (selectedCatId === 'UNASSIGNED') {
-        if (!isTxUnassigned) return false;
+        if (isParentRow || !isTxUnassigned) return false;
       } else if (selectedCatId !== 'ALL' && tx.categoryId !== selectedCatId) {
         return false;
       }
 
-      // Sub-category filter
       if (selectedBudgetId !== 'ALL' && tx.budgetId !== selectedBudgetId) {
         return false;
       }
 
-      // Type filter
       if (filterType === 'EXPENSE' && (!tx.isExpense || tx.isInternalTransfer)) return false;
       if (filterType === 'INCOME' && (tx.isExpense || tx.isInternalTransfer)) return false;
       if (filterType === 'TRANSFER' && !tx.isInternalTransfer) return false;
 
-      // Status filter
       if (filterStatus !== 'ALL' && tx.status !== filterStatus) return false;
 
-      // Search term
+      if (selectedPeriod !== 'ALL' && tx.creditCardPeriod !== selectedPeriod) return false;
+
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
         const matchesTitle = tx.title.toLowerCase().includes(q);
@@ -158,7 +187,69 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       }
 
       return true;
-    });
+    };
+
+    const topLevel = activeTransactions.filter(
+      tx => !(isSplitChildTransaction(tx) && tx.parentId && activeIds.has(tx.parentId))
+    );
+
+    const groups: {
+      parent: TransactionEntity;
+      children: TransactionEntity[];
+      allChildrenCount: number;
+      autoExpand: boolean;
+    }[] = [];
+
+    let sum = 0;
+
+    for (const tx of topLevel) {
+      const allChildren = (childrenByParentId.get(tx.id) || []).sort((a, b) => a.id - b.id);
+      const isParent = Boolean(tx.isSplitParent || allChildren.length > 0);
+
+      if (!isParent) {
+        if (matchesFilters(tx, false)) {
+          groups.push({ parent: tx, children: [], allChildrenCount: 0, autoExpand: false });
+          if (!isTransactionExcludedFromTotals(tx)) {
+            sum += tx.amount;
+          }
+        }
+        continue;
+      }
+
+      const matchingChildren = allChildren.filter(c => matchesFilters(c, false));
+      const parentMatches = matchesFilters(tx, true);
+
+      const shouldIncludeGroup =
+        selectedCatId === 'UNASSIGNED'
+          ? matchingChildren.length > 0
+          : hasChildTargetedFilter
+          ? matchingChildren.length > 0 || parentMatches
+          : parentMatches || matchingChildren.length > 0;
+
+      if (!shouldIncludeGroup) continue;
+
+      const visibleChildren = hasChildTargetedFilter && matchingChildren.length > 0
+        ? matchingChildren
+        : allChildren;
+
+      groups.push({
+        parent: tx,
+        children: visibleChildren,
+        allChildrenCount: allChildren.length,
+        autoExpand: hasChildTargetedFilter && matchingChildren.length > 0
+      });
+
+      for (const child of visibleChildren) {
+        if (!isTransactionExcludedFromTotals(child)) {
+          sum += child.amount;
+        }
+      }
+    }
+
+    return {
+      groupedTransactions: groups,
+      totalFilteredSum: Math.round(sum * 100) / 100
+    };
   }, [
     activeTransactions,
     activeAccountId,
@@ -169,14 +260,18 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
     selectedBudgetId,
     filterType,
     filterStatus,
-    searchTerm
+    selectedPeriod,
+    searchTerm,
+    hasChildTargetedFilter
   ]);
 
-  const totalFilteredSum = useMemo(() => {
-    return filteredTransactions
-      .filter(tx => !tx.isExcluded && !tx.isSplitParent)
-      .reduce((sum, tx) => sum + tx.amount, 0);
-  }, [filteredTransactions]);
+  const toggleExpandParent = (parentId: number, currentExpanded: boolean, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedParentIds(prev => ({
+      ...prev,
+      [parentId]: !currentExpanded
+    }));
+  };
 
   const toggleExclude = (tx: TransactionEntity, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -201,10 +296,10 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           </h1>
           <p className="text-xs text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
             <span className="tabular-nums">
-              {filteredTransactions.length}{' '}
+              {groupedTransactions.length}{' '}
               {isFr ? 'transactions filtrées' : 'matching transactions'}
             </span>
-            <span>·</span>
+            <span aria-hidden="true">·</span>
             <span
               className={`font-semibold font-mono tabular-nums ${
                 totalFilteredSum >= 0 ? 'text-emerald-400' : 'text-slate-200'
@@ -215,7 +310,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             </span>
             {unassignedCount > 0 && (
               <>
-                <span>·</span>
+                <span aria-hidden="true">·</span>
                 <button
                   type="button"
                   onClick={() =>
@@ -394,8 +489,8 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           </div>
         </div>
 
-        {/* Account, Flow Direction, Status Controls Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+        {/* Account, Flow Direction, Status, Card Period Controls Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
           {/* Account Filter */}
           <div>
             <select
@@ -446,164 +541,384 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               <option value="VERIFIED">{isFr ? 'Vérifiés (Banque)' : 'Verified (Bank)'}</option>
             </select>
           </div>
+
+          {/* Credit Card Period Filter */}
+          <div>
+            <select
+              aria-label={isFr ? 'Filtrer par période carte' : 'Filter transactions by card period'}
+              value={selectedPeriod}
+              onChange={e =>
+                setTransactionFilters(prev => ({ ...prev, creditCardPeriod: e.target.value }))
+              }
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 font-mono tabular-nums focus:outline-none focus:border-teal-500"
+            >
+              <option value="ALL" className="font-sans">
+                {isFr ? 'Toutes périodes carte' : 'All Card Periods'}
+              </option>
+              {availableCardPeriods.map(p => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
       {/* Transactions List */}
       <div className="rounded-2xl bg-slate-900 border border-slate-800 divide-y divide-slate-800/80 overflow-hidden shadow-xl">
-        {filteredTransactions.length === 0 ? (
+        {groupedTransactions.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-sm">
             {isFr ? 'Aucune opération ne correspond à vos filtres.' : 'No transactions match your search.'}
           </div>
         ) : (
-          filteredTransactions.map(tx => {
+          groupedTransactions.map(({ parent: tx, children, allChildrenCount, autoExpand }) => {
             const txDate = new Date(tx.date);
             const formattedDate = txDate.toLocaleDateString(isFr ? 'fr-FR' : 'en-US', {
               day: 'numeric',
               month: 'short',
               year: 'numeric'
             });
+            const isSplitParent = Boolean(tx.isSplitParent || allChildrenCount > 0);
+            const isExpanded =
+              expandedParentIds[tx.id] !== undefined ? expandedParentIds[tx.id] : autoExpand;
             const isUnassigned =
-              !tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId);
+              !isSplitParent &&
+              (!tx.categoryId || !tx.budgetId || !activeCategoryIds.has(tx.categoryId));
 
             return (
-              <div
-                key={tx.id}
-                onClick={() => onSelectTransaction(tx)}
-                className={`p-4 hover:bg-slate-800/40 transition cursor-pointer flex items-center justify-between gap-3 group ${
-                  tx.isExcluded ? 'opacity-40 bg-slate-950/40' : ''
-                }`}
-              >
-                {/* Left: Icon & info */}
-                <div className="flex items-center gap-3 min-w-0">
-                  {isUnassigned ? (
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
-                      <HelpCircle className="w-5 h-5" />
-                    </div>
-                  ) : (
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
-                      style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
-                    >
-                      <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
-                    </div>
-                  )}
-
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm text-white group-hover:text-teal-300 transition truncate">
-                        {tx.title}
-                      </span>
-
-                      {tx.status === 'PENDING' && (
-                        <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">
-                          {isFr ? 'En attente' : 'Pending'}
-                        </span>
-                      )}
-
-                      {tx.status === 'RECONCILED' && (
-                        <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
-                          {isFr ? 'Rapproché ✓' : 'Reconciled ✓'}
-                        </span>
-                      )}
-
-                      {tx.isSplit && (
-                        <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
-                          Split
-                        </span>
-                      )}
-
-                      {tx.creditCardPeriod && (
-                        <span className="text-[10px] font-mono text-blue-300">
-                          💳 {tx.creditCardPeriod}
-                        </span>
-                      )}
-
-                      {tx.isExcluded && (
-                        <span className="text-[10px] font-medium text-slate-400">
-                          {isFr ? 'Exclu des totaux' : 'Excluded'}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 truncate">
-                      <span className="tabular-nums">{formattedDate}</span>
-                      <span>·</span>
-                      {isUnassigned ? (
-                        <span className="text-amber-300 font-semibold">
-                          {isFr ? 'À catégoriser (cliquer pour éditer)' : 'Unassigned (click to edit)'}
-                        </span>
-                      ) : (
-                        <>
-                          <span className="text-slate-300 font-medium">{tx.categoryName}</span>
-                          {tx.budgetTitle && (
-                            <>
-                              <span>·</span>
-                              <span className="text-teal-300">{tx.budgetTitle}</span>
-                            </>
-                          )}
-                        </>
-                      )}
-                      <span>·</span>
-                      <span>{tx.accountName}</span>
-                      <span>·</span>
-                      <span className="text-slate-500">{tx.paymentMethod}</span>
-                    </div>
-
-                    {tx.notes && (
-                      <div className="text-[11px] text-teal-400/80 mt-0.5 truncate">
-                        💬 {tx.notes}
+              <div key={tx.id}>
+                {/* Parent or Standard Transaction Row */}
+                <div
+                  onClick={() => onSelectTransaction(tx)}
+                  className={`p-4 hover:bg-slate-800/40 transition cursor-pointer flex items-center justify-between gap-3 group ${
+                    tx.isExcluded ? 'opacity-45 bg-slate-950/40' : ''
+                  }`}
+                >
+                  {/* Left: Expand toggle (if split parent) + Icon + info */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    {isSplitParent ? (
+                      <button
+                        type="button"
+                        onClick={e => toggleExpandParent(tx.id, isExpanded, e)}
+                        aria-label={isExpanded ? (isFr ? 'Réduire le split' : 'Collapse split') : (isFr ? 'Déplier le split' : 'Expand split')}
+                        className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 shrink-0 transition cursor-pointer"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </button>
+                    ) : isUnassigned ? (
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                        <HelpCircle className="w-5 h-5" />
+                      </div>
+                    ) : (
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
+                        style={{ backgroundColor: `#${tx.categoryColor.toString(16).slice(-6)}` }}
+                      >
+                        <CategoryIcon name={tx.categoryIcon || tx.categoryName} className="w-5 h-5" />
                       </div>
                     )}
-                  </div>
-                </div>
 
-                {/* Right: Amount & quick actions */}
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-right">
-                    <div
-                      className={`text-base font-bold font-mono tabular-nums ${
-                        tx.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
-                      }`}
-                    >
-                      {tx.amount < 0 ? '' : '+'}
-                      {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-white group-hover:text-teal-300 transition truncate">
+                          {tx.title}
+                        </span>
+
+                        {tx.status === 'PENDING' && (
+                          <span className="text-[11px] font-semibold text-amber-300">
+                            {isFr ? 'En attente' : 'Pending'}
+                          </span>
+                        )}
+
+                        {tx.status === 'RECONCILED' && (
+                          <span className="text-[11px] font-semibold text-emerald-300">
+                            {isFr ? 'Rapproché ✓' : 'Reconciled ✓'}
+                          </span>
+                        )}
+
+                        {isSplitParent && (
+                          <button
+                            type="button"
+                            onClick={e => toggleExpandParent(tx.id, isExpanded, e)}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 hover:text-indigo-200 transition tabular-nums cursor-pointer"
+                          >
+                            <Split className="w-3.5 h-3.5" />
+                            <span>
+                              {isFr
+                                ? `Ventilé (${allChildrenCount} lignes)`
+                                : `Split (${allChildrenCount} items)`}
+                            </span>
+                          </button>
+                        )}
+
+                        {tx.creditCardPeriod && (() => {
+                          const txAcc = activeAccounts.find(a => a.id === tx.accountId);
+                          const isCheckingSettlement =
+                            tx.transferType === 'CARD_SETTLEMENT' &&
+                            tx.amount < 0 &&
+                            txAcc?.type !== 'DEFERRED_CARD';
+                          const matchedCard = isCheckingSettlement
+                            ? findDefaultCardForCheckingTx(tx, activeAccounts)
+                            : null;
+                          const settlementSummary =
+                            isCheckingSettlement && matchedCard && matchedCard.id !== tx.accountId
+                              ? summarizeCardPeriod(
+                                  matchedCard.id,
+                                  tx.creditCardPeriod,
+                                  Math.abs(tx.amount),
+                                  activeTransactions
+                                )
+                              : null;
+
+                          return (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-blue-300 tabular-nums">
+                              <span>{tx.creditCardPeriod}</span>
+                              {settlementSummary && (
+                                <span
+                                  className={
+                                    settlementSummary.isMatch
+                                      ? 'font-sans font-semibold text-emerald-400'
+                                      : 'font-semibold text-amber-300'
+                                  }
+                                >
+                                  ·{' '}
+                                  {settlementSummary.isMatch
+                                    ? isFr
+                                      ? `Vérifié (${settlementSummary.transactions.length})`
+                                      : `Matched (${settlementSummary.transactions.length})`
+                                    : `Δ ${settlementSummary.delta > 0 ? '+' : ''}${settlementSummary.delta.toFixed(2)} ${currency}`}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })()}
+
+                        {isSplitParent ? (
+                          <span className="text-[11px] text-slate-400">
+                            {isFr ? 'Exclu des totaux' : 'Excluded from totals'}
+                          </span>
+                        ) : (
+                          tx.isExcluded && (
+                            <span className="text-[11px] font-medium text-slate-400">
+                              {isFr ? 'Exclu des totaux' : 'Excluded'}
+                            </span>
+                          )
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 truncate">
+                        <span className="tabular-nums">{formattedDate}</span>
+                        <span aria-hidden="true">·</span>
+                        {isSplitParent ? (
+                          <span className="text-indigo-300/90 font-medium">
+                            {children.length < allChildrenCount
+                              ? isFr
+                                ? `${children.length} sur ${allChildrenCount} sous-opérations filtrées`
+                                : `${children.length} of ${allChildrenCount} split items shown`
+                              : isFr
+                              ? `${allChildrenCount} sous-catégories ventilées`
+                              : `${allChildrenCount} categorized splits`}
+                          </span>
+                        ) : isUnassigned ? (
+                          <span className="text-amber-300 font-semibold">
+                            {isFr ? 'À catégoriser (cliquer pour éditer)' : 'Unassigned (click to edit)'}
+                          </span>
+                        ) : (
+                          <>
+                            <span className="text-slate-300 font-medium">{tx.categoryName}</span>
+                            {tx.budgetTitle && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="text-teal-300">{tx.budgetTitle}</span>
+                              </>
+                            )}
+                          </>
+                        )}
+                        <span aria-hidden="true">·</span>
+                        <span>{tx.accountName}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="text-slate-500">{tx.paymentMethod}</span>
+                      </div>
+
+                      {tx.notes && (
+                        <div className="text-[11px] text-teal-400/80 mt-0.5 truncate">
+                          {tx.notes}
+                        </div>
+                      )}
                     </div>
-                    <span className="text-xs text-slate-500">{tx.familyMemberName}</span>
                   </div>
 
-                  {/* Quick Action buttons */}
-                  <div className="flex items-center gap-1 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition">
-                    {!tx.isSplit && (
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          onOpenSplit(tx);
-                        }}
-                        title={isFr ? 'Ventiler' : 'Split'}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition"
+                  {/* Right: Amount & quick actions */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      <div
+                        className={`text-base font-bold font-mono tabular-nums ${
+                          isSplitParent
+                            ? 'text-slate-400 line-through decoration-slate-600'
+                            : tx.amount < 0
+                            ? 'text-slate-100'
+                            : 'text-emerald-400'
+                        }`}
                       >
-                        <Split className="w-4 h-4" />
-                      </button>
-                    )}
+                        {tx.amount < 0 ? '' : '+'}
+                        {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                      </div>
+                      <span className="text-xs text-slate-500">{tx.familyMemberName}</span>
+                    </div>
 
-                    <button
-                      onClick={e => toggleExclude(tx, e)}
-                      title={
-                        tx.isExcluded
-                          ? isFr
-                            ? 'Inclure dans les totaux'
-                            : 'Include in totals'
-                          : isFr
-                          ? 'Exclure des totaux'
-                          : 'Exclude from totals'
-                      }
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
-                    >
-                      <EyeOff className="w-4 h-4" />
-                    </button>
+                    {/* Quick Action buttons */}
+                    <div className="flex items-center gap-1 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                      {!isSplitChildTransaction(tx) && (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            onOpenSplit(tx);
+                          }}
+                          title={
+                            isSplitParent
+                              ? isFr
+                                ? 'Modifier la ventilation'
+                                : 'Edit split'
+                              : isFr
+                              ? 'Ventiler'
+                              : 'Split'
+                          }
+                          className={`p-2 rounded-lg transition cursor-pointer ${
+                            isSplitParent
+                              ? 'text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/15'
+                              : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800'
+                          }`}
+                        >
+                          <Split className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {!isSplitParent && (
+                        <button
+                          type="button"
+                          onClick={e => toggleExclude(tx, e)}
+                          title={
+                            tx.isExcluded
+                              ? isFr
+                                ? 'Inclure dans les totaux'
+                                : 'Include in totals'
+                              : isFr
+                              ? 'Exclure des totaux'
+                              : 'Exclude from totals'
+                          }
+                          className="p-2 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition cursor-pointer"
+                        >
+                          <EyeOff className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/* Expanded Nested Child Sub-Transactions */}
+                {isSplitParent && isExpanded && children.length > 0 && (
+                  <div className="bg-slate-950/60 divide-y divide-slate-800/60 border-t border-slate-800/80">
+                    {children.map(child => {
+                      const childUnassigned =
+                        !child.categoryId || !child.budgetId || !activeCategoryIds.has(child.categoryId);
+
+                      return (
+                        <div
+                          key={child.id}
+                          onClick={() => onSelectTransaction(child)}
+                          className={`pl-8 sm:pl-14 pr-4 py-3 hover:bg-slate-800/35 transition cursor-pointer flex items-center justify-between gap-3 group/child ${
+                            child.isExcluded ? 'opacity-45' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <CornerDownRight className="w-4 h-4 text-slate-600 shrink-0" />
+                            {childUnassigned ? (
+                              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                                <HelpCircle className="w-4 h-4" />
+                              </div>
+                            ) : (
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0"
+                                style={{ backgroundColor: `#${child.categoryColor.toString(16).slice(-6)}` }}
+                              >
+                                <CategoryIcon name={child.categoryIcon || child.categoryName} className="w-4 h-4" />
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-xs sm:text-sm text-slate-100 group-hover/child:text-teal-300 transition truncate">
+                                  {child.title}
+                                </span>
+                                {child.isExcluded && (
+                                  <span className="text-[11px] text-slate-400">
+                                    {isFr ? 'Exclu' : 'Excluded'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
+                                {childUnassigned ? (
+                                  <span className="text-amber-300 font-semibold">
+                                    {isFr ? 'À catégoriser' : 'Unassigned'}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="text-slate-300">{child.categoryName}</span>
+                                    {child.budgetTitle && (
+                                      <>
+                                        <span aria-hidden="true">·</span>
+                                        <span className="text-teal-300">{child.budgetTitle}</span>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                                {child.notes && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span className="text-teal-400/80 truncate">{child.notes}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div
+                              className={`text-sm font-bold font-mono tabular-nums ${
+                                child.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                              }`}
+                            >
+                              {child.amount < 0 ? '' : '+'}
+                              {child.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={e => toggleExclude(child, e)}
+                              title={
+                                child.isExcluded
+                                  ? isFr
+                                    ? 'Inclure dans les totaux'
+                                    : 'Include in totals'
+                                  : isFr
+                                  ? 'Exclure des totaux'
+                                  : 'Exclude from totals'
+                              }
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800 opacity-80 sm:opacity-0 sm:group-hover/child:opacity-100 transition cursor-pointer"
+                            >
+                              <EyeOff className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })

@@ -1,17 +1,26 @@
 import { ReconciliationCandidate, TransactionEntity } from '../types';
 import { normalizeText } from './csvParser';
+import { isSplitChildTransaction, isTransactionExcludedFromTotals } from './budgetEngine';
 
 export function findReconciliationCandidates(
   transactions: TransactionEntity[]
 ): ReconciliationCandidate[] {
-  // Manual pending transactions
+  // Manual pending transactions (exclude split parents & split children)
   const pendingManual = transactions.filter(
-    tx => !tx.isDeleted && tx.source === 'MANUAL' && tx.status === 'PENDING'
+    tx =>
+      !isTransactionExcludedFromTotals(tx) &&
+      !isSplitChildTransaction(tx) &&
+      tx.source === 'MANUAL' &&
+      tx.status === 'PENDING'
   );
 
-  // Unreconciled bank import transactions
+  // Unreconciled bank import transactions (exclude split parents & split children)
   const bankImports = transactions.filter(
-    tx => !tx.isDeleted && tx.source === 'BANK_IMPORT' && tx.status !== 'RECONCILED'
+    tx =>
+      !isTransactionExcludedFromTotals(tx) &&
+      !isSplitChildTransaction(tx) &&
+      tx.source === 'BANK_IMPORT' &&
+      tx.status !== 'RECONCILED'
   );
 
   const candidates: ReconciliationCandidate[] = [];

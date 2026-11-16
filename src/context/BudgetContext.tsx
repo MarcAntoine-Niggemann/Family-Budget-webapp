@@ -53,6 +53,7 @@ import {
   wrapDekWithKek
 } from '../utils/crypto';
 import { ParsedBankRow, detectCsvDuplicates } from '../utils/csvParser';
+import { computeDefaultCardPeriod } from '../utils/creditCardPeriod';
 import { executeBidirectionalSync, resetFirebaseInstances, SyncResult } from '../services/firebaseSyncService';
 import {
   DEFAULT_OPEN_BANKING_CONFIG,
@@ -78,7 +79,8 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
   budgetId: 'ALL',
   searchTerm: '',
   filterType: 'ALL',
-  filterStatus: 'ALL'
+  filterStatus: 'ALL',
+  creditCardPeriod: 'ALL'
 };
 
 export interface VaultProtectionInput {
@@ -86,6 +88,16 @@ export interface VaultProtectionInput {
   prfSecret?: ArrayBuffer;
   prfSalt?: Uint8Array;
   pin?: string;
+}
+
+export interface SplitInputItem {
+  id?: number;
+  categoryId: number;
+  categoryName: string;
+  budgetId: number;
+  budgetTitle: string;
+  amount: number;
+  notes: string;
 }
 
 export interface VaultActionResult {
@@ -160,16 +172,15 @@ interface BudgetContextType {
   addTransaction: (tx: Omit<TransactionEntity, 'id' | 'updatedAt' | 'isDeleted'>) => number;
   updateTransaction: (tx: TransactionEntity) => void;
   deleteTransaction: (id: number) => void;
-  splitTransaction: (
-    parentId: number,
-    splits: { categoryId: number; categoryName: string; budgetId: number; budgetTitle: string; amount: number; notes: string }[]
-  ) => void;
+  splitTransaction: (parentId: number, splits: SplitInputItem[]) => void;
+  unsplitTransaction: (parentId: number) => void;
   transferBetweenAccounts: (
     sourceAccId: string,
     targetAccId: string,
     amount: number,
     notes: string,
-    transferType?: 'TO_SAVINGS' | 'FROM_SAVINGS' | 'CARD_SETTLEMENT' | 'GENERAL_TRANSFER'
+    transferType?: 'TO_SAVINGS' | 'FROM_SAVINGS' | 'CARD_SETTLEMENT' | 'GENERAL_TRANSFER',
+    options?: { creditCardPeriod?: string; dateMillis?: number }
   ) => void;
   reconcilePair: (manualId: number, bankId: number) => void;
 
@@ -669,17 +680,94 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateTransaction = (updatedTx: TransactionEntity) => {
     const now = Date.now();
     const oldTx = transactions.find(t => t.id === updatedTx.id);
+    if (!oldTx) return;
 
+    const isChild = oldTx.parentId !== null && oldTx.parentId !== undefined && oldTx.parentId > 0;
+
+    if (isChild) {
+      // Split children inherit amount/flow/account from the parent split group to prevent sum drift
+      const sanitizedChild: TransactionEntity = {
+        ...updatedTx,
+        amount: oldTx.amount,
+        isExpense: oldTx.isExpense,
+        accountId: oldTx.accountId,
+        accountName: oldTx.accountName,
+        parentId: oldTx.parentId,
+        isSplit: true,
+        isSplitParent: false,
+        updatedAt: now
+      };
+      setTransactions(prev => prev.map(tx => (tx.id === updatedTx.id ? sanitizedChild : tx)));
+      enqueueOutbox('TRANSACTION', `tx_${updatedTx.id}`, 'UPSERT');
+      showToast(language === 'fr' ? 'Transaction mise à jour' : 'Transaction updated');
+      return;
+    }
+
+    const isParent = Boolean(oldTx.isSplitParent || updatedTx.isSplitParent);
+    const sanitizedTx: TransactionEntity = isParent
+      ? {
+          ...updatedTx,
+          isSplitParent: true,
+          isSplit: true,
+          isExcludedFromTotals: true,
+          updatedAt: now
+        }
+      : {
+          ...updatedTx,
+          updatedAt: now
+        };
+
+    const childIdsToSync: number[] = [];
     setTransactions(prev =>
-      prev.map(tx => (tx.id === updatedTx.id ? { ...updatedTx, updatedAt: now } : tx))
+      prev.map(tx => {
+        if (tx.id === updatedTx.id) return sanitizedTx;
+        if (isParent && !tx.isDeleted && tx.parentId === updatedTx.id) {
+          childIdsToSync.push(tx.id);
+          return {
+            ...tx,
+            date: sanitizedTx.date,
+            accountId: sanitizedTx.accountId,
+            accountName: sanitizedTx.accountName,
+            familyMemberId: sanitizedTx.familyMemberId,
+            familyMemberName: sanitizedTx.familyMemberName,
+            paymentMethod: sanitizedTx.paymentMethod,
+            creditCardPeriod: sanitizedTx.creditCardPeriod,
+            updatedAt: now
+          };
+        }
+        return tx;
+      })
     );
     enqueueOutbox('TRANSACTION', `tx_${updatedTx.id}`, 'UPSERT');
+    childIdsToSync.forEach(cid => enqueueOutbox('TRANSACTION', `tx_${cid}`, 'UPSERT'));
 
-    if (oldTx && oldTx.amount !== updatedTx.amount) {
-      const diff = updatedTx.amount - oldTx.amount;
+    if (oldTx.accountId !== sanitizedTx.accountId) {
       setAccounts(prev =>
         prev.map(acc => {
-          if (acc.id === updatedTx.accountId) {
+          if (acc.id === oldTx.accountId) {
+            return {
+              ...acc,
+              currentBalance: Math.round((acc.currentBalance - oldTx.amount) * 100) / 100,
+              updatedAt: now
+            };
+          }
+          if (acc.id === sanitizedTx.accountId) {
+            return {
+              ...acc,
+              currentBalance: Math.round((acc.currentBalance + sanitizedTx.amount) * 100) / 100,
+              updatedAt: now
+            };
+          }
+          return acc;
+        })
+      );
+      enqueueOutbox('ACCOUNT', oldTx.accountId, 'UPSERT');
+      enqueueOutbox('ACCOUNT', sanitizedTx.accountId, 'UPSERT');
+    } else if (oldTx.amount !== sanitizedTx.amount) {
+      const diff = sanitizedTx.amount - oldTx.amount;
+      setAccounts(prev =>
+        prev.map(acc => {
+          if (acc.id === sanitizedTx.accountId) {
             return {
               ...acc,
               currentBalance: Math.round((acc.currentBalance + diff) * 100) / 100,
@@ -689,43 +777,64 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           return acc;
         })
       );
+      enqueueOutbox('ACCOUNT', sanitizedTx.accountId, 'UPSERT');
     }
 
     showToast(language === 'fr' ? 'Transaction mise à jour' : 'Transaction updated');
   };
 
   const deleteTransaction = (id: number) => {
-    const target = transactions.find(t => t.id === id);
+    const target = transactions.find(t => t.id === id && !t.isDeleted);
     if (!target) return;
     const now = Date.now();
 
+    const isChild = target.parentId !== null && target.parentId !== undefined && target.parentId > 0;
+    const activeChildren = transactions.filter(t => !t.isDeleted && t.parentId === id);
+    const childIds = new Set(activeChildren.map(c => c.id));
+
     setTransactions(prev =>
-      prev.map(tx => (tx.id === id ? { ...tx, isDeleted: true, updatedAt: now } : tx))
+      prev.map(tx =>
+        tx.id === id || childIds.has(tx.id) ? { ...tx, isDeleted: true, updatedAt: now } : tx
+      )
     );
     enqueueOutbox('TRANSACTION', `tx_${id}`, 'DELETE');
+    activeChildren.forEach(c => enqueueOutbox('TRANSACTION', `tx_${c.id}`, 'DELETE'));
 
-    setAccounts(prev =>
-      prev.map(acc => {
-        if (acc.id === target.accountId) {
-          return {
-            ...acc,
-            currentBalance: Math.round((acc.currentBalance - target.amount) * 100) / 100,
-            updatedAt: now
-          };
-        }
-        return acc;
-      })
+    // Only top-level transactions affect real-world account balance (and only once for a split group)
+    if (!isChild) {
+      setAccounts(prev =>
+        prev.map(acc => {
+          if (acc.id === target.accountId) {
+            return {
+              ...acc,
+              currentBalance: Math.round((acc.currentBalance - target.amount) * 100) / 100,
+              updatedAt: now
+            };
+          }
+          return acc;
+        })
+      );
+      enqueueOutbox('ACCOUNT', target.accountId, 'UPSERT');
+    }
+
+    showToast(
+      activeChildren.length > 0
+        ? language === 'fr'
+          ? `Transaction et ses ${activeChildren.length} sous-opérations supprimées`
+          : `Transaction and ${activeChildren.length} split items deleted`
+        : language === 'fr'
+        ? 'Transaction supprimée'
+        : 'Transaction deleted'
     );
-
-    showToast(language === 'fr' ? 'Transaction supprimée' : 'Transaction deleted');
   };
 
-  const splitTransaction = (
-    parentId: number,
-    splits: { categoryId: number; categoryName: string; budgetId: number; budgetTitle: string; amount: number; notes: string }[]
-  ) => {
-    const parent = transactions.find(t => t.id === parentId);
-    if (!parent) return;
+  const splitTransaction = (parentId: number, splits: SplitInputItem[]) => {
+    const parent = transactions.find(t => t.id === parentId && !t.isDeleted);
+    if (!parent || (parent.parentId && parent.parentId > 0) || splits.length < 2) return;
+
+    const existingChildren = transactions.filter(t => !t.isDeleted && t.parentId === parentId);
+    const existingById = new Map(existingChildren.map(c => [c.id, c]));
+    const wasAlreadySplit = Boolean(parent.isSplitParent || existingChildren.length > 0);
 
     const now = Date.now();
     let nextId = Math.max(0, ...transactions.map(t => t.id)) + 1;
@@ -733,52 +842,180 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const updatedParent: TransactionEntity = {
       ...parent,
       isSplitParent: true,
+      isSplit: true,
+      isExcludedFromTotals: true,
       updatedAt: now
     };
 
-    const childTxs: TransactionEntity[] = splits.map(s => {
-      const isExp = s.amount < 0 || parent.isExpense;
+    const reusedChildIds = new Set<number>();
+    const updatedChildren: TransactionEntity[] = [];
+    const createdChildren: TransactionEntity[] = [];
+
+    for (const s of splits) {
+      const isExp = parent.isExpense;
       const childAmount = isExp ? -Math.abs(s.amount) : Math.abs(s.amount);
       const cat = categories.find(c => c.id === s.categoryId);
+      const existingChild = s.id && existingById.has(s.id) && !reusedChildIds.has(s.id)
+        ? existingById.get(s.id)
+        : undefined;
 
-      return {
-        id: nextId++,
-        title: `${parent.title} (${s.budgetTitle || s.categoryName})`,
-        originalBankLabel: parent.originalBankLabel,
-        amount: childAmount,
-        isExpense: isExp,
-        categoryId: s.categoryId,
-        categoryName: s.categoryName,
-        categoryColor: cat?.color || 0xff3b82f6,
-        categoryIcon: cat?.icon || 'Tag',
-        budgetId: s.budgetId,
-        budgetTitle: s.budgetTitle,
-        date: parent.date,
-        familyMemberId: parent.familyMemberId,
-        familyMemberName: parent.familyMemberName,
-        source: parent.source,
-        status: parent.status,
-        paymentMethod: parent.paymentMethod,
-        notes: s.notes || parent.notes,
-        parentId: parent.id,
-        accountId: parent.accountId,
-        accountName: parent.accountName,
-        settlementCardName: parent.settlementCardName,
-        billingCycleClosingDay: parent.billingCycleClosingDay,
-        updatedAt: now,
-        isDeleted: false
-      };
-    });
+      if (existingChild) {
+        reusedChildIds.add(existingChild.id);
+        updatedChildren.push({
+          ...existingChild,
+          title: `${parent.title} (${s.budgetTitle || s.categoryName})`,
+          originalBankLabel: parent.originalBankLabel,
+          amount: childAmount,
+          isExpense: isExp,
+          categoryId: s.categoryId,
+          categoryName: s.categoryName,
+          categoryColor: cat?.color ?? existingChild.categoryColor ?? 0xff3b82f6,
+          categoryIcon: cat?.icon || existingChild.categoryIcon || 'Tag',
+          budgetId: s.budgetId,
+          budgetTitle: s.budgetTitle,
+          date: parent.date,
+          familyMemberId: parent.familyMemberId,
+          familyMemberName: parent.familyMemberName,
+          source: parent.source,
+          status: parent.status,
+          paymentMethod: parent.paymentMethod,
+          notes: s.notes || '',
+          parentId: parent.id,
+          isSplitParent: false,
+          isSplit: true,
+          isExcluded: false,
+          isExcludedFromTotals: false,
+          accountId: parent.accountId,
+          accountName: parent.accountName,
+          settlementCardName: parent.settlementCardName,
+          billingCycleClosingDay: parent.billingCycleClosingDay,
+          billingCycleStartDate: parent.billingCycleStartDate,
+          billingCycleEndDate: parent.billingCycleEndDate,
+          creditCardPeriod: parent.creditCardPeriod,
+          isInternalTransfer: parent.isInternalTransfer,
+          transferType: parent.transferType,
+          targetAccountId: parent.targetAccountId,
+          targetAccountName: parent.targetAccountName,
+          updatedAt: now,
+          isDeleted: false
+        });
+      } else {
+        createdChildren.push({
+          id: nextId++,
+          title: `${parent.title} (${s.budgetTitle || s.categoryName})`,
+          originalBankLabel: parent.originalBankLabel,
+          amount: childAmount,
+          isExpense: isExp,
+          categoryId: s.categoryId,
+          categoryName: s.categoryName,
+          categoryColor: cat?.color || 0xff3b82f6,
+          categoryIcon: cat?.icon || 'Tag',
+          budgetId: s.budgetId,
+          budgetTitle: s.budgetTitle,
+          date: parent.date,
+          familyMemberId: parent.familyMemberId,
+          familyMemberName: parent.familyMemberName,
+          source: parent.source,
+          status: parent.status,
+          paymentMethod: parent.paymentMethod,
+          notes: s.notes || parent.notes || '',
+          parentId: parent.id,
+          isSplitParent: false,
+          isSplit: true,
+          isExcluded: false,
+          isExcludedFromTotals: false,
+          accountId: parent.accountId,
+          accountName: parent.accountName,
+          settlementCardName: parent.settlementCardName,
+          billingCycleClosingDay: parent.billingCycleClosingDay,
+          billingCycleStartDate: parent.billingCycleStartDate,
+          billingCycleEndDate: parent.billingCycleEndDate,
+          creditCardPeriod: parent.creditCardPeriod,
+          isInternalTransfer: parent.isInternalTransfer,
+          transferType: parent.transferType,
+          targetAccountId: parent.targetAccountId,
+          targetAccountName: parent.targetAccountName,
+          updatedAt: now,
+          isDeleted: false
+        });
+      }
+    }
+
+    const updatedChildMap = new Map(updatedChildren.map(c => [c.id, c]));
+    const removedChildren = existingChildren.filter(c => !reusedChildIds.has(c.id));
+    const removedChildIds = new Set(removedChildren.map(c => c.id));
 
     setTransactions(prev => [
-      ...childTxs,
-      ...prev.map(t => (t.id === parentId ? updatedParent : t))
+      ...createdChildren,
+      ...prev.map(t => {
+        if (t.id === parentId) return updatedParent;
+        if (updatedChildMap.has(t.id)) return updatedChildMap.get(t.id)!;
+        if (removedChildIds.has(t.id)) return { ...t, isDeleted: true, updatedAt: now };
+        return t;
+      })
     ]);
 
     enqueueOutbox('TRANSACTION', `tx_${parentId}`, 'UPSERT');
-    childTxs.forEach(c => enqueueOutbox('TRANSACTION', `tx_${c.id}`, 'UPSERT'));
+    updatedChildren.forEach(c => enqueueOutbox('TRANSACTION', `tx_${c.id}`, 'UPSERT'));
+    createdChildren.forEach(c => enqueueOutbox('TRANSACTION', `tx_${c.id}`, 'UPSERT'));
+    removedChildren.forEach(c => enqueueOutbox('TRANSACTION', `tx_${c.id}`, 'DELETE'));
 
-    showToast(language === 'fr' ? 'Transaction ventilée avec succès' : 'Transaction split successfully');
+    showToast(
+      wasAlreadySplit
+        ? language === 'fr'
+          ? 'Ventilation mise à jour'
+          : 'Split updated successfully'
+        : language === 'fr'
+        ? 'Transaction ventilée avec succès'
+        : 'Transaction split successfully'
+    );
+  };
+
+  const unsplitTransaction = (parentId: number) => {
+    const parent = transactions.find(t => t.id === parentId && !t.isDeleted);
+    if (!parent) return;
+
+    const activeChildren = transactions.filter(t => !t.isDeleted && t.parentId === parentId);
+    const childIds = new Set(activeChildren.map(c => c.id));
+    const now = Date.now();
+
+    const firstChild = activeChildren[0];
+    const hasParentCategory = parent.categoryId > 0 && parent.budgetId > 0;
+
+    const restoredParent: TransactionEntity = {
+      ...parent,
+      ...(hasParentCategory || !firstChild
+        ? {}
+        : {
+            categoryId: firstChild.categoryId,
+            categoryName: firstChild.categoryName,
+            categoryColor: firstChild.categoryColor,
+            categoryIcon: firstChild.categoryIcon,
+            budgetId: firstChild.budgetId,
+            budgetTitle: firstChild.budgetTitle
+          }),
+      isSplitParent: false,
+      isSplit: false,
+      isExcludedFromTotals: false,
+      updatedAt: now
+    };
+
+    setTransactions(prev =>
+      prev.map(t => {
+        if (t.id === parentId) return restoredParent;
+        if (childIds.has(t.id)) return { ...t, isDeleted: true, updatedAt: now };
+        return t;
+      })
+    );
+
+    enqueueOutbox('TRANSACTION', `tx_${parentId}`, 'UPSERT');
+    activeChildren.forEach(c => enqueueOutbox('TRANSACTION', `tx_${c.id}`, 'DELETE'));
+
+    showToast(
+      language === 'fr'
+        ? 'Ventilation annulée, transaction d’origine restaurée'
+        : 'Split reverted to original transaction'
+    );
   };
 
   const transferBetweenAccounts = (
@@ -786,15 +1023,30 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     targetAccId: string,
     amount: number,
     notes: string,
-    transferType: 'TO_SAVINGS' | 'FROM_SAVINGS' | 'CARD_SETTLEMENT' | 'GENERAL_TRANSFER' = 'GENERAL_TRANSFER'
+    transferType: 'TO_SAVINGS' | 'FROM_SAVINGS' | 'CARD_SETTLEMENT' | 'GENERAL_TRANSFER' = 'GENERAL_TRANSFER',
+    options?: { creditCardPeriod?: string; dateMillis?: number }
   ) => {
     const sourceAcc = accounts.find(a => a.id === sourceAccId);
     const targetAcc = accounts.find(a => a.id === targetAccId);
     if (!sourceAcc || !targetAcc) return;
 
     const now = Date.now();
+    const txDate = options?.dateMillis || now;
     let nextId = Math.max(0, ...transactions.map(t => t.id)) + 1;
     const absAmount = Math.abs(amount);
+
+    const cardAcc =
+      targetAcc.type === 'DEFERRED_CARD'
+        ? targetAcc
+        : sourceAcc.type === 'DEFERRED_CARD'
+        ? sourceAcc
+        : null;
+    const resolvedPeriod =
+      transferType === 'CARD_SETTLEMENT'
+        ? options?.creditCardPeriod ||
+          (cardAcc ? computeDefaultCardPeriod(txDate, cardAcc.billingCycleClosingDay) : undefined)
+        : undefined;
+    const isCardSettlement = transferType === 'CARD_SETTLEMENT';
 
     const savingsCat = categories.find(c => !c.isDeleted && c.id === 9) || categories.find(c => !c.isDeleted);
     const savingsBudget =
@@ -810,7 +1062,9 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const outTx: TransactionEntity = {
       id: nextId++,
-      title: `${language === 'fr' ? 'Virement vers' : 'Transfer to'} ${targetAcc.name}`,
+      title: isCardSettlement
+        ? `${language === 'fr' ? 'Prélèvement carte' : 'Card settlement'} ${cardAcc?.name || targetAcc.name}`
+        : `${language === 'fr' ? 'Virement vers' : 'Transfer to'} ${targetAcc.name}`,
       originalBankLabel: `INTERNAL TRANSFER TO ${targetAcc.name.toUpperCase()}`,
       amount: -absAmount,
       isExpense: true,
@@ -820,7 +1074,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       categoryIcon: resolvedCategoryIcon,
       budgetId: resolvedBudgetId,
       budgetTitle: resolvedBudgetTitle,
-      date: now,
+      date: txDate,
       familyMemberId: members[0]?.id || 'primary',
       familyMemberName: members[0]?.name || 'Primary User',
       source: 'MANUAL',
@@ -833,13 +1087,20 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       targetAccountName: targetAcc.name,
       isInternalTransfer: true,
       transferType,
+      settlementCardName: cardAcc?.name,
+      billingCycleClosingDay: cardAcc?.billingCycleClosingDay,
+      creditCardPeriod: resolvedPeriod,
+      isExcluded: isCardSettlement ? true : undefined,
+      isExcludedFromTotals: isCardSettlement ? true : undefined,
       updatedAt: now,
       isDeleted: false
     };
 
     const inTx: TransactionEntity = {
       id: nextId++,
-      title: `${language === 'fr' ? 'Virement reçu de' : 'Transfer from'} ${sourceAcc.name}`,
+      title: isCardSettlement
+        ? `${language === 'fr' ? 'Règlement reçu de' : 'Settlement from'} ${sourceAcc.name}`
+        : `${language === 'fr' ? 'Virement reçu de' : 'Transfer from'} ${sourceAcc.name}`,
       originalBankLabel: `INTERNAL TRANSFER FROM ${sourceAcc.name.toUpperCase()}`,
       amount: absAmount,
       isExpense: false,
@@ -849,7 +1110,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       categoryIcon: resolvedCategoryIcon,
       budgetId: resolvedBudgetId,
       budgetTitle: resolvedBudgetTitle,
-      date: now,
+      date: txDate,
       familyMemberId: members[0]?.id || 'primary',
       familyMemberName: members[0]?.name || 'Primary User',
       source: 'MANUAL',
@@ -862,6 +1123,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       targetAccountName: sourceAcc.name,
       isInternalTransfer: true,
       transferType,
+      settlementCardName: cardAcc?.name,
+      billingCycleClosingDay: cardAcc?.billingCycleClosingDay,
+      creditCardPeriod: resolvedPeriod,
+      isExcluded: isCardSettlement ? true : undefined,
+      isExcludedFromTotals: isCardSettlement ? true : undefined,
       updatedAt: now,
       isDeleted: false
     };
@@ -1137,6 +1403,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         accountName: targetAcc.name,
         settlementCardName: targetAcc.type === 'DEFERRED_CARD' ? targetAcc.name : undefined,
         billingCycleClosingDay: targetAcc.billingCycleClosingDay,
+        creditCardPeriod:
+          targetAcc.type === 'DEFERRED_CARD'
+            ? computeDefaultCardPeriod(rec.dateMillis, targetAcc.billingCycleClosingDay)
+            : undefined,
         updatedAt: now,
         isDeleted: false
       };
@@ -2125,6 +2395,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updateTransaction,
         deleteTransaction,
         splitTransaction,
+        unsplitTransaction,
         transferBetweenAccounts,
         reconcilePair,
 

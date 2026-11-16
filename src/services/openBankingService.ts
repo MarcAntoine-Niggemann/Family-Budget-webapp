@@ -8,6 +8,7 @@ import {
   CategoryEntity,
   CategoryBudgetEntity
 } from '../types';
+import { computeDefaultCardPeriod } from '../utils/creditCardPeriod';
 
 export const DEFAULT_OPEN_BANKING_CONFIG: OpenBankingConfig = {
   apiKey: '',
@@ -307,6 +308,11 @@ export async function executeOpenBankingSync(
       accountName: targetAcc?.name || 'Banque',
       notes: `Synchronisé via open-banking.io (${targetAcc?.name || 'Banque'})`,
       settlementCardName: targetAcc?.type === 'DEFERRED_CARD' ? targetAcc.name : null,
+      billingCycleClosingDay: targetAcc?.billingCycleClosingDay ?? null,
+      creditCardPeriod:
+        targetAcc?.type === 'DEFERRED_CARD'
+          ? computeDefaultCardPeriod(rtxDateMs, targetAcc.billingCycleClosingDay)
+          : null,
       updatedAt: Date.now(),
       isDeleted: false
     };

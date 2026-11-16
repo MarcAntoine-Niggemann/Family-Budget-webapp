@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { findReconciliationCandidates } from '../utils/reconciliationEngine';
+import { isSplitChildTransaction, isTransactionExcludedFromTotals } from '../utils/budgetEngine';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 export const ReconciliationScreen: React.FC = () => {
@@ -22,11 +23,15 @@ export const ReconciliationScreen: React.FC = () => {
   const candidates = findReconciliationCandidates(transactions);
 
   const pendingManual = transactions.filter(
-    tx => !tx.isDeleted && tx.source === 'MANUAL' && tx.status === 'PENDING'
+    tx =>
+      !isTransactionExcludedFromTotals(tx) &&
+      !isSplitChildTransaction(tx) &&
+      tx.source === 'MANUAL' &&
+      tx.status === 'PENDING'
   );
 
   const reconciledCount = transactions.filter(
-    tx => !tx.isDeleted && tx.status === 'RECONCILED'
+    tx => !tx.isDeleted && !isSplitChildTransaction(tx) && tx.status === 'RECONCILED'
   ).length;
 
   return (

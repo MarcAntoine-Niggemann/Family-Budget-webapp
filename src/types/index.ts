@@ -234,5 +234,6 @@ export interface TransactionFilters {
   searchTerm: string;
   filterType: 'ALL' | 'EXPENSE' | 'INCOME' | 'TRANSFER';
   filterStatus: 'ALL' | 'PENDING' | 'RECONCILED' | 'VERIFIED';
+  creditCardPeriod?: string; // 'ALL' or 'YYYY-MM'
 }
 

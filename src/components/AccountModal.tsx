@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { AccountEntity, AccountType } from '../types';
+import { computeDefaultCardPeriod, formatPeriodCycleRange } from '../utils/creditCardPeriod';
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -110,7 +111,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
   const [isDefault, setIsDefault] = useState(false);
   const [color, setColor] = useState(0xff0f766e);
   const [closingDayStr, setClosingDayStr] = useState('25');
-  const [settlementDayStr, setSettlementDayStr] = useState('30');
   const [linkedCheckingAccountId, setLinkedCheckingAccountId] = useState('');
   const [targetSavingsGoalStr, setTargetSavingsGoalStr] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -134,7 +134,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
       setIsDefault(Boolean(account.isDefault));
       setColor(account.color || 0xff0f766e);
       setClosingDayStr(String(account.billingCycleClosingDay ?? 25));
-      setSettlementDayStr(String(account.settlementDay ?? 30));
       setLinkedCheckingAccountId(
         account.linkedCheckingAccountId || checkingAccounts[0]?.id || ''
       );
@@ -150,7 +149,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
       setIsDefault(accounts.length === 0);
       setColor(0xff0f766e);
       setClosingDayStr('25');
-      setSettlementDayStr('30');
       setLinkedCheckingAccountId(
         accounts.find(a => a.type === 'CHECKING')?.id || ''
       );
@@ -193,9 +191,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
         ? Math.min(31, Math.max(1, parseInt(closingDayStr, 10) || 25))
         : null;
     const settlementDay =
-      type === 'DEFERRED_CARD'
-        ? Math.min(31, Math.max(1, parseInt(settlementDayStr, 10) || 30))
-        : null;
+      type === 'DEFERRED_CARD' ? account?.settlementDay ?? null : null;
     const linkedChecking =
       type === 'DEFERRED_CARD' ? linkedCheckingAccountId || null : null;
 
@@ -385,12 +381,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
           {type === 'DEFERRED_CARD' && (
             <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
               <div className="text-xs font-semibold text-blue-300">
-                {isFr ? 'Paramètres Carte à Débit Différé' : 'Deferred Card Cycle Settings'}
+                {isFr ? 'Période de Carte à Débit Différé' : 'Deferred Card Billing Period'}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] text-slate-400 mb-1">
-                    {isFr ? 'Jour d’arrêté (1–31)' : 'Closing Day (1–31)'}
+                    {isFr ? 'Jour d’arrêté mensuel (1–31)' : 'Monthly Closing Day (1–31)'}
                   </label>
                   <input
                     type="number"
@@ -398,43 +394,43 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                     max={31}
                     value={closingDayStr}
                     onChange={e => setClosingDayStr(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-white focus:outline-none focus:border-teal-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
-                    {isFr ? 'Jour de prélèvement (1–31)' : 'Settlement Day (1–31)'}
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={settlementDayStr}
-                    onChange={e => setSettlementDayStr(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-                  />
-                </div>
+
+                {checkingAccounts.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      {isFr ? 'Compte courant débité' : 'Linked Checking Account'}
+                    </label>
+                    <select
+                      value={linkedCheckingAccountId}
+                      onChange={e => setLinkedCheckingAccountId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
+                    >
+                      <option value="">{isFr ? '-- Aucun --' : '-- None --'}</option>
+                      {checkingAccounts.map(ca => (
+                        <option key={ca.id} value={ca.id}>
+                          {ca.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
-              {checkingAccounts.length > 0 && (
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
-                    {isFr ? 'Compte courant débité' : 'Linked Checking Account'}
-                  </label>
-                  <select
-                    value={linkedCheckingAccountId}
-                    onChange={e => setLinkedCheckingAccountId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
-                  >
-                    <option value="">{isFr ? '-- Aucun --' : '-- None --'}</option>
-                    {checkingAccounts.map(ca => (
-                      <option key={ca.id} value={ca.id}>
-                        {ca.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {(() => {
+                const previewClosing = Math.min(31, Math.max(1, parseInt(closingDayStr, 10) || 25));
+                const samplePeriod = computeDefaultCardPeriod(Date.now(), previewClosing);
+                const sampleRange = formatPeriodCycleRange(samplePeriod, previewClosing, language);
+                return (
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    {isFr
+                      ? `Toute opération après le jour ${previewClosing} est rattachée à la période du mois suivant (ex. période ${samplePeriod} : ${sampleRange}).`
+                      : `Transactions after day ${previewClosing} default to the next month’s period (e.g. ${samplePeriod}: ${sampleRange}).`}
+                  </p>
+                );
+              })()}
             </div>
           )}
 

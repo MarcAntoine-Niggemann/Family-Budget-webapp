@@ -1,13 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, ArrowDownRight, ArrowUpRight, Calendar, User, Wallet, Tag, AlertCircle } from 'lucide-react';
+import { X, ArrowDownRight, ArrowUpRight, Calendar, User, Wallet, Tag, AlertCircle, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
+import {
+  computeDefaultCardPeriod,
+  formatPeriodCycleRange,
+  isValidCardPeriod,
+  shiftCardPeriod
+} from '../utils/creditCardPeriod';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialAccountId?: string | null;
+  initialCreditCardPeriod?: string | null;
 }
 
-export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClose }) => {
+export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
+  isOpen,
+  onClose,
+  initialAccountId,
+  initialCreditCardPeriod
+}) => {
   const {
     accounts,
     categories,
@@ -34,12 +47,25 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
   const [selectedMemberId, setSelectedMemberId] = useState(members[0]?.id || 'primary');
   const [dateStr, setDateStr] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState(isFr ? 'Carte Bancaire' : 'Card');
+  const [creditCardPeriod, setCreditCardPeriod] = useState('');
+  const [isPeriodManuallyEdited, setIsPeriodManuallyEdited] = useState(false);
   const [notes, setNotes] = useState('');
 
   const filteredBudgets = useMemo(() => {
     const list = activeBudgets.filter(b => b.categoryId === selectedCategoryId);
     return [...list].sort((a, b) => Number(b.isExpense === isExpense) - Number(a.isExpense === isExpense));
   }, [activeBudgets, selectedCategoryId, isExpense]);
+
+  const selectedAccount = useMemo(
+    () => activeAccounts.find(a => a.id === selectedAccountId) || null,
+    [activeAccounts, selectedAccountId]
+  );
+
+  const computedDefaultPeriod = useMemo(() => {
+    if (selectedAccount?.type !== 'DEFERRED_CARD') return '';
+    const parsedDate = new Date(dateStr + 'T12:00:00').getTime() || Date.now();
+    return computeDefaultCardPeriod(parsedDate, selectedAccount.billingCycleClosingDay);
+  }, [selectedAccount, dateStr]);
 
   // Initialize defaults when modal opens
   useEffect(() => {
@@ -52,15 +78,52 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
     const firstBudget =
       activeBudgets.find(b => b.categoryId === catId && b.isExpense === isExpense) ||
       activeBudgets.find(b => b.categoryId === catId);
-    setSelectedAccountId(prev => (activeAccounts.some(a => a.id === prev) ? prev : activeAccounts[0]?.id || ''));
+
+    const targetAccId =
+      initialAccountId && activeAccounts.some(a => a.id === initialAccountId)
+        ? initialAccountId
+        : activeAccounts.some(a => a.id === selectedAccountId)
+        ? selectedAccountId
+        : activeAccounts[0]?.id || '';
+    const targetAcc = activeAccounts.find(a => a.id === targetAccId);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    setSelectedAccountId(targetAccId);
     setSelectedCategoryId(catId);
     setSelectedBudgetId(firstBudget?.id || 0);
     setSelectedMemberId(members[0]?.id || 'primary');
-    setDateStr(new Date().toISOString().split('T')[0]);
+    setDateStr(todayStr);
     setAmountStr('');
     setTitle('');
     setNotes('');
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (targetAcc?.type === 'DEFERRED_CARD') {
+      if (initialCreditCardPeriod && isValidCardPeriod(initialCreditCardPeriod)) {
+        setCreditCardPeriod(initialCreditCardPeriod);
+        setIsPeriodManuallyEdited(true);
+      } else {
+        const parsedMs = new Date(todayStr + 'T12:00:00').getTime() || Date.now();
+        setCreditCardPeriod(computeDefaultCardPeriod(parsedMs, targetAcc.billingCycleClosingDay));
+        setIsPeriodManuallyEdited(false);
+      }
+    } else {
+      setCreditCardPeriod('');
+      setIsPeriodManuallyEdited(false);
+    }
+  }, [isOpen, initialAccountId, initialCreditCardPeriod]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-update default period when date or deferred card account changes (unless manually overridden)
+  useEffect(() => {
+    if (!isOpen) return;
+    if (selectedAccount?.type !== 'DEFERRED_CARD') {
+      setCreditCardPeriod('');
+      setIsPeriodManuallyEdited(false);
+      return;
+    }
+    if (!isPeriodManuallyEdited) {
+      setCreditCardPeriod(computedDefaultPeriod);
+    }
+  }, [isOpen, selectedAccount?.id, selectedAccount?.type, computedDefaultPeriod, isPeriodManuallyEdited]);
 
   // Keep sub-category aligned with selected category
   useEffect(() => {
@@ -101,7 +164,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
     const account = activeAccounts.find(a => a.id === selectedAccountId);
     const member = members.find(m => m.id === selectedMemberId);
     const signedAmount = isExpense ? -Math.abs(val) : Math.abs(val);
-    const txDate = new Date(dateStr).getTime() || Date.now();
+    const txDate = new Date(dateStr + 'T12:00:00').getTime() || Date.now();
+    const resolvedPeriod =
+      account?.type === 'DEFERRED_CARD'
+        ? isValidCardPeriod(creditCardPeriod)
+          ? creditCardPeriod.trim()
+          : computeDefaultCardPeriod(txDate, account.billingCycleClosingDay)
+        : undefined;
 
     addTransaction({
       title: title.trim(),
@@ -124,7 +193,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
       accountId: account?.id || 'acc_main_checking',
       accountName: account?.name || 'Compte Courant',
       settlementCardName: account?.type === 'DEFERRED_CARD' ? account.name : undefined,
-      billingCycleClosingDay: account?.billingCycleClosingDay
+      billingCycleClosingDay: account?.billingCycleClosingDay,
+      creditCardPeriod: resolvedPeriod
     });
 
     onClose();
@@ -374,6 +444,78 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen
               </select>
             </div>
           </div>
+
+          {/* Deferred Card Billing Period (auto-computed, editable) */}
+          {selectedAccount?.type === 'DEFERRED_CARD' && (
+            <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-medium text-slate-300">
+                  {isFr ? 'Période Débit Différé (AAAA-MM)' : 'Deferred Card Period (YYYY-MM)'}
+                </label>
+                {isPeriodManuallyEdited && computedDefaultPeriod && creditCardPeriod !== computedDefaultPeriod && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreditCardPeriod(computedDefaultPeriod);
+                      setIsPeriodManuallyEdited(false);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-300 hover:text-teal-200 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>{isFr ? `Auto (${computedDefaultPeriod})` : `Auto (${computedDefaultPeriod})`}</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreditCardPeriod(shiftCardPeriod(creditCardPeriod || computedDefaultPeriod, -1));
+                    setIsPeriodManuallyEdited(true);
+                  }}
+                  className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <input
+                  type="text"
+                  value={creditCardPeriod}
+                  placeholder="YYYY-MM"
+                  onChange={e => {
+                    setCreditCardPeriod(e.target.value);
+                    setIsPeriodManuallyEdited(true);
+                  }}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-center font-semibold text-white focus:outline-none focus:border-teal-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreditCardPeriod(shiftCardPeriod(creditCardPeriod || computedDefaultPeriod, 1));
+                    setIsPeriodManuallyEdited(true);
+                  }}
+                  className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {isValidCardPeriod(creditCardPeriod) && (
+                <p className="text-[11px] text-slate-400">
+                  {isFr ? 'Cycle :' : 'Cycle:'}{' '}
+                  <span className="text-slate-300">
+                    {formatPeriodCycleRange(creditCardPeriod, selectedAccount.billingCycleClosingDay, language)}
+                  </span>
+                  <span aria-hidden="true"> · </span>
+                  <span>
+                    {isFr
+                      ? `Arrêté le ${selectedAccount.billingCycleClosingDay || 25}`
+                      : `Closing day ${selectedAccount.billingCycleClosingDay || 25}`}
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Notes */}
           <div>
