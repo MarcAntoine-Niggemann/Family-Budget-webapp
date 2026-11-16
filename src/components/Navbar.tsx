@@ -91,22 +91,24 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
           {/* Logo & Brand */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center shrink-0 min-w-0">
             <button
               onClick={() => navigateTo('DASHBOARD')}
+              aria-label="Budget Family"
+              title="Budget Family"
               className="flex items-center gap-2.5 text-left group transition cursor-pointer"
             >
-              <div className="w-9 h-9 rounded-xl bg-teal-500 flex items-center justify-center text-slate-950 shrink-0">
-                <Shield className="w-5 h-5 text-slate-950" />
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-teal-500 flex items-center justify-center text-slate-950 shrink-0">
+                <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-slate-950" />
               </div>
-              <div className="flex items-baseline gap-2 min-w-0">
+              <div className="hidden sm:flex items-baseline gap-2 min-w-0">
                 <span className="font-bold text-lg tracking-tight text-white group-hover:text-teal-300 transition whitespace-nowrap">
                   Budget Family
                 </span>
-                <span className="hidden sm:inline text-xs text-slate-400 truncate max-w-[180px]">
+                <span className="hidden xl:inline text-xs text-slate-400 truncate max-w-[160px]">
                   · {config.familyName || (sessionMode === 'DEMO' ? 'Demo' : 'Vault')}
                 </span>
               </div>
@@ -114,14 +116,14 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
           </div>
 
           {/* Account Filter dropdown */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2 min-w-0">
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
-              <Wallet className="w-3.5 h-3.5 text-teal-400" />
+              <Wallet className="w-3.5 h-3.5 text-teal-400 shrink-0" />
               <select
                 aria-label="Filter by account"
                 value={activeAccountId || 'ALL'}
                 onChange={e => setActiveAccountId(e.target.value === 'ALL' ? null : e.target.value)}
-                className="bg-transparent text-slate-200 font-medium focus:outline-none cursor-pointer"
+                className="bg-transparent text-slate-200 font-medium focus:outline-none cursor-pointer max-w-[180px] xl:max-w-[220px] truncate"
               >
                 <option value="ALL" className="bg-slate-800 text-slate-200">
                   {isFr ? 'Tous les comptes' : 'All Accounts'}
@@ -136,13 +138,13 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
           </div>
 
           {/* Actions & Utilities */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 min-w-0 overflow-x-auto scrollbar-none">
             {/* Sync Status Button */}
             {sessionMode === 'FIRESTORE' && (
               <button
                 onClick={() => syncWithFirebaseNow()}
                 title={syncState.lastSyncMessage || 'Sync with Firestore'}
-                className="p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-teal-400 transition cursor-pointer"
+                className="p-1.5 sm:p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-teal-400 transition shrink-0 cursor-pointer"
               >
                 {syncState.lastSyncStatus === 'SYNCING' ? (
                   <CloudSync className="w-4 h-4 animate-spin text-teal-400" />
@@ -162,7 +164,7 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
             {/* Language Switcher */}
             <button
               onClick={() => setLanguage(isFr ? 'en' : 'fr')}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-xs font-semibold text-slate-300 transition whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1.5 sm:px-2.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-xs font-semibold text-slate-300 transition whitespace-nowrap shrink-0 cursor-pointer"
               title="Change Language"
             >
               <Globe className="w-3.5 h-3.5 text-slate-400" />
@@ -173,7 +175,7 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
             {onOpenShareQr && sessionMode === 'FIRESTORE' && config.projectId && (
               <button
                 onClick={onOpenShareQr}
-                className="p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-teal-400 transition cursor-pointer"
+                className="p-1.5 sm:p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-teal-400 transition shrink-0 cursor-pointer"
                 title={isFr ? 'Partager le QR Code du Coffre' : 'Share Vault via QR Code'}
               >
                 <QrCode className="w-4 h-4" />
@@ -183,7 +185,7 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
             {/* Vault Settings / Profile */}
             <button
               onClick={() => navigateTo('FIRESTORE_CONFIG')}
-              className={`p-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
+              className={`p-1 sm:p-1.5 rounded-lg border text-xs font-medium transition shrink-0 cursor-pointer ${
                 currentScreen === 'FIRESTORE_CONFIG'
                   ? 'bg-teal-500/20 border-teal-500/50 text-teal-300'
                   : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/50 text-slate-300'
@@ -202,7 +204,7 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
             {/* Quick Add Expense Button */}
             <button
               onClick={onOpenAddTx}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">{isFr ? 'Ajouter' : 'New Entry'}</span>
@@ -212,7 +214,7 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
             {sessionMode === 'FIRESTORE' && (
               <button
                 onClick={() => lockVault()}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-teal-300 text-xs font-semibold transition whitespace-nowrap cursor-pointer"
+                className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-slate-300 hover:text-teal-300 text-xs font-semibold transition whitespace-nowrap shrink-0 cursor-pointer"
                 title={isFr ? 'Verrouiller le coffre (conserve le cache chiffré)' : 'Lock Vault (keep encrypted cache)'}
               >
                 <Lock className="w-4 h-4" />
@@ -223,7 +225,7 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
             {/* Logout Button (erases financial data & Open Banking config, preserves encrypted BYOB config) */}
             <button
               onClick={() => logout()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-rose-500/15 border border-slate-700/50 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-semibold transition whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-800/60 hover:bg-rose-500/15 border border-slate-700/50 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-semibold transition whitespace-nowrap shrink-0 cursor-pointer"
               title={
                 isFr
                   ? 'Déconnexion (efface les données financières et clés Open Banking)'

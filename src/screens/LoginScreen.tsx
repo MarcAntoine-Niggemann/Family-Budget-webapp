@@ -441,13 +441,13 @@ export const LoginScreen: React.FC = () => {
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6">
       <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 sm:p-8 space-y-6">
         {/* Header & Language Toggle */}
-        <div className="flex items-center justify-between pb-5 border-b border-slate-800">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-teal-500 flex items-center justify-center text-slate-950 shrink-0">
-              <Shield className="w-6 h-6" />
+        <div className="flex items-center justify-between gap-3 pb-5 border-b border-slate-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-teal-500 flex items-center justify-center text-slate-950 shrink-0">
+              <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Budget Family</h1>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Budget Family</h1>
               <p className="text-xs text-slate-400">
                 {isFr
                   ? 'Coffre chiffré AES-256-GCM · Firestore privé (BYOB) ou Démo'
