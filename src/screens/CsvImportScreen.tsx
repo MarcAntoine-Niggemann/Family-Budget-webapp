@@ -27,6 +27,7 @@ import { MOCK_SANDBOX_ACCOUNTS } from '../services/openBankingService';
 
 export const CsvImportScreen: React.FC = () => {
   const {
+    sessionMode,
     accounts,
     rules,
     categories,
@@ -321,30 +322,32 @@ export const CsvImportScreen: React.FC = () => {
               </div>
 
               {/* Quick Demo Statement Loaders */}
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-500 hidden sm:inline">
-                  {isFr ? 'Exemples prêts à tester :' : 'Test presets:'}
-                </span>
-                <button
-                  onClick={() => {
-                    const sample = isFr ? sampleCsvCheckingFr : sampleCsvEn;
-                    handleParse(sample);
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-teal-700 dark:text-teal-300 text-[11px] font-semibold transition"
-                >
-                  {isFr ? 'Relevé Compte Courant' : 'Checking Statement Sample'}
-                </button>
-                <button
-                  onClick={() => {
-                    const cardAcc = activeAccounts.find(a => a.type === 'DEFERRED_CARD');
-                    if (cardAcc) setSelectedAccountId(cardAcc.id);
-                    handleParse(sampleCsvDeferredCardFr);
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-blue-700 dark:text-blue-300 text-[11px] font-semibold transition"
-                >
-                  {isFr ? 'Relevé Carte Différé' : 'Deferred Card Sample'}
-                </button>
-              </div>
+              {sessionMode === 'DEMO' && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-500 hidden sm:inline">
+                    {isFr ? 'Exemples prêts à tester :' : 'Test presets:'}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const sample = isFr ? sampleCsvCheckingFr : sampleCsvEn;
+                      handleParse(sample);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-teal-700 dark:text-teal-300 text-[11px] font-semibold transition"
+                  >
+                    {isFr ? 'Relevé Compte Courant' : 'Checking Statement Sample'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const cardAcc = activeAccounts.find(a => a.type === 'DEFERRED_CARD');
+                      if (cardAcc) setSelectedAccountId(cardAcc.id);
+                      handleParse(sampleCsvDeferredCardFr);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-blue-700 dark:text-blue-300 text-[11px] font-semibold transition"
+                  >
+                    {isFr ? 'Relevé Carte Différé' : 'Deferred Card Sample'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Dropzone & Text Area */}
