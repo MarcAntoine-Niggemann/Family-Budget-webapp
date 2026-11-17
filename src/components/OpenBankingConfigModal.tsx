@@ -1,27 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Key,
-  Globe,
   CheckCircle2,
   AlertCircle,
   HelpCircle,
-  Shield,
   RefreshCw,
-  Sliders,
   ExternalLink,
   Wallet,
   Fingerprint,
-  Lock
+  Unplug
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { MOCK_SANDBOX_ACCOUNTS } from '../services/openBankingService';
+import { OpenBankingAccountDto } from '../types';
+import { DEFAULT_OPEN_BANKING_CONFIG } from '../services/openBankingService';
 import { enrollBiometricCredential } from '../utils/biometricKeyvault';
 
 interface OpenBankingConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const buildSignature = (env: string, key: string, secret: string) =>
+  `${env}::${key.trim()}::${secret.trim()}`;
 
 export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
   isOpen,
@@ -41,62 +42,203 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
   const [apiKey, setApiKey] = useState(openBankingConfig.apiKey || '');
   const [apiSecret, setApiSecret] = useState(openBankingConfig.apiSecret || '');
   const [environment, setEnvironment] = useState<'SANDBOX' | 'PRODUCTION'>(
-    openBankingConfig.environment || 'SANDBOX'
+    openBankingConfig.environment || 'PRODUCTION'
   );
   const [autoSyncOnLaunch, setAutoSyncOnLaunch] = useState(
     openBankingConfig.autoSyncOnLaunch || false
   );
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<OpenBankingAccountDto[]>(
+    openBankingConfig.isConnected ? (openBankingConfig.discoveredAccounts || []) : []
+  );
   const [mappings, setMappings] = useState<Record<string, string>>(
-    openBankingConfig.accountMappings || {
-      'ob_bnp_checking': accounts[0]?.id || 'acc_main_checking',
-      'ob_bnp_deferred_card': accounts[1]?.id || 'acc_deferred_card',
-      'ob_bourso_livret_a': accounts[2]?.id || 'acc_livret_a'
-    }
+    openBankingConfig.isConnected ? (openBankingConfig.accountMappings || {}) : {}
+  );
+  const [verifiedSignature, setVerifiedSignature] = useState<string | null>(
+    openBankingConfig.isConnected
+      ? buildSignature(
+          openBankingConfig.environment || 'PRODUCTION',
+          openBankingConfig.apiKey || '',
+          openBankingConfig.apiSecret || ''
+        )
+      : null
   );
 
   const [isTesting, setIsTesting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message: string;
   } | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const env = openBankingConfig.environment || 'PRODUCTION';
+    const key = openBankingConfig.apiKey || '';
+    const secret = openBankingConfig.apiSecret || '';
+    setApiKey(key);
+    setApiSecret(secret);
+    setEnvironment(env);
+    setAutoSyncOnLaunch(openBankingConfig.autoSyncOnLaunch || false);
+    setDiscoveredAccounts(
+      openBankingConfig.isConnected ? (openBankingConfig.discoveredAccounts || []) : []
+    );
+    setMappings(
+      openBankingConfig.isConnected ? (openBankingConfig.accountMappings || {}) : {}
+    );
+    setVerifiedSignature(
+      openBankingConfig.isConnected ? buildSignature(env, key, secret) : null
+    );
+    setTestResult(null);
+  }, [isOpen, openBankingConfig]);
+
   if (!isOpen) return null;
+
+  const currentSignature = buildSignature(environment, apiKey, apiSecret);
+
+  const handleEnvironmentChange = (nextEnv: 'SANDBOX' | 'PRODUCTION') => {
+    setEnvironment(nextEnv);
+    setTestResult(null);
+    if (buildSignature(nextEnv, apiKey, apiSecret) !== verifiedSignature) {
+      setDiscoveredAccounts([]);
+    }
+  };
+
+  const handleApiKeyChange = (val: string) => {
+    setApiKey(val);
+    setTestResult(null);
+    if (buildSignature(environment, val, apiSecret) !== verifiedSignature) {
+      setDiscoveredAccounts([]);
+    }
+  };
+
+  const handleApiSecretChange = (val: string) => {
+    setApiSecret(val);
+    setTestResult(null);
+    if (buildSignature(environment, apiKey, val) !== verifiedSignature) {
+      setDiscoveredAccounts([]);
+    }
+  };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
 
-    // Temporarily apply current form inputs to test
-    updateOpenBankingConfig({
-      apiKey: apiKey.trim(),
-      apiSecret: apiSecret.trim(),
+    const trimmedKey = apiKey.trim();
+    const trimmedSecret = apiSecret.trim();
+
+    const res = await testOpenBankingConn({
+      apiKey: trimmedKey,
+      apiSecret: trimmedSecret,
       environment
     });
 
-    const res = await testOpenBankingConn();
     setIsTesting(false);
     setTestResult({
       success: res.success,
       message: res.message
     });
+
+    if (res.success) {
+      setDiscoveredAccounts(res.accounts);
+      setVerifiedSignature(buildSignature(environment, trimmedKey, trimmedSecret));
+      // Keep only mappings relevant to discovered accounts
+      setMappings(prev => {
+        const next: Record<string, string> = {};
+        res.accounts.forEach(acc => {
+          if (prev[acc.id]) next[acc.id] = prev[acc.id];
+        });
+        return next;
+      });
+    } else {
+      setDiscoveredAccounts([]);
+      setVerifiedSignature(null);
+    }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const trimmedKey = apiKey.trim();
+    const trimmedSecret = apiSecret.trim();
+
+    if (environment === 'PRODUCTION' && !trimmedKey) {
+      setTestResult({
+        success: false,
+        message: isFr
+          ? 'Veuillez saisir votre clé API (Client ID / API Key) pour l’environnement Live Production.'
+          : 'Please enter your API Key / Client ID for Live Production.'
+      });
+      return;
+    }
+
+    let accountsToSave = discoveredAccounts;
+
+    // Verify connection if credentials or environment have changed since last verification
+    if (verifiedSignature !== currentSignature) {
+      setIsSaving(true);
+      setTestResult(null);
+      const res = await testOpenBankingConn({
+        apiKey: trimmedKey,
+        apiSecret: trimmedSecret,
+        environment
+      });
+      setIsSaving(false);
+
+      if (!res.success) {
+        setTestResult({ success: false, message: res.message });
+        setDiscoveredAccounts([]);
+        setVerifiedSignature(null);
+        return;
+      }
+
+      accountsToSave = res.accounts;
+      setDiscoveredAccounts(res.accounts);
+      setVerifiedSignature(currentSignature);
+      setTestResult({ success: true, message: res.message });
+    }
+
+    const filteredMappings: Record<string, string> = {};
+    accountsToSave.forEach(acc => {
+      if (mappings[acc.id]) {
+        filteredMappings[acc.id] = mappings[acc.id];
+      }
+    });
+
     updateOpenBankingConfig({
-      apiKey: apiKey.trim(),
-      apiSecret: apiSecret.trim(),
+      apiKey: trimmedKey,
+      apiSecret: trimmedSecret,
       environment,
       autoSyncOnLaunch,
-      accountMappings: mappings,
-      isConnected: environment === 'SANDBOX' || !!apiKey.trim(),
-      status: environment === 'SANDBOX' || !!apiKey.trim() ? 'CONNECTED' : 'DISCONNECTED',
-      statusMessage: environment === 'SANDBOX'
-        ? (isFr ? 'Connecté au simulateur Sandbox open-banking.io' : 'Connected to Sandbox simulator')
-        : (isFr ? 'Connecté à open-banking.io Live' : 'Connected to Live open-banking.io')
+      discoveredAccounts: accountsToSave,
+      accountMappings: filteredMappings,
+      isConnected: true,
+      status: 'CONNECTED',
+      statusMessage:
+        environment === 'SANDBOX'
+          ? isFr
+            ? 'Connecté au simulateur Sandbox open-banking.io'
+            : 'Connected to Sandbox simulator'
+          : isFr
+            ? 'Connecté à open-banking.io Live'
+            : 'Connected to Live open-banking.io'
     });
 
     showToast(isFr ? 'Configuration Open Banking enregistrée' : 'Open Banking settings saved');
+    onClose();
+  };
+
+  const handleDisconnect = () => {
+    updateOpenBankingConfig({
+      ...DEFAULT_OPEN_BANKING_CONFIG,
+      environment
+    });
+    setApiKey('');
+    setApiSecret('');
+    setDiscoveredAccounts([]);
+    setMappings({});
+    setVerifiedSignature(null);
+    setTestResult(null);
+    showToast(isFr ? 'Service Open Banking déconnecté' : 'Open Banking service disconnected');
     onClose();
   };
 
@@ -151,7 +293,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setEnvironment('SANDBOX')}
+                onClick={() => handleEnvironmentChange('SANDBOX')}
                 className={`p-3 rounded-xl border text-left transition cursor-pointer ${
                   environment === 'SANDBOX'
                     ? 'bg-teal-50 dark:bg-teal-500/15 border-teal-500 text-slate-900 dark:text-white shadow-sm'
@@ -170,7 +312,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setEnvironment('PRODUCTION')}
+                onClick={() => handleEnvironmentChange('PRODUCTION')}
                 className={`p-3 rounded-xl border text-left transition cursor-pointer ${
                   environment === 'PRODUCTION'
                     ? 'bg-teal-50 dark:bg-teal-500/15 border-teal-500 text-slate-900 dark:text-white shadow-sm'
@@ -209,7 +351,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
               <input
                 type="text"
                 value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
+                onChange={e => handleApiKeyChange(e.target.value)}
                 placeholder={environment === 'SANDBOX' ? 'sandbox_demo_key_7792' : 'ob_live_pk_...'}
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
               />
@@ -222,7 +364,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
               <input
                 type="password"
                 value={apiSecret}
-                onChange={e => setApiSecret(e.target.value)}
+                onChange={e => handleApiSecretChange(e.target.value)}
                 placeholder="••••••••••••••••••••••••"
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
               />
@@ -265,7 +407,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
             <button
               type="button"
               onClick={handleTestConnection}
-              disabled={isTesting}
+              disabled={isTesting || isSaving}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
@@ -301,43 +443,55 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {isFr
                 ? 'Associez chaque compte bancaire distant découvert vers un compte local de votre coffre :'
-                : 'Map discovered bank feeds to internal budget accounts:'}
+                : 'Map discovered bank feeds from your connected service to internal budget accounts:'}
             </p>
 
-            <div className="space-y-2.5 pt-1">
-              {MOCK_SANDBOX_ACCOUNTS.map(rAcc => (
-                <div
-                  key={rAcc.id}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
-                >
-                  <div>
-                    <span className="font-semibold text-slate-900 dark:text-white block">{rAcc.name}</span>
-                    <span className="text-[10px] text-slate-500 font-mono">{rAcc.iban}</span>
-                  </div>
+            {discoveredAccounts.length === 0 ? (
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-200 dark:border-slate-800 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                {testResult?.success
+                  ? isFr
+                    ? 'Connexion établie, mais aucun compte bancaire n’a été retourné par ce service.'
+                    : 'Connected, but no bank accounts were returned by this service.'
+                  : isFr
+                    ? 'Configurez vos identifiants puis cliquez sur « Tester la Connexion » pour afficher les comptes bancaires de votre service connecté.'
+                    : 'Configure your credentials and click "Test Connection" to load bank accounts from your connected service.'}
+              </div>
+            ) : (
+              <div className="space-y-2.5 pt-1">
+                {discoveredAccounts.map(rAcc => (
+                  <div
+                    key={rAcc.id}
+                    className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                  >
+                    <div>
+                      <span className="font-semibold text-slate-900 dark:text-white block">{rAcc.name}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">{rAcc.iban || rAcc.institution}</span>
+                    </div>
 
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400 text-[11px]">➔</span>
-                    <select
-                      value={mappings[rAcc.id] || ''}
-                      onChange={e =>
-                        setMappings(prev => ({
-                          ...prev,
-                          [rAcc.id]: e.target.value
-                        }))
-                      }
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500"
-                    >
-                      <option value="">{isFr ? '-- Ne pas synchroniser --' : '-- Ignore --'}</option>
-                      {accounts.map(acc => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.name} ({acc.type})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 text-[11px]">➔</span>
+                      <select
+                        value={mappings[rAcc.id] || ''}
+                        onChange={e =>
+                          setMappings(prev => ({
+                            ...prev,
+                            [rAcc.id]: e.target.value
+                          }))
+                        }
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500"
+                      >
+                        <option value="">{isFr ? '-- Ne pas synchroniser --' : '-- Ignore --'}</option>
+                        {accounts.map(acc => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.name} ({acc.type})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Auto-Sync on Launch */}
@@ -361,20 +515,42 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
           </div>
 
           {/* Submit Actions */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
-            >
-              {isFr ? 'Annuler' : 'Cancel'}
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer"
-            >
-              {isFr ? 'Enregistrer la Configuration' : 'Save Configuration'}
-            </button>
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+            <div>
+              {openBankingConfig.isConnected && (
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-semibold transition cursor-pointer"
+                >
+                  <Unplug className="w-3.5 h-3.5" />
+                  <span>{isFr ? 'Déconnecter' : 'Disconnect'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                {isFr ? 'Annuler' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={isTesting || isSaving}
+                className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 text-xs font-bold shadow-sm transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                {isSaving
+                  ? isFr
+                    ? 'Vérification...'
+                    : 'Connecting...'
+                  : isFr
+                    ? 'Enregistrer et Connecter'
+                    : 'Save & Connect'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

@@ -13,17 +13,14 @@ import { computeDefaultCardPeriod } from '../utils/creditCardPeriod';
 export const DEFAULT_OPEN_BANKING_CONFIG: OpenBankingConfig = {
   apiKey: '',
   apiSecret: '',
-  environment: 'SANDBOX',
+  environment: 'PRODUCTION',
   autoSyncOnLaunch: false,
   isConnected: false,
   lastSyncTimestamp: null,
   status: 'DISCONNECTED',
   statusMessage: 'Aucune connexion active. Utilisez l’import CSV gratuit ou configurez open-banking.io.',
-  accountMappings: {
-    'ob_bnp_checking': 'acc_main_checking',
-    'ob_bnp_deferred_card': 'acc_deferred_card',
-    'ob_bourso_livret_a': 'acc_livret_a'
-  }
+  discoveredAccounts: [],
+  accountMappings: {}
 };
 
 /**
@@ -119,18 +116,26 @@ export function getMockSandboxTransactions(): OpenBankingTransactionDto[] {
 }
 
 /**
- * Tests connection with open-banking.io (or Sandbox simulator).
+ * Tests connection with open-banking.io (or Sandbox simulator when explicitly selected).
  */
 export async function testOpenBankingConnection(
   config: OpenBankingConfig
 ): Promise<{ success: boolean; message: string; accounts: OpenBankingAccountDto[] }> {
-  // If in sandbox mode or demo keys, use the sandbox simulator
-  if (config.environment === 'SANDBOX' || !config.apiKey || config.apiKey.startsWith('demo_') || config.apiKey.startsWith('sandbox_')) {
+  // Only return simulated accounts when explicitly using SANDBOX environment
+  if (config.environment === 'SANDBOX') {
     await new Promise(r => setTimeout(r, 600)); // Simulate brief network roundtrip
     return {
       success: true,
-      message: 'Connexion Sandbox open-banking.io réussie ! 3 comptes bancaires découverts.',
+      message: 'Connexion Sandbox open-banking.io réussie ! 3 comptes simulés découverts.',
       accounts: MOCK_SANDBOX_ACCOUNTS
+    };
+  }
+
+  if (!config.apiKey || !config.apiKey.trim()) {
+    return {
+      success: false,
+      message: 'Veuillez saisir votre clé API (Client ID / API Key) pour vous connecter.',
+      accounts: []
     };
   }
 
@@ -139,8 +144,8 @@ export async function testOpenBankingConnection(
     const res = await fetch('https://api.open-banking.io/v1/accounts', {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'X-API-Secret': config.apiSecret || '',
+        'Authorization': `Bearer ${config.apiKey.trim()}`,
+        'X-API-Secret': (config.apiSecret || '').trim(),
         'Accept': 'application/json'
       }
     });
@@ -150,26 +155,31 @@ export async function testOpenBankingConnection(
     }
 
     const data = await res.json();
-    const fetchedAccounts: OpenBankingAccountDto[] = (data.accounts || []).map((acc: any) => ({
+    const rawAccounts = Array.isArray(data) ? data : (data.accounts || data.data || []);
+    const fetchedAccounts: OpenBankingAccountDto[] = rawAccounts.map((acc: any) => ({
       id: acc.id || acc.account_id,
       name: acc.name || acc.displayName || 'Compte Bancaire',
       institution: acc.institution || acc.bank_name || 'Banque PSD2',
       iban: acc.iban || acc.masked_pan || '',
       currency: acc.currency || 'EUR',
-      balance: parseFloat(acc.balance?.amount || acc.current_balance || 0),
-      type: acc.type === 'card' ? 'DEFERRED_CARD' : acc.type === 'savings' ? 'SAVINGS' : 'CHECKING'
+      balance: parseFloat(acc.balance?.amount ?? acc.current_balance ?? acc.balance ?? 0),
+      type: acc.type === 'card' || acc.type === 'DEFERRED_CARD'
+        ? 'DEFERRED_CARD'
+        : acc.type === 'savings' || acc.type === 'SAVINGS'
+          ? 'SAVINGS'
+          : 'CHECKING'
     }));
 
     return {
       success: true,
-      message: `Connexion Live réussie ! ${fetchedAccounts.length} compte(s) synchronisé(s).`,
+      message: `Connexion Live réussie ! ${fetchedAccounts.length} compte(s) découvert(s).`,
       accounts: fetchedAccounts
     };
   } catch (err: any) {
-    // If live call fails (e.g. CORS or invalid test key), provide clear guidance
+    // Do not fall back to fake accounts when live connection fails
     return {
       success: false,
-      message: `Échec de connexion : ${err.message || 'Impossible de joindre open-banking.io'}. Vérifiez vos clés API ou utilisez l'environnement Sandbox.`,
+      message: `Échec de connexion : ${err.message || 'Impossible de joindre open-banking.io'}. Vérifiez vos clés API.`,
       accounts: []
     };
   }
@@ -188,24 +198,55 @@ export async function executeOpenBankingSync(
 ): Promise<{
   newTransactions: TransactionEntity[];
   updatedAccounts: AccountEntity[];
+  remoteAccounts: OpenBankingAccountDto[];
   importedCount: number;
   duplicateSkippedCount: number;
   reconciledCount: number;
   summaryMessage: string;
 }> {
-  // 1. Fetch remote accounts & transactions
-  let remoteAccounts = MOCK_SANDBOX_ACCOUNTS;
-  let remoteTransactions = getMockSandboxTransactions();
+  if (!config.isConnected) {
+    throw new Error('Open Banking service is not connected. Please configure your credentials first.');
+  }
 
-  if (config.environment === 'PRODUCTION' && config.apiKey && !config.apiKey.startsWith('demo_')) {
-    try {
-      const conn = await testOpenBankingConnection(config);
-      if (conn.success && conn.accounts.length > 0) {
-        remoteAccounts = conn.accounts;
-      }
-    } catch {
-      // Fallback to sandbox if network unavailable
+  // 1. Fetch remote accounts & transactions strictly from the configured environment
+  let remoteAccounts: OpenBankingAccountDto[] = [];
+  let remoteTransactions: OpenBankingTransactionDto[] = [];
+
+  if (config.environment === 'SANDBOX') {
+    remoteAccounts = MOCK_SANDBOX_ACCOUNTS;
+    remoteTransactions = getMockSandboxTransactions();
+  } else {
+    const conn = await testOpenBankingConnection(config);
+    if (!conn.success) {
+      throw new Error(conn.message);
     }
+    remoteAccounts = conn.accounts;
+
+    const txRes = await fetch('https://api.open-banking.io/v1/transactions', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${config.apiKey.trim()}`,
+        'X-API-Secret': (config.apiSecret || '').trim(),
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!txRes.ok) {
+      throw new Error(`Erreur API Transactions (${txRes.status}): ${txRes.statusText}`);
+    }
+
+    const txData = await txRes.json();
+    const rawTxs = Array.isArray(txData) ? txData : (txData.transactions || txData.data || []);
+    remoteTransactions = rawTxs.map((tx: any) => ({
+      id: String(tx.id || tx.transaction_id),
+      accountId: String(tx.accountId || tx.account_id),
+      date: tx.date || tx.bookingDate || tx.booking_date || new Date().toISOString().split('T')[0],
+      bookingDate: tx.bookingDate || tx.booking_date,
+      description: tx.description || tx.remittance_information || tx.label || 'Opération bancaire',
+      originalLabel: tx.originalLabel || tx.original_label || tx.description || '',
+      amount: parseFloat(tx.amount?.amount ?? tx.amount ?? 0),
+      currency: tx.currency || tx.amount?.currency || 'EUR'
+    }));
   }
 
   // Existing remoteIds index for O(1) deduplication
@@ -229,9 +270,15 @@ export async function executeOpenBankingSync(
       continue;
     }
 
-    // Determine target local account
-    const targetLocalAccId = config.accountMappings[rtx.accountId] || currentAccounts[0]?.id || 'acc_main_checking';
+    // Determine target local account; skip ignored/unmapped accounts
+    const targetLocalAccId = config.accountMappings[rtx.accountId];
+    if (!targetLocalAccId) {
+      continue;
+    }
     const targetAcc = currentAccounts.find(a => a.id === targetLocalAccId);
+    if (!targetAcc) {
+      continue;
+    }
     const rtxDateMs = new Date(rtx.date).getTime();
 
     // Check fuzzy duplicate against manual transactions (same account, ±3 days, exact amount)
@@ -353,6 +400,7 @@ export async function executeOpenBankingSync(
   return {
     newTransactions: allUpdatedTransactions,
     updatedAccounts,
+    remoteAccounts,
     importedCount,
     duplicateSkippedCount,
     reconciledCount,

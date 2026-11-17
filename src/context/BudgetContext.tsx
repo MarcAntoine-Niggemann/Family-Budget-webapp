@@ -220,7 +220,9 @@ interface BudgetContextType {
 
   updateOpenBankingConfig: (patch: Partial<OpenBankingConfig>) => void;
   syncOpenBankingNow: () => Promise<void>;
-  testOpenBankingConn: () => Promise<{ success: boolean; message: string; accounts: OpenBankingAccountDto[] }>;
+  testOpenBankingConn: (
+    overrideConfig?: Partial<OpenBankingConfig>
+  ) => Promise<{ success: boolean; message: string; accounts: OpenBankingAccountDto[] }>;
 
   firebaseUser: AuthUserInfo | null;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
@@ -1640,7 +1642,17 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             : 'Encrypted cache unlocked — Delta syncing Firestore...'
       };
 
-      setOpenBankingConfig(localCache.openBankingConfig || DEFAULT_OPEN_BANKING_CONFIG);
+      const cachedOb = localCache.openBankingConfig;
+      setOpenBankingConfig(
+        cachedOb
+          ? {
+              ...DEFAULT_OPEN_BANKING_CONFIG,
+              ...cachedOb,
+              discoveredAccounts: cachedOb.isConnected ? (cachedOb.discoveredAccounts || []) : [],
+              accountMappings: cachedOb.isConnected ? (cachedOb.accountMappings || {}) : {}
+            }
+          : DEFAULT_OPEN_BANKING_CONFIG
+      );
       setCurrencyState(localCache.currency || '€');
       setAccounts(syncAccounts);
       setTransactions(syncTxs);
@@ -2343,11 +2355,20 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setOpenBankingConfig(prev => ({ ...prev, ...patch }));
   };
 
-  const testOpenBankingConn = async () => {
-    return await testOpenBankingConnection(openBankingConfig);
+  const testOpenBankingConn = async (overrideConfig?: Partial<OpenBankingConfig>) => {
+    return await testOpenBankingConnection({ ...openBankingConfig, ...overrideConfig });
   };
 
   const syncOpenBankingNow = async () => {
+    if (!openBankingConfig.isConnected) {
+      showToast(
+        language === 'fr'
+          ? 'Veuillez d’abord configurer et connecter vos identifiants Open Banking.'
+          : 'Please configure and connect your Open Banking credentials first.'
+      );
+      return;
+    }
+
     updateOpenBankingConfig({ status: 'SYNCING' });
     try {
       const res = await executeOpenBankingSync(
@@ -2363,6 +2384,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       updateOpenBankingConfig({
         status: 'CONNECTED',
         isConnected: true,
+        discoveredAccounts: res.remoteAccounts,
         lastSyncTimestamp: Date.now(),
         statusMessage: res.summaryMessage
       });

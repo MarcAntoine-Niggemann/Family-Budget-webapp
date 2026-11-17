@@ -202,6 +202,7 @@ export interface OpenBankingConfig {
   lastSyncTimestamp: number | null;
   status: 'DISCONNECTED' | 'CONNECTED' | 'SYNCING' | 'ERROR';
   statusMessage?: string;
+  discoveredAccounts?: OpenBankingAccountDto[];
   accountMappings: Record<string, string>; // remoteAccountId -> localAccountId
 }
 

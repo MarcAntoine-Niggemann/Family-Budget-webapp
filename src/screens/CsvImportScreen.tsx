@@ -23,7 +23,6 @@ import { useBudget } from '../context/BudgetContext';
 import { parseBankStatementCsv, detectCsvDuplicates, CsvParseResult } from '../utils/csvParser';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { OpenBankingConfigModal } from '../components/OpenBankingConfigModal';
-import { MOCK_SANDBOX_ACCOUNTS } from '../services/openBankingService';
 
 export const CsvImportScreen: React.FC = () => {
   const {
@@ -236,6 +235,9 @@ export const CsvImportScreen: React.FC = () => {
   };
 
   const openBankingTx = transactions.filter(t => !t.isDeleted && t.source === 'OPEN_BANKING');
+  const connectedBankAccounts = openBankingConfig.isConnected
+    ? openBankingConfig.discoveredAccounts || []
+    : [];
 
   return (
     <div className="space-y-6 pb-12">
@@ -292,7 +294,7 @@ export const CsvImportScreen: React.FC = () => {
                 : 'bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
             }`}
           >
-            {openBankingConfig.environment}
+            {openBankingConfig.isConnected ? openBankingConfig.environment : openBankingConfig.status}
           </span>
         </button>
       </div>
@@ -711,7 +713,7 @@ export const CsvImportScreen: React.FC = () => {
 
               <button
                 onClick={syncOpenBankingNow}
-                disabled={openBankingConfig.status === 'SYNCING'}
+                disabled={!openBankingConfig.isConnected || openBankingConfig.status === 'SYNCING'}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm dark:shadow-lg shadow-teal-500/20 transition active:scale-95 disabled:opacity-50"
               >
                 <RefreshCw
@@ -747,7 +749,13 @@ export const CsvImportScreen: React.FC = () => {
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
               <span className="text-[11px] text-slate-500 dark:text-slate-400 block">{isFr ? 'Environnement :' : 'Environment:'}</span>
               <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-1 block">
-                {openBankingConfig.environment === 'SANDBOX' ? '🧪 Sandbox Simulator' : '⚡ Live Production'}
+                {!openBankingConfig.isConnected
+                  ? isFr
+                    ? 'Non configuré'
+                    : 'Not configured'
+                  : openBankingConfig.environment === 'SANDBOX'
+                    ? '🧪 Sandbox Simulator'
+                    : '⚡ Live Production'}
               </span>
             </div>
           </div>
@@ -762,51 +770,78 @@ export const CsvImportScreen: React.FC = () => {
                 </h3>
               </div>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
-                {MOCK_SANDBOX_ACCOUNTS.length} {isFr ? 'comptes découverts' : 'accounts discovered'}
+                {openBankingConfig.isConnected
+                  ? `${connectedBankAccounts.length} ${isFr ? 'comptes découverts' : 'accounts discovered'}`
+                  : isFr
+                    ? 'Non connecté'
+                    : 'Not connected'}
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {MOCK_SANDBOX_ACCOUNTS.map(rAcc => {
-                const mappedLocalId = openBankingConfig.accountMappings[rAcc.id];
-                const localAcc = accounts.find(a => a.id === mappedLocalId);
+            {!openBankingConfig.isConnected ? (
+              <div className="py-8 px-4 text-center space-y-3">
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                  {isFr
+                    ? 'Aucun service Open Banking connecté. Configurez vos identifiants API pour connecter votre service et afficher vos comptes bancaires.'
+                    : 'No Open Banking service connected yet. Configure your credentials to connect your service and view your bank accounts.'}
+                </p>
+                <button
+                  onClick={() => setIsConfigModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm transition cursor-pointer"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>{isFr ? 'Configurer les identifiants' : 'Configure Credentials'}</span>
+                </button>
+              </div>
+            ) : connectedBankAccounts.length === 0 ? (
+              <div className="py-8 text-center text-slate-500 dark:text-slate-400 text-xs">
+                {isFr
+                  ? 'Service connecté, mais aucun compte bancaire n’a été retourné par le fournisseur.'
+                  : 'Connected, but no bank accounts were returned by the connected service.'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {connectedBankAccounts.map(rAcc => {
+                  const mappedLocalId = openBankingConfig.accountMappings[rAcc.id];
+                  const localAcc = accounts.find(a => a.id === mappedLocalId);
 
-                return (
-                  <div
-                    key={rAcc.id}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white">{rAcc.institution}</span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-500/20">
-                          {rAcc.type}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-700 dark:text-slate-300 font-medium mt-1">{rAcc.name}</p>
-                      <p className="text-[10px] font-mono text-slate-500 mt-0.5">{rAcc.iban}</p>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 flex items-end justify-between">
+                  return (
+                    <div
+                      key={rAcc.id}
+                      className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3"
+                    >
                       <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
-                          {isFr ? 'Lié à :' : 'Mapped to:'}
-                        </span>
-                        <span className="text-xs font-bold text-teal-700 dark:text-teal-300">
-                          {localAcc ? localAcc.name : (isFr ? 'Non associé' : 'Unmapped')}
-                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white">{rAcc.institution}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-500/20">
+                            {rAcc.type}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-700 dark:text-slate-300 font-medium mt-1">{rAcc.name}</p>
+                        <p className="text-[10px] font-mono text-slate-500 mt-0.5">{rAcc.iban}</p>
                       </div>
 
-                      <div className="text-right">
-                        <span className="text-xs font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
-                          {rAcc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
-                        </span>
+                      <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 flex items-end justify-between">
+                        <div>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
+                            {isFr ? 'Lié à :' : 'Mapped to:'}
+                          </span>
+                          <span className="text-xs font-bold text-teal-700 dark:text-teal-300">
+                            {localAcc ? localAcc.name : (isFr ? 'Non associé' : 'Unmapped')}
+                          </span>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-xs font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
+                            {rAcc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Recent Open Banking Transactions */}
