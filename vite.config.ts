@@ -4,10 +4,6 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 function resolveBasePath(): string {
-  if (process.env.VITE_BASE_PATH) {
-    const custom = process.env.VITE_BASE_PATH.trim();
-    return custom.endsWith('/') ? custom : `${custom}/`;
-  }
   if (process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY) {
     const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
     if (owner && repo && repo.toLowerCase() === `${owner.toLowerCase()}.github.io`) {

@@ -291,10 +291,10 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       {/* Top Controls Header */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
             {isFr ? 'Opérations & Historique' : 'Transactions & History'}
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
             <span className="tabular-nums">
               {groupedTransactions.length}{' '}
               {isFr ? 'transactions filtrées' : 'matching transactions'}
@@ -302,7 +302,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             <span aria-hidden="true">·</span>
             <span
               className={`font-semibold font-mono tabular-nums ${
-                totalFilteredSum >= 0 ? 'text-emerald-400' : 'text-slate-200'
+                totalFilteredSum >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'
               }`}
             >
               {totalFilteredSum >= 0 ? '+' : ''}
@@ -320,7 +320,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                       budgetId: 'ALL'
                     }))
                   }
-                  className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 font-semibold transition cursor-pointer"
+                  className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200 font-semibold transition cursor-pointer"
                 >
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span className="tabular-nums">
@@ -336,7 +336,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
         <button
           onClick={onOpenAddTx}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>{isFr ? 'Nouvelle Transaction' : 'New Transaction'}</span>
@@ -344,7 +344,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-lg">
+      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-sm dark:shadow-lg">
         {/* Search Input + Reset button */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <div className="relative flex-1">
@@ -360,7 +360,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               onChange={e =>
                 setTransactionFilters(prev => ({ ...prev, searchTerm: e.target.value }))
               }
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500 transition"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-teal-500 transition"
             />
           </div>
 
@@ -368,9 +368,9 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             <button
               type="button"
               onClick={handleResetAllFilters}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition whitespace-nowrap shrink-0 cursor-pointer"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-teal-400" />
+              <RotateCcw className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
               <span>{isFr ? 'Réinitialiser' : 'Reset filters'}</span>
             </button>
           )}
@@ -379,9 +379,9 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
         {/* Date Range + Category + Sub-category Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
           {/* Date From */}
-          <label className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 focus-within:border-teal-500 transition">
+          <label className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 focus-within:border-teal-500 transition">
             <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="text-slate-400 shrink-0">{isFr ? 'Du' : 'From'}</span>
+            <span className="text-slate-500 dark:text-slate-400 shrink-0">{isFr ? 'Du' : 'From'}</span>
             <input
               type="date"
               aria-label={isFr ? 'Date de début' : 'From date'}
@@ -390,14 +390,14 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               onChange={e =>
                 setTransactionFilters(prev => ({ ...prev, dateFrom: e.target.value }))
               }
-              className="w-full bg-transparent text-slate-200 focus:outline-none [color-scheme:dark]"
+              className="w-full bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
             />
           </label>
 
           {/* Date To */}
-          <label className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 focus-within:border-teal-500 transition">
+          <label className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 focus-within:border-teal-500 transition">
             <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="text-slate-400 shrink-0">{isFr ? 'Au' : 'To'}</span>
+            <span className="text-slate-500 dark:text-slate-400 shrink-0">{isFr ? 'Au' : 'To'}</span>
             <input
               type="date"
               aria-label={isFr ? 'Date de fin' : 'To date'}
@@ -406,7 +406,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               onChange={e =>
                 setTransactionFilters(prev => ({ ...prev, dateTo: e.target.value }))
               }
-              className="w-full bg-transparent text-slate-200 focus:outline-none [color-scheme:dark]"
+              className="w-full bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none"
             />
           </label>
 
@@ -437,7 +437,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                   });
                 }
               }}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Toutes catégories' : 'All Categories'}</option>
               <option value="UNASSIGNED">
@@ -473,7 +473,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                   }));
                 }
               }}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
             >
               <option value="ALL">
                 {isFr ? 'Toutes sous-catégories' : 'All Sub-categories'}
@@ -497,7 +497,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               aria-label="Filter transactions by account"
               value={activeAccountId || 'ALL'}
               onChange={e => setActiveAccountId(e.target.value === 'ALL' ? null : e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Tous les comptes' : 'All Accounts'}</option>
               {activeAccounts.map(acc => (
@@ -516,7 +516,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               onChange={e =>
                 setTransactionFilters(prev => ({ ...prev, filterType: e.target.value as any }))
               }
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Tous les flux' : 'All Types'}</option>
               <option value="EXPENSE">{isFr ? 'Dépenses uniquement' : 'Expenses only'}</option>
@@ -533,7 +533,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               onChange={e =>
                 setTransactionFilters(prev => ({ ...prev, filterStatus: e.target.value as any }))
               }
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-teal-500"
             >
               <option value="ALL">{isFr ? 'Tous les statuts' : 'All Statuses'}</option>
               <option value="PENDING">{isFr ? 'En attente (Manuel)' : 'Pending (Manual)'}</option>
@@ -550,7 +550,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               onChange={e =>
                 setTransactionFilters(prev => ({ ...prev, creditCardPeriod: e.target.value }))
               }
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 font-mono tabular-nums focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 font-mono tabular-nums focus:outline-none focus:border-teal-500"
             >
               <option value="ALL" className="font-sans">
                 {isFr ? 'Toutes périodes carte' : 'All Card Periods'}
@@ -566,7 +566,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       </div>
 
       {/* Transactions List */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 divide-y divide-slate-800/80 overflow-hidden shadow-xl">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 divide-y divide-slate-200/80 dark:divide-slate-800/80 overflow-hidden shadow-sm dark:shadow-xl">
         {groupedTransactions.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-sm">
             {isFr ? 'Aucune opération ne correspond à vos filtres.' : 'No transactions match your search.'}
@@ -591,8 +591,8 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                 {/* Parent or Standard Transaction Row */}
                 <div
                   onClick={() => onSelectTransaction(tx)}
-                  className={`p-4 hover:bg-slate-800/40 transition cursor-pointer flex items-center justify-between gap-3 group ${
-                    tx.isExcluded ? 'opacity-45 bg-slate-950/40' : ''
+                  className={`p-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition cursor-pointer flex items-center justify-between gap-3 group ${
+                    tx.isExcluded ? 'opacity-45 bg-slate-100/70 dark:bg-slate-950/40' : ''
                   }`}
                 >
                   {/* Left: Expand toggle (if split parent) + Icon + info */}
@@ -602,7 +602,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                         type="button"
                         onClick={e => toggleExpandParent(tx.id, isExpanded, e)}
                         aria-label={isExpanded ? (isFr ? 'Réduire le split' : 'Collapse split') : (isFr ? 'Déplier le split' : 'Expand split')}
-                        className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 shrink-0 transition cursor-pointer"
+                        className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/15 dark:hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 shrink-0 transition cursor-pointer"
                       >
                         {isExpanded ? (
                           <ChevronDown className="w-5 h-5" />
@@ -611,7 +611,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                         )}
                       </button>
                     ) : isUnassigned ? (
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 shrink-0">
                         <HelpCircle className="w-5 h-5" />
                       </div>
                     ) : (
@@ -625,18 +625,18 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-sm text-white group-hover:text-teal-300 transition truncate">
+                        <span className="font-semibold text-sm text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-300 transition truncate">
                           {tx.title}
                         </span>
 
                         {tx.status === 'PENDING' && (
-                          <span className="text-[11px] font-semibold text-amber-300">
+                          <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-300">
                             {isFr ? 'En attente' : 'Pending'}
                           </span>
                         )}
 
                         {tx.status === 'RECONCILED' && (
-                          <span className="text-[11px] font-semibold text-emerald-300">
+                          <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
                             {isFr ? 'Rapproché ✓' : 'Reconciled ✓'}
                           </span>
                         )}
@@ -645,7 +645,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                           <button
                             type="button"
                             onClick={e => toggleExpandParent(tx.id, isExpanded, e)}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 hover:text-indigo-200 transition tabular-nums cursor-pointer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 dark:hover:text-indigo-200 transition tabular-nums cursor-pointer"
                           >
                             <Split className="w-3.5 h-3.5" />
                             <span>
@@ -676,14 +676,14 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                               : null;
 
                           return (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-blue-300 tabular-nums">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-blue-600 dark:text-blue-300 tabular-nums">
                               <span>{tx.creditCardPeriod}</span>
                               {settlementSummary && (
                                 <span
                                   className={
                                     settlementSummary.isMatch
-                                      ? 'font-sans font-semibold text-emerald-400'
-                                      : 'font-semibold text-amber-300'
+                                      ? 'font-sans font-semibold text-emerald-600 dark:text-emerald-400'
+                                      : 'font-semibold text-amber-600 dark:text-amber-300'
                                   }
                                 >
                                   ·{' '}
@@ -699,23 +699,23 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                         })()}
 
                         {isSplitParent ? (
-                          <span className="text-[11px] text-slate-400">
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">
                             {isFr ? 'Exclu des totaux' : 'Excluded from totals'}
                           </span>
                         ) : (
                           tx.isExcluded && (
-                            <span className="text-[11px] font-medium text-slate-400">
+                            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                               {isFr ? 'Exclu des totaux' : 'Excluded'}
                             </span>
                           )
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 truncate">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
                         <span className="tabular-nums">{formattedDate}</span>
                         <span aria-hidden="true">·</span>
                         {isSplitParent ? (
-                          <span className="text-indigo-300/90 font-medium">
+                          <span className="text-indigo-600 dark:text-indigo-300/90 font-medium">
                             {children.length < allChildrenCount
                               ? isFr
                                 ? `${children.length} sur ${allChildrenCount} sous-opérations filtrées`
@@ -725,16 +725,16 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                               : `${allChildrenCount} categorized splits`}
                           </span>
                         ) : isUnassigned ? (
-                          <span className="text-amber-300 font-semibold">
+                          <span className="text-amber-600 dark:text-amber-300 font-semibold">
                             {isFr ? 'À catégoriser (cliquer pour éditer)' : 'Unassigned (click to edit)'}
                           </span>
                         ) : (
                           <>
-                            <span className="text-slate-300 font-medium">{tx.categoryName}</span>
+                            <span className="text-slate-700 dark:text-slate-300 font-medium">{tx.categoryName}</span>
                             {tx.budgetTitle && (
                               <>
                                 <span aria-hidden="true">·</span>
-                                <span className="text-teal-300">{tx.budgetTitle}</span>
+                                <span className="text-teal-600 dark:text-teal-300">{tx.budgetTitle}</span>
                               </>
                             )}
                           </>
@@ -742,11 +742,11 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                         <span aria-hidden="true">·</span>
                         <span>{tx.accountName}</span>
                         <span aria-hidden="true">·</span>
-                        <span className="text-slate-500">{tx.paymentMethod}</span>
+                        <span className="text-slate-400 dark:text-slate-500">{tx.paymentMethod}</span>
                       </div>
 
                       {tx.notes && (
-                        <div className="text-[11px] text-teal-400/80 mt-0.5 truncate">
+                        <div className="text-[11px] text-teal-600 dark:text-teal-400/80 mt-0.5 truncate">
                           {tx.notes}
                         </div>
                       )}
@@ -759,10 +759,10 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                       <div
                         className={`text-base font-bold font-mono tabular-nums ${
                           isSplitParent
-                            ? 'text-slate-400 line-through decoration-slate-600'
+                            ? 'text-slate-400 line-through decoration-slate-400 dark:decoration-slate-600'
                             : tx.amount < 0
-                            ? 'text-slate-100'
-                            : 'text-emerald-400'
+                            ? 'text-slate-900 dark:text-slate-100'
+                            : 'text-emerald-600 dark:text-emerald-400'
                         }`}
                       >
                         {tx.amount < 0 ? '' : '+'}
@@ -791,8 +791,8 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                           }
                           className={`p-2 rounded-lg transition cursor-pointer ${
                             isSplitParent
-                              ? 'text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/15'
-                              : 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800'
+                              ? 'text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 dark:hover:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-500/15'
+                              : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
                         >
                           <Split className="w-4 h-4" />
@@ -812,7 +812,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                               ? 'Exclure des totaux'
                               : 'Exclude from totals'
                           }
-                          className="p-2 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition cursor-pointer"
+                          className="p-2 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                         >
                           <EyeOff className="w-4 h-4" />
                         </button>
@@ -823,7 +823,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
                 {/* Expanded Nested Child Sub-Transactions */}
                 {isSplitParent && isExpanded && children.length > 0 && (
-                  <div className="bg-slate-950/60 divide-y divide-slate-800/60 border-t border-slate-800/80">
+                  <div className="bg-slate-50/80 dark:bg-slate-950/60 divide-y divide-slate-200/80 dark:divide-slate-800/60 border-t border-slate-200 dark:border-slate-800/80">
                     {children.map(child => {
                       const childUnassigned =
                         !child.categoryId || !child.budgetId || !activeCategoryIds.has(child.categoryId);
@@ -832,14 +832,14 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                         <div
                           key={child.id}
                           onClick={() => onSelectTransaction(child)}
-                          className={`pl-8 sm:pl-14 pr-4 py-3 hover:bg-slate-800/35 transition cursor-pointer flex items-center justify-between gap-3 group/child ${
+                          className={`pl-8 sm:pl-14 pr-4 py-3 hover:bg-slate-100/70 dark:hover:bg-slate-800/35 transition cursor-pointer flex items-center justify-between gap-3 group/child ${
                             child.isExcluded ? 'opacity-45' : ''
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
-                            <CornerDownRight className="w-4 h-4 text-slate-600 shrink-0" />
+                            <CornerDownRight className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0" />
                             {childUnassigned ? (
-                              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 shrink-0">
                                 <HelpCircle className="w-4 h-4" />
                               </div>
                             ) : (
@@ -853,27 +853,27 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-xs sm:text-sm text-slate-100 group-hover/child:text-teal-300 transition truncate">
+                                <span className="font-medium text-xs sm:text-sm text-slate-900 dark:text-slate-100 group-hover/child:text-teal-600 dark:group-hover/child:text-teal-300 transition truncate">
                                   {child.title}
                                 </span>
                                 {child.isExcluded && (
-                                  <span className="text-[11px] text-slate-400">
+                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
                                     {isFr ? 'Exclu' : 'Excluded'}
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 truncate">
+                              <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                                 {childUnassigned ? (
-                                  <span className="text-amber-300 font-semibold">
+                                  <span className="text-amber-600 dark:text-amber-300 font-semibold">
                                     {isFr ? 'À catégoriser' : 'Unassigned'}
                                   </span>
                                 ) : (
                                   <>
-                                    <span className="text-slate-300">{child.categoryName}</span>
+                                    <span className="text-slate-700 dark:text-slate-300">{child.categoryName}</span>
                                     {child.budgetTitle && (
                                       <>
                                         <span aria-hidden="true">·</span>
-                                        <span className="text-teal-300">{child.budgetTitle}</span>
+                                        <span className="text-teal-600 dark:text-teal-300">{child.budgetTitle}</span>
                                       </>
                                     )}
                                   </>
@@ -881,7 +881,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                                 {child.notes && (
                                   <>
                                     <span aria-hidden="true">·</span>
-                                    <span className="text-teal-400/80 truncate">{child.notes}</span>
+                                    <span className="text-teal-600 dark:text-teal-400/80 truncate">{child.notes}</span>
                                   </>
                                 )}
                               </div>
@@ -891,7 +891,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                           <div className="flex items-center gap-2 shrink-0">
                             <div
                               className={`text-sm font-bold font-mono tabular-nums ${
-                                child.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                                child.amount < 0 ? 'text-slate-900 dark:text-slate-100' : 'text-emerald-600 dark:text-emerald-400'
                               }`}
                             >
                               {child.amount < 0 ? '' : '+'}
@@ -909,7 +909,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                                   ? 'Exclure des totaux'
                                   : 'Exclude from totals'
                               }
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800 opacity-80 sm:opacity-0 sm:group-hover/child:opacity-100 transition cursor-pointer"
+                              className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/70 dark:hover:bg-slate-800 opacity-80 sm:opacity-0 sm:group-hover/child:opacity-100 transition cursor-pointer"
                             >
                               <EyeOff className="w-3.5 h-3.5" />
                             </button>

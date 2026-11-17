@@ -272,11 +272,11 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
     : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/75 backdrop-blur-sm">
+      <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <h2 className="text-lg font-bold text-white">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">
             {isEditing
               ? isFr
                 ? 'Modifier le Compte'
@@ -288,7 +288,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -296,14 +296,14 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {errorMsg && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium">
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-medium">
               {errorMsg}
             </div>
           )}
 
           {/* Account Name */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Nom du compte' : 'Account Name'}
             </label>
             <input
@@ -312,13 +312,13 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
               placeholder={isFr ? 'ex: Compte Courant BoursoBank' : 'e.g., Joint Checking Account'}
               value={name}
               onChange={e => setName(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
             />
           </div>
 
           {/* Account Type Selector */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
               {isFr ? 'Type de compte' : 'Account Type'}
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -329,10 +329,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                     key={item.type}
                     type="button"
                     onClick={() => handleTypeChange(item.type)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
                       active
-                        ? 'bg-teal-500/15 border-teal-500 text-teal-300 shadow-sm'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        ? 'bg-teal-50 dark:bg-teal-500/15 border-teal-500 text-teal-700 dark:text-teal-300 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
                     }`}
                   >
                     {item.icon}
@@ -346,7 +346,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
           {/* Balance & Currency */}
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Solde actuel' : 'Current Balance'}
               </label>
               <input
@@ -355,18 +355,18 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                 required
                 value={balanceStr}
                 onChange={e => setBalanceStr(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-bold text-white focus:outline-none focus:border-teal-500"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 tabular-nums"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Devise' : 'Currency'}
               </label>
               <select
                 value={accCurrency}
                 onChange={e => setAccCurrency(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm font-semibold text-white focus:outline-none focus:border-teal-500"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
               >
                 <option value="€">€ (EUR)</option>
                 <option value="$">$ (USD)</option>
@@ -379,13 +379,13 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
 
           {/* Deferred Card Specific Settings */}
           {type === 'DEFERRED_CARD' && (
-            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
-              <div className="text-xs font-semibold text-blue-300">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="text-xs font-semibold text-blue-600 dark:text-blue-300">
                 {isFr ? 'Période de Carte à Débit Différé' : 'Deferred Card Billing Period'}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
+                  <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">
                     {isFr ? 'Jour d’arrêté mensuel (1–31)' : 'Monthly Closing Day (1–31)'}
                   </label>
                   <input
@@ -394,19 +394,19 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                     max={31}
                     value={closingDayStr}
                     onChange={e => setClosingDayStr(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-white focus:outline-none focus:border-teal-500"
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                   />
                 </div>
 
                 {checkingAccounts.length > 0 && (
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">
+                    <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">
                       {isFr ? 'Compte courant débité' : 'Linked Checking Account'}
                     </label>
                     <select
                       value={linkedCheckingAccountId}
                       onChange={e => setLinkedCheckingAccountId(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-500"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                     >
                       <option value="">{isFr ? '-- Aucun --' : '-- None --'}</option>
                       {checkingAccounts.map(ca => (
@@ -424,7 +424,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                 const samplePeriod = computeDefaultCardPeriod(Date.now(), previewClosing);
                 const sampleRange = formatPeriodCycleRange(samplePeriod, previewClosing, language);
                 return (
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                     {isFr
                       ? `Toute opération après le jour ${previewClosing} est rattachée à la période du mois suivant (ex. période ${samplePeriod} : ${sampleRange}).`
                       : `Transactions after day ${previewClosing} default to the next month’s period (e.g. ${samplePeriod}: ${sampleRange}).`}
@@ -437,7 +437,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
           {/* Savings / Investment Goal */}
           {(type === 'SAVINGS' || type === 'INVESTMENT') && (
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Objectif d’épargne (optionnel)' : 'Target Savings Goal (optional)'}
               </label>
               <input
@@ -447,14 +447,14 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                 placeholder="15000"
                 value={targetSavingsGoalStr}
                 onChange={e => setTargetSavingsGoalStr(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-teal-500"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
               />
             </div>
           )}
 
           {/* Color Swatch Picker */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
               {isFr ? 'Couleur d’identification' : 'Badge Color'}
             </label>
             <div className="flex flex-wrap items-center gap-2">
@@ -466,8 +466,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                     type="button"
                     title={swatch.label}
                     onClick={() => setColor(swatch.value)}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center transition ${
-                      selected ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-80 hover:opacity-100'
+                    className={`w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${
+                      selected ? 'ring-2 ring-slate-900 dark:ring-white ring-offset-2 ring-offset-white dark:ring-offset-slate-900 scale-110' : 'opacity-80 hover:opacity-100'
                     }`}
                     style={{ backgroundColor: swatch.hex }}
                   >
@@ -480,12 +480,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
 
           {/* Toggles */}
           <div className="space-y-2 pt-1">
-            <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950/70 border border-slate-800 cursor-pointer">
+            <label className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 cursor-pointer">
               <div>
-                <span className="text-xs font-semibold text-white block">
+                <span className="text-xs font-semibold text-slate-900 dark:text-white block">
                   {isFr ? 'Inclure dans la trésorerie prévisionnelle' : 'Include in Cash Flow Forecast'}
                 </span>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
                   {isFr
                     ? 'Intègre ce compte dans la courbe et le minimum prévisionnel'
                     : 'Includes this account in the cash flow curve and projected minimum'}
@@ -495,16 +495,16 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                 type="checkbox"
                 checked={includeInLiquidForecast}
                 onChange={e => setIncludeInLiquidForecast(e.target.checked)}
-                className="w-4 h-4 rounded text-teal-500 bg-slate-900 border-slate-700"
+                className="w-4 h-4 rounded text-teal-600 dark:text-teal-500 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
               />
             </label>
 
-            <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950/70 border border-slate-800 cursor-pointer">
+            <label className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 cursor-pointer">
               <div>
-                <span className="text-xs font-semibold text-white block">
+                <span className="text-xs font-semibold text-slate-900 dark:text-white block">
                   {isFr ? 'Compte par défaut' : 'Default Account'}
                 </span>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
                   {isFr
                     ? 'Sélectionné en priorité pour les nouvelles saisies'
                     : 'Preselected for new transactions and imports'}
@@ -514,20 +514,20 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                 type="checkbox"
                 checked={isDefault}
                 onChange={e => setIsDefault(e.target.checked)}
-                className="w-4 h-4 rounded text-teal-500 bg-slate-900 border-slate-700"
+                className="w-4 h-4 rounded text-teal-600 dark:text-teal-500 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
               />
             </label>
           </div>
 
           {/* Footer Buttons */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             {isEditing ? (
               confirmDelete ? (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleDelete}
-                    className="px-3 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold transition"
+                    className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition cursor-pointer"
                   >
                     {isFr
                       ? `Confirmer (${linkedTxCount} op.)`
@@ -536,7 +536,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                   <button
                     type="button"
                     onClick={() => setConfirmDelete(false)}
-                    className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+                    className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
                   >
                     {isFr ? 'Non' : 'No'}
                   </button>
@@ -545,7 +545,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold transition"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs font-semibold transition cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>{isFr ? 'Supprimer' : 'Delete'}</span>
@@ -559,13 +559,13 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, account, onC
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
               >
                 {isFr ? 'Annuler' : 'Cancel'}
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-lg shadow-teal-500/20 transition active:scale-95"
+                className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer"
               >
                 {isEditing
                   ? isFr

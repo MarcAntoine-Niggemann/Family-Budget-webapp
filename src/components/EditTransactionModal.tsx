@@ -263,11 +263,11 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/75 backdrop-blur-sm">
+      <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h2 className="text-lg font-bold text-white">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
               {isSplitParent
                 ? isFr
                   ? 'Modifier la transaction ventilée'
@@ -280,7 +280,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 ? 'Modifier la Transaction'
                 : 'Edit Transaction'}
             </h2>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               <span className="font-mono">#{transaction.id}</span>
               <span aria-hidden="true">·</span>
               <span>
@@ -297,7 +297,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               {isSplitParent && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="text-indigo-300 font-medium">
+                  <span className="text-indigo-600 dark:text-indigo-300 font-medium">
                     {isFr ? `Parent (${splitChildren.length} lignes)` : `Split parent (${splitChildren.length} items)`}
                   </span>
                 </>
@@ -305,7 +305,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               {isSplitChild && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="text-indigo-300 font-medium">
+                  <span className="text-indigo-600 dark:text-indigo-300 font-medium">
                     {isFr ? 'Sous-opération ventilée' : 'Split child'}
                   </span>
                 </>
@@ -315,7 +315,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -323,9 +323,9 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
         <form onSubmit={handleSave} className="mt-4 space-y-4">
           {isSplitParent && (
-            <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 space-y-2.5 text-xs">
-              <div className="flex items-start gap-2 text-indigo-200">
-                <Split className="w-4 h-4 text-indigo-300 shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 space-y-2.5 text-xs">
+              <div className="flex items-start gap-2 text-indigo-800 dark:text-indigo-200">
+                <Split className="w-4 h-4 text-indigo-600 dark:text-indigo-300 shrink-0 mt-0.5" />
                 <span>
                   {isFr
                     ? `Cette transaction est ventilée en ${splitChildren.length} sous-opérations et exclue des totaux pour éviter tout doublon.`
@@ -340,7 +340,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                       onClose();
                       onOpenSplit(transaction);
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold transition whitespace-nowrap shrink-0 cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white dark:text-slate-950 font-bold transition whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     {isFr ? `Modifier la ventilation (${splitChildren.length})` : `Edit Split (${splitChildren.length})`}
                   </button>
@@ -350,8 +350,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                   onClick={handleUnsplit}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold border transition whitespace-nowrap shrink-0 cursor-pointer ${
                     confirmUnsplit
-                      ? 'bg-rose-500/20 border-rose-500/50 text-rose-200'
-                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-rose-300'
+                      ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-200'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-300'
                   }`}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -370,14 +370,14 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           )}
 
           {isSplitChild && parentTransaction && (
-            <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-              <div className="flex items-start gap-2 text-indigo-200 min-w-0">
-                <CornerDownRight className="w-4 h-4 text-indigo-300 shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-start gap-2 text-indigo-800 dark:text-indigo-200 min-w-0">
+                <CornerDownRight className="w-4 h-4 text-indigo-600 dark:text-indigo-300 shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <span className="block text-slate-400">
+                  <span className="block text-slate-500 dark:text-slate-400">
                     {isFr ? 'Issue de la transaction ventilée :' : 'Child item of split transaction:'}
                   </span>
-                  <span className="font-semibold text-white truncate block">{parentTransaction.title}</span>
+                  <span className="font-semibold text-slate-900 dark:text-white truncate block">{parentTransaction.title}</span>
                 </div>
               </div>
               {onOpenSplit && (
@@ -387,7 +387,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     onClose();
                     onOpenSplit(parentTransaction);
                   }}
-                  className="px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold transition whitespace-nowrap shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white dark:text-slate-950 font-bold transition whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   {isFr ? 'Gérer le split parent' : 'Edit Parent Split'}
                 </button>
@@ -396,18 +396,18 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           )}
 
           {transaction.originalBankLabel && (
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800/80 text-xs">
-              <span className="text-slate-400 font-medium block mb-0.5">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 text-xs">
+              <span className="text-slate-500 dark:text-slate-400 font-medium block mb-0.5">
                 {isFr ? 'Libellé brut bancaire :' : 'Original Bank Label:'}
               </span>
-              <span className="font-mono text-teal-300 break-all">{transaction.originalBankLabel}</span>
+              <span className="font-mono text-teal-700 dark:text-teal-300 break-all">{transaction.originalBankLabel}</span>
             </div>
           )}
 
           {/* Amount & Direction */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Montant' : 'Amount'} ({currency})
               </label>
               <input
@@ -416,7 +416,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 disabled={isSplitChild || isSplitParent}
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
-                className="w-full text-xl font-bold font-mono tabular-nums bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-teal-500 transition disabled:opacity-60"
+                className="w-full text-xl font-bold font-mono tabular-nums bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition disabled:opacity-60"
               />
               {(isSplitChild || isSplitParent) && (
                 <p className="text-[11px] text-slate-500 mt-1">
@@ -428,7 +428,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Type de flux' : 'Flow Direction'}
               </label>
               <select
@@ -447,7 +447,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     setSelectedBudgetId(firstMatch?.id || 0);
                   }
                 }}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-60"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-60"
               >
                 <option value="EXPENSE">{isFr ? 'Dépense (-)' : 'Expense (-)'}</option>
                 <option value="INCOME">{isFr ? 'Revenu (+)' : 'Income (+)'}</option>
@@ -457,7 +457,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
           {/* Title */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Libellé / Titre' : 'Description / Title'}
             </label>
             <input
@@ -465,7 +465,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               required
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500 transition"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition"
             />
           </div>
 
@@ -473,7 +473,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           {!isSplitParent && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                   <Tag className="w-3.5 h-3.5" />
                   {isFr ? 'Catégorie' : 'Category'}
                 </label>
@@ -487,7 +487,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                       activeBudgets.find(b => b.categoryId === newCatId);
                     setSelectedBudgetId(firstBudget?.id || 0);
                   }}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                  className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
                 >
                   <option value={0}>
                     {isFr ? 'Sélectionner une catégorie...' : 'Select a category...'}
@@ -501,14 +501,14 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                   {isFr ? 'Sous-catégorie (obligatoire)' : 'Sub-category (required)'}
                 </label>
                 <select
                   value={selectedBudgetId}
                   onChange={e => setSelectedBudgetId(parseInt(e.target.value, 10))}
                   disabled={selectedCategoryId === 0 || filteredBudgets.length === 0}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-50"
+                  className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-50"
                 >
                   <option value={0}>
                     {selectedCategoryId === 0
@@ -537,7 +537,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           )}
 
           {!isSplitParent && selectedBudget && selectedBudget.isExpense !== isExpense && (
-            <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/25 text-[11px] text-teal-200">
+            <div className="p-2.5 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/25 text-[11px] text-teal-800 dark:text-teal-200">
               {!isExpense && selectedBudget.isExpense
                 ? isFr
                   ? `Remboursement / crédit : ce revenu réduira le net dépensé de « ${selectedBudget.title} ».`
@@ -549,9 +549,9 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           )}
 
           {!isSplitParent && selectedCategoryId > 0 && filteredBudgets.length === 0 && (
-            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
               <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <span>
                   {isFr
                     ? 'Aucune sous-catégorie dans cette catégorie. Créez-en une dans le Planificateur.'
@@ -564,7 +564,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                   onClose();
                   navigateTo('BUDGET_PLANNER');
                 }}
-                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition"
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition cursor-pointer"
               >
                 {isFr ? 'Planificateur' : 'Budget Planner'}
               </button>
@@ -574,7 +574,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           {/* Account & Member */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                 <Wallet className="w-3.5 h-3.5" />
                 {isFr ? 'Compte Bancaire' : 'Account'}
               </label>
@@ -594,7 +594,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     }
                   }
                 }}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-60"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-60"
               >
                 {activeAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
@@ -605,14 +605,14 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                 <User className="w-3.5 h-3.5" />
                 {isFr ? 'Attribué à' : 'Assigned to'}
               </label>
               <select
                 value={selectedMemberId}
                 onChange={e => setSelectedMemberId(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 {members.map(m => (
                   <option key={m.id} value={m.id}>
@@ -626,7 +626,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           {/* Date & Deferred Card Period */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5" />
                 {isFr ? 'Date' : 'Date'}
               </label>
@@ -635,21 +635,21 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 disabled={isSplitChild}
                 value={dateStr}
                 onChange={e => setDateStr(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-60 [color-scheme:dark]"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-60"
               />
             </div>
 
             {(isSelectedAccountDeferredCard || (!isLumpSumSettlement && creditCardPeriod)) && (
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className="block text-xs font-medium text-slate-400">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
                     {isFr ? 'Période Débit Différé' : 'Card Billing Period'}
                   </label>
                   {autoCardPeriod && creditCardPeriod !== autoCardPeriod && (
                     <button
                       type="button"
                       onClick={() => setCreditCardPeriod(autoCardPeriod)}
-                      className="text-[11px] font-semibold text-teal-300 hover:text-teal-200 cursor-pointer"
+                      className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-300 dark:hover:text-teal-200 cursor-pointer"
                     >
                       {isFr ? `Auto (${autoCardPeriod})` : `Auto (${autoCardPeriod})`}
                     </button>
@@ -663,7 +663,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                         shiftCardPeriod(creditCardPeriod || autoCardPeriod, -1)
                       )
                     }
-                    className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                    className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/80 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
@@ -672,7 +672,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     placeholder="YYYY-MM"
                     value={creditCardPeriod}
                     onChange={e => setCreditCardPeriod(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition font-mono tabular-nums text-center"
+                    className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition font-mono tabular-nums text-center"
                   />
                   <button
                     type="button"
@@ -681,13 +681,13 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                         shiftCardPeriod(creditCardPeriod || autoCardPeriod, 1)
                       )
                     }
-                    className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                    className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/80 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
                 {isSelectedAccountDeferredCard && isValidCardPeriod(creditCardPeriod) && (
-                  <p className="text-[11px] text-slate-400 mt-1">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                     {formatPeriodCycleRange(
                       creditCardPeriod,
                       selectedAccount?.billingCycleClosingDay,
@@ -702,16 +702,16 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           {/* Lump-Sum Credit Card Debit Verification (for Checking / Non-Card Debits) */}
           {!isSelectedAccountDeferredCard && !isSplitParent && !isSplitChild && isExpense && deferredCards.length > 0 && (
             <div className="space-y-3">
-              <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800 cursor-pointer">
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 cursor-pointer">
                 <div className="flex items-start gap-2.5 min-w-0">
-                  <CreditCard className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                   <div className="min-w-0">
-                    <span className="text-xs font-semibold text-white block">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-white block">
                       {isFr
                         ? 'Prélèvement forfaitaire de carte à débit différé'
                         : 'Lump-Sum Deferred Card Debit'}
                     </span>
-                    <span className="text-[11px] text-slate-400 block">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
                       {isFr
                         ? 'Compare ce débit bancaire avec la somme des opérations carte de la période'
                         : 'Verify this bank debit against the sum of card transactions for a billing period'}
@@ -740,7 +740,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                       }
                     }
                   }}
-                  className="w-4 h-4 rounded text-teal-500 bg-slate-900 border-slate-700 focus:ring-teal-500 shrink-0"
+                  className="w-4 h-4 rounded text-teal-600 dark:text-teal-500 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-teal-500 shrink-0"
                 />
               </label>
 
@@ -781,15 +781,15 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
           {/* Exclude Checkbox (only for non-split transactions) */}
           {!isSplitParent && !isSplitChild && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800">
               <input
                 type="checkbox"
                 id="excludeCheckbox"
                 checked={isExcluded}
                 onChange={e => setIsExcluded(e.target.checked)}
-                className="w-4 h-4 rounded text-teal-500 bg-slate-900 border-slate-700 focus:ring-teal-500"
+                className="w-4 h-4 rounded text-teal-600 dark:text-teal-500 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-teal-500"
               />
-              <label htmlFor="excludeCheckbox" className="text-xs text-slate-300 cursor-pointer">
+              <label htmlFor="excludeCheckbox" className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
                 {isFr
                   ? 'Exclure des totaux et des rapports financiers (ex: règlement carte, transfert interne)'
                   : 'Exclude from budget totals and reports (e.g. card settlement lump-sum)'}
@@ -799,19 +799,19 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Notes' : 'Notes'}
             </label>
             <textarea
               rows={2}
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500 transition"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition"
             />
           </div>
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-800 flex-wrap">
+          <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 flex-wrap">
             <div className="flex items-center gap-2">
               {!isSplitChild && (
                 <button
@@ -819,8 +819,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                   onClick={handleDelete}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl transition cursor-pointer ${
                     confirmDelete
-                      ? 'bg-rose-500/20 border border-rose-500/50 text-rose-200 text-xs font-semibold'
-                      : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
+                      ? 'bg-rose-50 dark:bg-rose-500/20 border border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-200 text-xs font-semibold'
+                      : 'text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10'
                   }`}
                   title={isFr ? 'Supprimer' : 'Delete'}
                 >
@@ -846,7 +846,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     onClose();
                     onOpenSplit(transaction);
                   }}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 transition whitespace-nowrap shrink-0 cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/40 transition whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   {isFr ? 'Ventiler (Split)' : 'Split Transaction'}
                 </button>
@@ -857,14 +857,14 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition whitespace-nowrap shrink-0"
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition whitespace-nowrap shrink-0 cursor-pointer"
               >
                 {isFr ? 'Annuler' : 'Cancel'}
               </button>
               <button
                 type="submit"
                 disabled={!canSave}
-                className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-white dark:text-slate-950 font-bold text-sm shadow-sm transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
               >
                 {isFr ? 'Enregistrer' : 'Save Changes'}
               </button>

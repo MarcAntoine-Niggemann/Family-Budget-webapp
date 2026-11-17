@@ -9,8 +9,10 @@ import {
   FirebaseConfigEntity,
   OpenBankingConfig,
   OpenBankingAccountDto,
+  ResolvedTheme,
   SyncOutboxEntity,
   SyncStateEntity,
+  ThemePreference,
   TransactionEntity,
   TransactionFilters
 } from '../types';
@@ -28,11 +30,14 @@ import {
   loadEncryptedByobLocalCache,
   loadLanguagePreference,
   loadLegacyPlaintextByobConfig,
+  loadThemePreference,
   loadVaultLockMeta,
   purgeLocalData,
+  applyThemeToDocument,
   saveEncryptedByobConfig,
   saveEncryptedCachedData,
   saveLanguagePreference,
+  saveThemePreference,
   saveVaultLockMeta
 } from '../utils/storage';
 import {
@@ -131,6 +136,8 @@ interface BudgetContextType {
   syncState: SyncStateEntity;
   openBankingConfig: OpenBankingConfig;
   language: 'fr' | 'en';
+  themePreference: ThemePreference;
+  resolvedTheme: ResolvedTheme;
   currency: string;
   currentScreen: AppScreen;
   activeAccountId: string | null;
@@ -139,6 +146,7 @@ interface BudgetContextType {
 
   navigateTo: (screen: AppScreen) => void;
   setLanguage: (lang: 'fr' | 'en') => void;
+  setThemePreference: (theme: ThemePreference) => void;
   setCurrency: (cur: string) => void;
   setActiveAccountId: (id: string | null) => void;
   setTransactionFilters: React.Dispatch<React.SetStateAction<TransactionFilters>>;
@@ -233,6 +241,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [authInitialized, setAuthInitialized] = useState<boolean>(true);
 
   const [language, setLangState] = useState<'fr' | 'en'>(() => loadLanguagePreference());
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>(() => loadThemePreference());
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    applyThemeToDocument(loadThemePreference())
+  );
   const [currency, setCurrencyState] = useState<string>('€');
 
   // Empty before unlock & login; hydrated strictly from encrypted local cache + delta sync on unlock
@@ -516,9 +528,33 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     navigateTo('TRANSACTIONS');
   };
 
+  useEffect(() => {
+    setResolvedTheme(applyThemeToDocument(themePreference));
+    if (themePreference !== 'system' || typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      setResolvedTheme(applyThemeToDocument('system'));
+    };
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+    // Safari < 14 fallback
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, [themePreference]);
+
   const setLanguage = (lang: 'fr' | 'en') => {
     setLangState(lang);
     saveLanguagePreference(lang);
+  };
+
+  const setThemePreference = (theme: ThemePreference) => {
+    saveThemePreference(theme);
+    setThemePreferenceState(theme);
+    setResolvedTheme(applyThemeToDocument(theme));
   };
 
   const setCurrency = (cur: string) => {
@@ -2362,6 +2398,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         syncState,
         openBankingConfig,
         language,
+        themePreference,
+        resolvedTheme,
         currency,
         currentScreen,
         activeAccountId,
@@ -2370,6 +2408,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         navigateTo,
         setLanguage,
+        setThemePreference,
         setCurrency,
         setActiveAccountId,
         setTransactionFilters,

@@ -438,17 +438,17 @@ export const LoginScreen: React.FC = () => {
     (setupPin.trim().length >= 6 && setupPin.trim() === setupPinConfirm.trim());
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6">
-      <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 sm:p-8 space-y-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6">
+      <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl dark:shadow-2xl p-6 sm:p-8 space-y-6">
         {/* Header & Language Toggle */}
-        <div className="flex items-center justify-between gap-3 pb-5 border-b border-slate-800">
+        <div className="flex items-center justify-between gap-3 pb-5 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-teal-500 flex items-center justify-center text-slate-950 shrink-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-teal-600 dark:bg-teal-500 flex items-center justify-center text-white dark:text-slate-950 shrink-0 shadow-sm">
               <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight truncate">Budget Family</h1>
-              <p className="text-xs text-slate-400">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate">Budget Family</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 {isFr
                   ? 'Coffre chiffré AES-256-GCM · Firestore privé (BYOB) ou Démo'
                   : 'AES-256-GCM Encrypted Vault · Private Firestore (BYOB) or Demo'}
@@ -462,9 +462,9 @@ export const LoginScreen: React.FC = () => {
             <button
               type="button"
               onClick={() => setLanguage(isFr ? 'en' : 'fr')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition whitespace-nowrap shrink-0 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <Globe className="w-3.5 h-3.5 text-teal-400" />
+              <Globe className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
               <span>{language.toUpperCase()}</span>
             </button>
           </div>
@@ -473,14 +473,14 @@ export const LoginScreen: React.FC = () => {
         {/* VIEW A: SAVED ENCRYPTED VAULT — MANDATORY BIOMETRIC / PIN GATE BEFORE GOOGLE SIGN-IN */}
         {viewMode === 'VAULT_UNLOCK' && hasSavedVault ? (
           <div className="space-y-5">
-            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-4 text-center">
+            <div className="p-5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-4 text-center">
               <div
                 className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border transition ${
                   isVaultUnlocked
-                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                    ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
                     : biometricGateVerified
-                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
-                    : 'bg-teal-500/15 border-teal-500/30 text-teal-400'
+                    ? 'bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/40 text-amber-600 dark:text-amber-400'
+                    : 'bg-teal-50 dark:bg-teal-500/15 border-teal-200 dark:border-teal-500/30 text-teal-600 dark:text-teal-400'
                 }`}
               >
                 {isVaultUnlocked ? (
@@ -493,7 +493,7 @@ export const LoginScreen: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <h2 className="text-lg font-bold text-white">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                   {isVaultUnlocked && savedByobConfig
                     ? savedByobConfig.familyName || 'Private Family Vault'
                     : isFr
@@ -501,15 +501,15 @@ export const LoginScreen: React.FC = () => {
                     : 'Encrypted Vault Locked'}
                 </h2>
 
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-slate-500 dark:text-slate-400">
                   {isVaultUnlocked && savedByobConfig ? (
-                    <span className="font-mono text-teal-300">{savedByobConfig.projectId}</span>
+                    <span className="font-mono text-teal-700 dark:text-teal-300">{savedByobConfig.projectId}</span>
                   ) : (
                     <span>{encryptionLabel}</span>
                   )}
                 </div>
 
-                <p className="text-xs text-slate-400 pt-1">
+                <p className="text-xs text-slate-600 dark:text-slate-400 pt-1">
                   {isVaultUnlocked
                     ? isFr
                       ? 'Clé de chiffrement déverrouillée. Finalisez l’authentification Google pour synchroniser Firestore.'
@@ -525,22 +525,22 @@ export const LoginScreen: React.FC = () => {
               </div>
 
               {noticeMsg && (
-                <div className="p-3 rounded-lg bg-teal-500/10 border border-teal-500/30 text-teal-200 text-xs text-left leading-relaxed">
+                <div className="p-3 rounded-lg bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/30 text-teal-800 dark:text-teal-200 text-xs text-left leading-relaxed">
                   {noticeMsg}
                 </div>
               )}
 
               {errorMsg && (
-                <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/40 text-rose-200 text-xs text-left space-y-2 leading-relaxed">
+                <div className="p-3.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs text-left space-y-2 leading-relaxed">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                     <span>{errorMsg}</span>
                   </div>
                   {errorMsg.toLowerCase().includes('permission') && (
                     <button
                       type="button"
                       onClick={() => setShowRulesPanel(v => !v)}
-                      className="inline-flex items-center gap-1.5 text-teal-300 hover:text-teal-200 font-semibold underline cursor-pointer"
+                      className="inline-flex items-center gap-1.5 text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 font-semibold underline cursor-pointer"
                     >
                       <span>{isFr ? 'Afficher & copier firestore.rules' : 'View & copy firestore.rules'}</span>
                     </button>
@@ -556,7 +556,7 @@ export const LoginScreen: React.FC = () => {
                       type="button"
                       disabled={isLoading}
                       onClick={handleFingerprintUnlock}
-                      className="w-full py-3.5 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 whitespace-nowrap cursor-pointer"
+                      className="w-full py-3.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 whitespace-nowrap cursor-pointer shadow-sm"
                     >
                       {isLoading ? (
                         <>
@@ -577,7 +577,7 @@ export const LoginScreen: React.FC = () => {
                   {vaultLockMeta?.wrappedDekPin &&
                     (showPinUnlock || !vaultLockMeta?.credentialId || biometricGateVerified) && (
                       <form onSubmit={handlePinUnlock} className="space-y-2.5 text-left">
-                        <label className="block text-xs font-medium text-slate-300">
+                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                           {isFr ? 'Code PIN du coffre' : 'Vault PIN'}
                         </label>
                         <div className="flex gap-2">
@@ -588,12 +588,12 @@ export const LoginScreen: React.FC = () => {
                             value={unlockPin}
                             onChange={e => setUnlockPin(e.target.value)}
                             placeholder={isFr ? 'Saisir votre code PIN...' : 'Enter Vault PIN...'}
-                            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-teal-500"
+                            className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                           />
                           <button
                             type="submit"
                             disabled={isLoading || !unlockPin.trim()}
-                            className="px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
+                            className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
                           >
                             <KeyRound className="w-4 h-4" />
                             <span>{isFr ? 'Déverrouiller' : 'Unlock'}</span>
@@ -612,9 +612,9 @@ export const LoginScreen: React.FC = () => {
                           setErrorMsg(null);
                           setShowPinUnlock(true);
                         }}
-                        className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-semibold text-xs transition flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
                       >
-                        <KeyRound className="w-3.5 h-3.5 text-teal-400" />
+                        <KeyRound className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                         <span>{isFr ? 'Utiliser le code PIN du coffre' : 'Unlock with Vault PIN instead'}</span>
                       </button>
                     )}
@@ -625,7 +625,7 @@ export const LoginScreen: React.FC = () => {
                   type="button"
                   disabled={isLoading}
                   onClick={handleUnlockedGoogleContinue}
-                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 whitespace-nowrap cursor-pointer"
+                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-50 dark:hover:bg-slate-100 border border-slate-300 dark:border-transparent text-slate-900 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 whitespace-nowrap cursor-pointer shadow-sm"
                 >
                   {isLoading ? (
                     <>
@@ -645,28 +645,28 @@ export const LoginScreen: React.FC = () => {
             </div>
 
             {showRulesPanel && (
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3 text-xs">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-slate-200">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
                     {isFr ? 'Règles Firestore BYOB' : 'BYOB Firestore Security Rules'}
                   </span>
                   <button
                     type="button"
                     onClick={handleCopyRules}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold cursor-pointer"
                   >
-                    {copiedRules ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-teal-400" />}
+                    {copiedRules ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />}
                     <span>{copiedRules ? (isFr ? 'Copié' : 'Copied') : (isFr ? 'Copier' : 'Copy')}</span>
                   </button>
                 </div>
-                <pre className="p-3 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto max-h-40">
+                <pre className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-700 dark:text-slate-300 overflow-x-auto max-h-40">
                   {BYOB_FIRESTORE_RULES}
                 </pre>
               </div>
             )}
 
             {/* Secondary navigation actions */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-xs">
               <div className="flex flex-wrap items-center gap-2">
                 {isVaultUnlocked && (
                   <>
@@ -678,18 +678,18 @@ export const LoginScreen: React.FC = () => {
                         setViewMode('SETUP');
                         setSetupTab('BYOB');
                       }}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
                     >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-teal-400" />
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                       <span>{isFr ? 'Modifier Config Firestore' : 'Edit Firestore Config'}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={lockVault}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
                     >
-                      <Lock className="w-3.5 h-3.5 text-teal-400" />
+                      <Lock className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                       <span>{isFr ? 'Verrouiller' : 'Lock Vault'}</span>
                     </button>
                   </>
@@ -703,9 +703,9 @@ export const LoginScreen: React.FC = () => {
                     setViewMode('SETUP');
                     setSetupTab('DEMO');
                   }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-medium transition whitespace-nowrap cursor-pointer"
                 >
-                  <Play className="w-3.5 h-3.5 text-teal-400" />
+                  <Play className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                   <span>{isFr ? 'Mode Démo' : 'Demo Mode'}</span>
                 </button>
               </div>
@@ -713,7 +713,7 @@ export const LoginScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={handleForgetByob}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 font-medium transition whitespace-nowrap cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-rose-600 dark:text-rose-300 hover:text-rose-700 dark:hover:text-rose-200 hover:bg-rose-50 dark:hover:bg-rose-500/10 font-medium transition whitespace-nowrap cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>{isFr ? 'Oublier ce coffre' : 'Forget Vault'}</span>
@@ -724,10 +724,10 @@ export const LoginScreen: React.FC = () => {
           /* VIEW B: INITIAL SETUP (OR UNLOCKED CONFIG EDIT / DEMO TAB) */
           <div className="space-y-5">
             {hasSavedVault && (
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-                <div className="text-slate-300">
-                  <span className="text-slate-400">{isFr ? 'Coffre configuré :' : 'Configured vault:'} </span>
-                  <span className="font-mono text-teal-300">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs">
+                <div className="text-slate-700 dark:text-slate-300">
+                  <span className="text-slate-500 dark:text-slate-400">{isFr ? 'Coffre configuré :' : 'Configured vault:'} </span>
+                  <span className="font-mono text-teal-700 dark:text-teal-300">
                     {isVaultUnlocked && savedByobConfig
                       ? savedByobConfig.projectId
                       : isFr
@@ -742,7 +742,7 @@ export const LoginScreen: React.FC = () => {
                     setNoticeMsg(null);
                     setViewMode('VAULT_UNLOCK');
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 font-semibold transition whitespace-nowrap cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 dark:bg-teal-500/15 dark:hover:bg-teal-500/25 text-teal-700 dark:text-teal-300 font-semibold transition whitespace-nowrap cursor-pointer"
                 >
                   <Fingerprint className="w-3.5 h-3.5" />
                   <span>{isFr ? 'Retour au Coffre' : 'Back to Vault'}</span>
@@ -751,9 +751,9 @@ export const LoginScreen: React.FC = () => {
             )}
 
             {legacyPlaintextConfig && !hasSavedVault && (
-              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-200 text-xs flex items-start justify-between gap-3 leading-relaxed">
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 text-xs flex items-start justify-between gap-3 leading-relaxed">
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <span>
                     {isFr
                       ? 'Ancienne configuration non chiffrée détectée dans le navigateur. Enregistrez votre empreinte ou un code PIN ci-dessous pour la chiffrer en AES-256-GCM.'
@@ -763,7 +763,7 @@ export const LoginScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleForgetByob}
-                  className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-amber-200/70 hover:bg-amber-200 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   {isFr ? 'Effacer' : 'Wipe'}
                 </button>
@@ -772,16 +772,16 @@ export const LoginScreen: React.FC = () => {
 
             {/* Join via QR Shortcut */}
             {(!hasSavedVault || isVaultUnlocked) && (
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-teal-50 dark:bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
                     <QrCode className="w-5 h-5" />
                   </div>
                   <div>
-                    <span className="font-semibold text-xs text-white block">
+                    <span className="font-semibold text-xs text-slate-900 dark:text-white block">
                       {isFr ? 'Rejoindre une Famille existante' : 'Join an Existing Family Vault'}
                     </span>
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
                       {isFr
                         ? 'Importez la configuration Firestore via QR Code'
                         : 'Import Firestore BYOB credentials via QR Code'}
@@ -792,7 +792,7 @@ export const LoginScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsScannerOpen(true)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-teal-300 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer"
+                  className="px-4 py-2 rounded-lg bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-teal-700 dark:text-teal-300 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   {isFr ? 'Scanner QR Code' : 'Scan QR Code'}
                 </button>
@@ -800,7 +800,7 @@ export const LoginScreen: React.FC = () => {
             )}
 
             {/* 2-Mode Switcher (Private Firestore BYOB vs Demo Mode) */}
-            <div className="grid grid-cols-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs font-semibold">
+            <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => {
@@ -813,8 +813,8 @@ export const LoginScreen: React.FC = () => {
                 }}
                 className={`py-2.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
                   setupTab === 'BYOB'
-                    ? 'bg-teal-500 text-slate-950 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-teal-600 dark:bg-teal-500 text-white dark:text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 {isFr ? 'Mon Firestore (BYOB)' : 'My Firestore (BYOB)'}
@@ -828,8 +828,8 @@ export const LoginScreen: React.FC = () => {
                 }}
                 className={`py-2.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
                   setupTab === 'DEMO'
-                    ? 'bg-teal-500 text-slate-950 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-teal-600 dark:bg-teal-500 text-white dark:text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 {isFr ? 'Mode Démo' : 'Demo Mode'}
@@ -839,29 +839,29 @@ export const LoginScreen: React.FC = () => {
             {/* TAB 1: PRIVATE FIRESTORE BYOB */}
             {setupTab === 'BYOB' && (
               <form onSubmit={handleConnectByob} className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                   {isFr
                     ? 'Connectez votre propre projet Firebase / Firestore. Vos identifiants et le cache delta local sont chiffrés en AES-256-GCM via votre empreinte matérielle (WebAuthn PRF) ou code PIN, et effacés à la déconnexion.'
                     : 'Configure your own Firebase / Firestore project. Your credentials and local delta cache are encrypted with AES-256-GCM via hardware WebAuthn PRF biometrics or a Vault PIN, and erased on explicit logout.'}
                 </p>
 
                 {currentHostname && (
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 flex items-center justify-between gap-2">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <span className="text-slate-300 font-semibold block">
+                      <span className="text-slate-800 dark:text-slate-300 font-semibold block">
                         {isFr ? 'Domaine à autoriser dans Firebase Auth :' : 'Authorized domain for Firebase Auth:'}
                       </span>
-                      <code className="text-teal-300 font-mono text-[11px] break-all">{currentHostname}</code>
+                      <code className="text-teal-700 dark:text-teal-300 font-mono text-[11px] break-all">{currentHostname}</code>
                     </div>
                     <button
                       type="button"
                       onClick={handleCopyHostname}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-1.5 shrink-0 transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 shrink-0 transition cursor-pointer"
                     >
                       {copiedDomain ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                       ) : (
-                        <Copy className="w-3.5 h-3.5 text-teal-400" />
+                        <Copy className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                       )}
                       <span>{copiedDomain ? (isFr ? 'Copié' : 'Copied') : (isFr ? 'Copier' : 'Copy')}</span>
                     </button>
@@ -869,22 +869,22 @@ export const LoginScreen: React.FC = () => {
                 )}
 
                 {noticeMsg && (
-                  <div className="p-3 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-200 text-xs leading-relaxed">
+                  <div className="p-3 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/30 text-teal-800 dark:text-teal-200 text-xs leading-relaxed">
                     {noticeMsg}
                   </div>
                 )}
 
                 {errorMsg && (
-                  <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-200 text-xs space-y-2 leading-relaxed">
+                  <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2 leading-relaxed">
                     <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                       <span>{errorMsg}</span>
                     </div>
                     {errorMsg.toLowerCase().includes('permission') && (
                       <button
                         type="button"
                         onClick={() => setShowRulesPanel(v => !v)}
-                        className="inline-flex items-center gap-1 text-teal-300 hover:text-teal-200 font-semibold underline cursor-pointer"
+                        className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 font-semibold underline cursor-pointer"
                       >
                         {showRulesPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         <span>
@@ -896,19 +896,19 @@ export const LoginScreen: React.FC = () => {
                 )}
 
                 {showRulesPanel && (
-                  <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5 text-xs">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-200">firestore.rules</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">firestore.rules</span>
                       <button
                         type="button"
                         onClick={handleCopyRules}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold cursor-pointer"
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold cursor-pointer"
                       >
-                        {copiedRules ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-teal-400" />}
+                        {copiedRules ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />}
                         <span>{copiedRules ? (isFr ? 'Copié' : 'Copied') : (isFr ? 'Copier' : 'Copy')}</span>
                       </button>
                     </div>
-                    <pre className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto max-h-36">
+                    <pre className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-700 dark:text-slate-300 overflow-x-auto max-h-36">
                       {BYOB_FIRESTORE_RULES}
                     </pre>
                   </div>
@@ -916,7 +916,7 @@ export const LoginScreen: React.FC = () => {
 
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                       Firebase Project ID
                     </label>
                     <input
@@ -925,12 +925,12 @@ export const LoginScreen: React.FC = () => {
                       placeholder="my-family-budget-project"
                       value={projectId}
                       onChange={e => setProjectId(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-teal-500"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                       Firebase Web API Key
                     </label>
                     <input
@@ -939,13 +939,13 @@ export const LoginScreen: React.FC = () => {
                       placeholder="AIzaSy..."
                       value={apiKey}
                       onChange={e => setApiKey(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-teal-500"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                         Application ID ({isFr ? 'optionnel' : 'optional'})
                       </label>
                       <input
@@ -953,19 +953,19 @@ export const LoginScreen: React.FC = () => {
                         placeholder="1:123456:web:..."
                         value={applicationId}
                         onChange={e => setApplicationId(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-teal-500"
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                         {isFr ? 'Nom du Coffre' : 'Vault Name'}
                       </label>
                       <input
                         type="text"
                         value={familyName}
                         onChange={e => setFamilyName(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-teal-500"
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                       />
                     </div>
                   </div>
@@ -973,20 +973,20 @@ export const LoginScreen: React.FC = () => {
 
                 {/* Mandatory Local Vault Protection Enrollment (only when creating/upgrading a vault) */}
                 {!isVaultUnlocked && (
-                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <span className="text-xs font-bold text-white block">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white block">
                           {isFr ? 'Protection Obligatoire du Coffre Local' : 'Mandatory Local Vault Protection'}
                         </span>
-                        <span className="text-[11px] text-slate-400">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
                           {isFr
                             ? 'Requis avant toute sauvegarde locale et connexion Google'
                             : 'Required before local storage persistence or Google Sign-In'}
                         </span>
                       </div>
                       {hasSetupPrf && (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       )}
                     </div>
 
@@ -997,10 +997,10 @@ export const LoginScreen: React.FC = () => {
                         onClick={handleSetupEnrollBiometrics}
                         className={`w-full py-2.5 px-3.5 rounded-xl border text-xs font-semibold transition flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
                           hasSetupPrf
-                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                             : setupCredId
-                            ? 'bg-teal-500/15 border-teal-500/40 text-teal-200'
-                            : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-teal-300'
+                            ? 'bg-teal-50 dark:bg-teal-500/15 border-teal-200 dark:border-teal-500/40 text-teal-700 dark:text-teal-200'
+                            : 'bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border-slate-300 dark:border-slate-700 text-teal-700 dark:text-teal-300'
                         }`}
                       >
                         <Fingerprint className="w-4 h-4" />
@@ -1023,7 +1023,7 @@ export const LoginScreen: React.FC = () => {
                         </span>
                       </button>
                     ) : (
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
                         {isFr
                           ? 'Capteur biométrique matériel non disponible dans ce navigateur — un code PIN est requis.'
                           : 'Hardware biometric sensor unavailable in this browser — a Vault PIN is required.'}
@@ -1031,12 +1031,12 @@ export const LoginScreen: React.FC = () => {
                     )}
 
                     {hasSetupPrf && (
-                      <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                      <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
                         <input
                           type="checkbox"
                           checked={enableBackupPin}
                           onChange={e => setEnableBackupPin(e.target.checked)}
-                          className="rounded border-slate-700 bg-slate-900 text-teal-500 focus:ring-teal-500"
+                          className="rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-teal-600 dark:text-teal-500 focus:ring-teal-500"
                         />
                         <span>
                           {isFr
@@ -1049,7 +1049,7 @@ export const LoginScreen: React.FC = () => {
                     {showSetupPinInputs && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                             {isFr ? 'Code PIN du coffre (6+ car.)' : 'Vault PIN (6+ chars)'}
                           </label>
                           <input
@@ -1059,11 +1059,11 @@ export const LoginScreen: React.FC = () => {
                             value={setupPin}
                             onChange={e => setSetupPin(e.target.value)}
                             placeholder="••••••"
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
                             {isFr ? 'Confirmer le code PIN' : 'Confirm Vault PIN'}
                           </label>
                           <input
@@ -1073,14 +1073,14 @@ export const LoginScreen: React.FC = () => {
                             value={setupPinConfirm}
                             onChange={e => setSetupPinConfirm(e.target.value)}
                             placeholder="••••••"
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                           />
                         </div>
                       </div>
                     )}
 
                     {setupPrfChecked && !hasSetupPrf && (
-                      <p className="text-[11px] text-amber-300/90">
+                      <p className="text-[11px] text-amber-700 dark:text-amber-300/90">
                         {isFr
                           ? 'WebAuthn PRF non supporté par ce navigateur : votre code PIN dérive la clé AES-256-GCM.'
                           : 'WebAuthn PRF is unsupported in this browser: your Vault PIN derives the AES-256-GCM key.'}
@@ -1092,7 +1092,7 @@ export const LoginScreen: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isLoading || !setupProtectionReady}
-                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-3 disabled:opacity-50 whitespace-nowrap cursor-pointer"
+                  className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-50 dark:hover:bg-slate-100 border border-slate-300 dark:border-transparent text-slate-900 font-bold text-sm transition flex items-center justify-center gap-3 disabled:opacity-50 whitespace-nowrap cursor-pointer shadow-sm"
                 >
                   {isLoading ? (
                     <>
@@ -1124,7 +1124,7 @@ export const LoginScreen: React.FC = () => {
             {/* TAB 2: DEMO MODE */}
             {setupTab === 'DEMO' && (
               <div className="space-y-4">
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                   {isFr
                     ? 'Explorez toutes les fonctionnalités en mémoire vive avec un foyer complet préchargé. Aucune donnée n’est écrite dans le stockage local et tout est effacé à la déconnexion.'
                     : 'Explore all features strictly in memory with a preloaded family dataset. Nothing is written to local storage and all data is erased on logout.'}
@@ -1134,12 +1134,12 @@ export const LoginScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => startDemoMode('fr')}
-                    className="p-4 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 text-left space-y-1.5 transition cursor-pointer"
+                    className="p-4 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-950 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:border-teal-500/50 text-left space-y-1.5 transition cursor-pointer"
                   >
-                    <div className="text-sm font-bold text-teal-400">
+                    <div className="text-sm font-bold text-teal-600 dark:text-teal-400">
                       Famille Martin (FR)
                     </div>
-                    <div className="text-xs text-slate-400 leading-snug">
+                    <div className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
                       Compte Courant, Carte Différé, Livret A, LDDS, Salaires & Loyer
                     </div>
                   </button>
@@ -1147,12 +1147,12 @@ export const LoginScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => startDemoMode('en')}
-                    className="p-4 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 text-left space-y-1.5 transition cursor-pointer"
+                    className="p-4 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-950 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:border-teal-500/50 text-left space-y-1.5 transition cursor-pointer"
                   >
-                    <div className="text-sm font-bold text-teal-400">
+                    <div className="text-sm font-bold text-teal-600 dark:text-teal-400">
                       Smith Family (EN)
                     </div>
-                    <div className="text-xs text-slate-400 leading-snug">
+                    <div className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
                       Family Checking, Deferred Visa, Savings Fund, Salaries & Mortgage
                     </div>
                   </button>

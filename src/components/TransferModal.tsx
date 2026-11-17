@@ -138,21 +138,21 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-      <div className="relative w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm">
+      <div className="relative w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-teal-500/20 text-teal-300 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-500/20 text-teal-600 dark:text-teal-300 flex items-center justify-center">
               <ArrowRightLeft className="w-4 h-4" />
             </div>
-            <h2 className="text-lg font-bold text-white">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
               {isFr ? 'Virement Entre Comptes' : 'Transfer Between Accounts'}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -161,7 +161,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {/* Transfer Type Preset */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Motif du virement' : 'Transfer Type'}
             </label>
             <select
@@ -175,7 +175,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                     | 'GENERAL_TRANSFER'
                 )
               }
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
             >
               <option value="TO_SAVINGS">
                 {isFr ? 'Épargne mensuelle (Vers Livret / Épargne)' : 'Savings (To Savings Account)'}
@@ -195,7 +195,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           {/* Amount & Date */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Montant du virement' : 'Transfer Amount'} ({currency})
               </label>
               <input
@@ -205,19 +205,19 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                 placeholder="0.00"
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
-                className="w-full text-2xl font-bold font-mono tabular-nums bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-teal-500 transition"
+                className="w-full text-2xl font-bold font-mono tabular-nums bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Date' : 'Date'}
               </label>
               <input
                 type="date"
                 value={dateStr}
                 onChange={e => setDateStr(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-3 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition [color-scheme:dark]"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               />
             </div>
           </div>
@@ -225,13 +225,13 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           {/* Source Account & Target Account */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Compte émetteur (Débité)' : 'Source Account (Debited)'}
               </label>
               <select
                 value={sourceAccId}
                 onChange={e => setSourceAccId(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 {activeAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
@@ -242,7 +242,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Compte destinataire (Crédité)' : 'Target Account (Credited)'}
               </label>
               <select
@@ -260,7 +260,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                     if (periods[0]) setCreditCardPeriod(periods[0]);
                   }
                 }}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 {activeAccounts
                   .filter(a => a.id !== sourceAccId)
@@ -277,12 +277,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           {transferType === 'CARD_SETTLEMENT' && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-blue-300">
+                <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                   {isFr
                     ? 'Vérification du prélèvement forfaitaire'
                     : 'Lump-Sum Period Verification'}
                 </span>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
                   {isFr
                     ? 'Exclu des totaux budget pour éviter tout doublon'
                     : 'Excluded from budget totals to prevent double-counting'}
@@ -326,7 +326,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Mémo (optionnel)' : 'Memo (optional)'}
             </label>
             <input
@@ -342,22 +342,22 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               }
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500 transition"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition cursor-pointer"
+              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
             >
               {isFr ? 'Annuler' : 'Cancel'}
             </button>
             <button
               type="submit"
               disabled={!parsedAmount || parsedAmount <= 0 || sourceAccId === targetAccId}
-              className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95 cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-white dark:text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95 cursor-pointer"
             >
               {isFr ? 'Exécuter le virement' : 'Execute Transfer'}
             </button>

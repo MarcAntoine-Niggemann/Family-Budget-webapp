@@ -241,10 +241,10 @@ export const CsvImportScreen: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
             {isFr ? 'Import & Synchronisation Bancaire' : 'Bank Import & Sync'}
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {isFr
               ? 'Import manuel CSV gratuit ou synchronisation directe automatique via l’option open-banking.io'
               : 'Free manual CSV import or automated live bank sync via open-banking.io'}
@@ -253,21 +253,21 @@ export const CsvImportScreen: React.FC = () => {
 
         <button
           onClick={() => navigateTo('RULES')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-slate-200 font-semibold text-xs transition"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition shadow-sm dark:shadow-none"
         >
-          <Sliders className="w-4 h-4 text-teal-400" />
+          <Sliders className="w-4 h-4 text-teal-600 dark:text-teal-400" />
           <span>{isFr ? 'Gérer les Règles' : 'Manage Rules'}</span>
         </button>
       </div>
 
       {/* Top Method Selector Tabs */}
-      <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-2xl gap-1">
+      <div className="flex p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl gap-1">
         <button
           onClick={() => setActiveTab('CSV')}
           className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold transition ${
             activeTab === 'CSV'
-              ? 'bg-teal-500 text-slate-950 shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/50'
           }`}
         >
           <Upload className="w-4 h-4" />
@@ -278,13 +278,19 @@ export const CsvImportScreen: React.FC = () => {
           onClick={() => setActiveTab('OPEN_BANKING')}
           className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs font-bold transition relative ${
             activeTab === 'OPEN_BANKING'
-              ? 'bg-teal-500 text-slate-950 shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/50'
           }`}
         >
-          <Zap className="w-4 h-4 text-amber-400" />
+          <Zap className={`w-4 h-4 ${activeTab === 'OPEN_BANKING' ? 'text-white dark:text-slate-950' : 'text-amber-500 dark:text-amber-400'}`} />
           <span>{isFr ? 'Synchronisation Directe (Option open-banking.io)' : 'Direct Bank Sync (open-banking.io Option)'}</span>
-          <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+          <span
+            className={`hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+              activeTab === 'OPEN_BANKING'
+                ? 'bg-white/20 text-white border-white/30 dark:bg-slate-950/20 dark:text-slate-950 dark:border-slate-950/25'
+                : 'bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
+            }`}
+          >
             {openBankingConfig.environment}
           </span>
         </button>
@@ -294,17 +300,17 @@ export const CsvImportScreen: React.FC = () => {
       {activeTab === 'CSV' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           {/* Target Account & Quick Presets */}
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-lg">
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm dark:shadow-lg">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-teal-400" />
-                <span className="text-xs font-semibold text-slate-300">
+                <Wallet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   {isFr ? 'Compte de destination :' : 'Target Account:'}
                 </span>
                 <select
                   value={selectedAccountId}
                   onChange={e => setSelectedAccountId(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold text-white focus:outline-none focus:border-teal-500"
+                  className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                 >
                   {activeAccounts.map(acc => (
                     <option key={acc.id} value={acc.id}>
@@ -324,7 +330,7 @@ export const CsvImportScreen: React.FC = () => {
                     const sample = isFr ? sampleCsvCheckingFr : sampleCsvEn;
                     handleParse(sample);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-teal-300 text-[11px] font-semibold transition"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-teal-700 dark:text-teal-300 text-[11px] font-semibold transition"
                 >
                   {isFr ? 'Relevé Compte Courant' : 'Checking Statement Sample'}
                 </button>
@@ -334,7 +340,7 @@ export const CsvImportScreen: React.FC = () => {
                     if (cardAcc) setSelectedAccountId(cardAcc.id);
                     handleParse(sampleCsvDeferredCardFr);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-blue-300 text-[11px] font-semibold transition"
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-blue-700 dark:text-blue-300 text-[11px] font-semibold transition"
                 >
                   {isFr ? 'Relevé Carte Différé' : 'Deferred Card Sample'}
                 </button>
@@ -356,17 +362,17 @@ export const CsvImportScreen: React.FC = () => {
                     fileInputRef.current?.click();
                   }
                 }}
-                className={`cursor-pointer border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center bg-slate-950/50 ${
+                className={`cursor-pointer border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950/50 ${
                   isDragging
-                    ? 'border-teal-400 bg-teal-500/10'
-                    : 'border-slate-800 hover:border-teal-500/60'
+                    ? 'border-teal-500 dark:border-teal-400 bg-teal-50 dark:bg-teal-500/10'
+                    : 'border-slate-300 dark:border-slate-800 hover:border-teal-500/60'
                 }`}
               >
-                <Upload className="w-8 h-8 text-teal-400 mb-2" />
-                <h3 className="text-xs font-bold text-white mb-1">
+                <Upload className="w-8 h-8 text-teal-600 dark:text-teal-400 mb-2" />
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white mb-1">
                   {isFr ? 'Importer un fichier .csv ou .tsv' : 'Upload CSV / TSV File'}
                 </h3>
-                <p className="text-[11px] text-slate-400 mb-3">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
                   {isFr
                     ? 'Glissez-déposez le fichier de votre banque ou parcourez'
                     : 'Drag & drop bank export statement here'}
@@ -384,18 +390,18 @@ export const CsvImportScreen: React.FC = () => {
                     e.stopPropagation();
                     fileInputRef.current?.click();
                   }}
-                  className="cursor-pointer px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-md transition active:scale-95"
+                  className="cursor-pointer px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 text-xs font-bold shadow-sm dark:shadow-md transition active:scale-95"
                 >
                   {isFr ? 'Choisir un fichier' : 'Select File'}
                 </button>
                 {selectedFileName && (
-                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-teal-300 font-medium">
+                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-teal-700 dark:text-teal-300 font-medium">
                     <FileText className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate max-w-[220px]">{selectedFileName}</span>
                   </div>
                 )}
                 {fileError && (
-                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-rose-400 font-medium">
+                  <div className="mt-3 flex items-center gap-1.5 text-[11px] text-rose-600 dark:text-rose-400 font-medium">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>{fileError}</span>
                   </div>
@@ -404,7 +410,7 @@ export const CsvImportScreen: React.FC = () => {
 
               <div className="flex flex-col">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-semibold text-slate-400">
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                     {isFr ? 'Ou collez le texte brut du relevé :' : 'Or paste raw statement text:'}
                   </span>
                   {rawCsvText && (
@@ -415,7 +421,7 @@ export const CsvImportScreen: React.FC = () => {
                         setFileError(null);
                         handleParse('');
                       }}
-                      className="text-[10px] text-slate-500 hover:text-slate-300 transition"
+                      className="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition"
                     >
                       {isFr ? 'Effacer' : 'Clear'}
                     </button>
@@ -430,7 +436,7 @@ export const CsvImportScreen: React.FC = () => {
                   }}
                   placeholder="Date;Libellé;Montant&#10;12/11/2026;CARREFOUR;-85.40"
                   rows={5}
-                  className="w-full flex-1 bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500 resize-none"
+                  className="w-full flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-teal-500 resize-none"
                 />
               </div>
             </div>
@@ -454,33 +460,33 @@ export const CsvImportScreen: React.FC = () => {
               togglePool.length > 0 && togglePool.every(r => selectedRowIds.has(r.id));
 
             return (
-              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-9 h-9 rounded-xl flex items-center justify-center ${
                         totalCount === 0
-                          ? 'bg-rose-500/20 text-rose-300'
+                          ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-600 dark:text-rose-300'
                           : newCount === 0
-                          ? 'bg-amber-500/20 text-amber-300'
-                          : 'bg-teal-500/20 text-teal-300'
+                          ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300'
+                          : 'bg-teal-50 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300'
                       }`}
                     >
                       {totalCount === 0 ? (
-                        <AlertCircle className="w-5 h-5 text-rose-400" />
+                        <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
                       ) : newCount === 0 ? (
-                        <ShieldCheck className="w-5 h-5 text-amber-400" />
+                        <ShieldCheck className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                       ) : (
-                        <CheckCircle2 className="w-5 h-5 text-teal-400" />
+                        <CheckCircle2 className="w-5 h-5 text-teal-600 dark:text-teal-400" />
                       )}
                     </div>
                     <div>
-                      <h2 className="font-bold text-white text-sm">
+                      <h2 className="font-bold text-slate-900 dark:text-white text-sm">
                         {isFr
                           ? `${totalCount} opération${totalCount > 1 ? 's' : ''} détectée${totalCount > 1 ? 's' : ''}`
                           : `${totalCount} transaction${totalCount > 1 ? 's' : ''} discovered`}
                       </h2>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
                         {(() => {
                           const autoCount = parseResult.parsedRecords.filter(
                             r => !duplicateMap.get(r.id)?.isDuplicate && r.matchedCategoryId > 0 && r.matchedBudgetId > 0
@@ -502,7 +508,7 @@ export const CsvImportScreen: React.FC = () => {
                   <button
                     onClick={handleCommitImport}
                     disabled={selectedCount === 0}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:shadow-none text-white dark:text-slate-950 font-bold text-xs shadow-sm dark:shadow-lg shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0"
                   >
                     <span>
                       {selectedCount === 0
@@ -518,8 +524,8 @@ export const CsvImportScreen: React.FC = () => {
                 </div>
 
                 {duplicateCount > 0 && (
-                  <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-200">
-                    <Copy className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 text-xs text-amber-900 dark:text-amber-200">
+                    <Copy className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                     <span>
                       {isFr
                         ? `${duplicateCount} opération${duplicateCount > 1 ? 's' : ''} déjà présente${duplicateCount > 1 ? 's' : ''} sur ce compte ${duplicateCount > 1 ? 'ont été décochées' : 'a été décochée'} automatiquement. Cochez une ligne pour l’importer quand même (ex. 2 achats identiques le même jour).`
@@ -529,7 +535,7 @@ export const CsvImportScreen: React.FC = () => {
                 )}
 
                 {totalCount === 0 ? (
-                  <div className="py-6 text-center text-xs text-slate-400">
+                  <div className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
                     {isFr
                       ? 'Aucune opération valide n’a pu être extraite. Vérifiez le format des colonnes (Date, Libellé, Montant ou Débit/Crédit).'
                       : 'No valid transactions could be parsed. Check your columns (Date, Description, Amount or Debit/Credit).'}
@@ -538,14 +544,14 @@ export const CsvImportScreen: React.FC = () => {
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold">
                           <th className="py-2.5 px-2 w-8">
                             <input
                               type="checkbox"
                               checked={allPoolSelected}
                               onChange={handleToggleAllNew}
                               aria-label={isFr ? 'Tout sélectionner' : 'Select all'}
-                              className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-950 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                              className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-teal-600 dark:text-teal-500 focus:ring-teal-500 cursor-pointer"
                             />
                           </th>
                           <th className="py-2.5 px-3">{isFr ? 'Date' : 'Date'}</th>
@@ -556,7 +562,7 @@ export const CsvImportScreen: React.FC = () => {
                           <th className="py-2.5 px-3 text-right">{isFr ? 'Montant' : 'Amount'}</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800/60 font-medium">
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
                         {parseResult.parsedRecords.map(rec => {
                           const isUnassigned = !rec.matchedCategoryId || !rec.matchedBudgetId;
                           const dupInfo = duplicateMap.get(rec.id);
@@ -569,8 +575,8 @@ export const CsvImportScreen: React.FC = () => {
                               onClick={() => handleToggleRow(rec.id)}
                               className={`cursor-pointer transition ${
                                 isDuplicate && !isSelected
-                                  ? 'opacity-55 bg-slate-950/30 hover:bg-slate-800/30'
-                                  : 'hover:bg-slate-800/30'
+                                  ? 'opacity-55 bg-slate-50/70 dark:bg-slate-950/30 hover:bg-slate-100/70 dark:hover:bg-slate-800/30'
+                                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/30'
                               }`}
                             >
                               <td className="py-3 px-2" onClick={e => e.stopPropagation()}>
@@ -579,21 +585,21 @@ export const CsvImportScreen: React.FC = () => {
                                   checked={isSelected}
                                   onChange={() => handleToggleRow(rec.id)}
                                   aria-label={rec.cleanTitle}
-                                  className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-950 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                                  className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-teal-600 dark:text-teal-500 focus:ring-teal-500 cursor-pointer"
                                 />
                               </td>
-                              <td className="py-3 px-3 text-slate-300 font-mono tabular-nums whitespace-nowrap">
+                              <td className="py-3 px-3 text-slate-600 dark:text-slate-300 font-mono tabular-nums whitespace-nowrap">
                                 {rec.dateStr}
                               </td>
                               <td className="py-3 px-3">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-semibold text-white">{rec.cleanTitle}</span>
+                                  <span className="font-semibold text-slate-900 dark:text-white">{rec.cleanTitle}</span>
                                   {isDuplicate && (
                                     <span
                                       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
                                         isSelected
-                                          ? 'bg-teal-500/15 text-teal-300 border-teal-500/30'
-                                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                          ? 'bg-teal-50 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-500/30'
+                                          : 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
                                       }`}
                                     >
                                       <Copy className="w-2.5 h-2.5" />
@@ -615,8 +621,8 @@ export const CsvImportScreen: React.FC = () => {
                               </td>
                               <td className="py-3 px-3">
                                 {isUnassigned ? (
-                                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300">
-                                    <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                                     <span>
                                       {isFr
                                         ? 'À catégoriser après import'
@@ -625,17 +631,17 @@ export const CsvImportScreen: React.FC = () => {
                                   </span>
                                 ) : (
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
+                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-800 dark:text-slate-200">
                                       <CategoryIcon
                                         name={rec.matchedCategoryIcon}
-                                        className="w-3.5 h-3.5 text-teal-400 shrink-0"
+                                        className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0"
                                       />
                                       <span>{rec.matchedCategoryName}</span>
-                                      <span className="text-slate-600">·</span>
-                                      <span className="text-teal-300">{rec.matchedBudgetTitle}</span>
+                                      <span className="text-slate-400 dark:text-slate-600">·</span>
+                                      <span className="text-teal-700 dark:text-teal-300">{rec.matchedBudgetTitle}</span>
                                     </span>
                                     {rec.matchedRulePattern && (
-                                      <span className="text-[10px] font-mono text-slate-400">
+                                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                                         ⚡ {rec.matchedRulePattern}
                                       </span>
                                     )}
@@ -644,7 +650,9 @@ export const CsvImportScreen: React.FC = () => {
                               </td>
                               <td
                                 className={`py-3 px-3 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
-                                  rec.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                                  rec.amount < 0
+                                    ? 'text-slate-900 dark:text-slate-100'
+                                    : 'text-emerald-600 dark:text-emerald-400'
                                 }`}
                               >
                                 {rec.amount < 0 ? '' : '+'}
@@ -667,21 +675,21 @@ export const CsvImportScreen: React.FC = () => {
       {activeTab === 'OPEN_BANKING' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           {/* Informative Disclaimer Banner */}
-          <div className="p-4 rounded-2xl bg-slate-900 border border-teal-500/30 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-teal-200 dark:border-teal-500/30 shadow-sm dark:shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
-                <Zap className="w-5 h-5 text-teal-400" />
+              <div className="w-10 h-10 rounded-xl bg-teal-50 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0">
+                <Zap className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-white">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                     {isFr ? 'Synchronisation Automatique PSD2' : 'PSD2 Live Account Sync'}
                   </h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-500/15 text-teal-300 border border-teal-500/30">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-teal-50 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30">
                     {openBankingConfig.status}
                   </span>
                 </div>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-2xl">
                   {isFr
                     ? 'Cette intégration est une option facultative via l’API open-banking.io. Si vous ne souhaitez pas souscrire ou payer ce service externe, l’import CSV gratuit reste disponible en permanence.'
                     : 'This integration is an optional enhancement via the open-banking.io API. If you prefer not to pay or subscribe to external PSD2 services, free offline CSV import is 100% supported.'}
@@ -692,16 +700,16 @@ export const CsvImportScreen: React.FC = () => {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => setIsConfigModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition"
               >
-                <Key className="w-3.5 h-3.5 text-teal-400" />
+                <Key className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                 <span>{isFr ? 'Configurer Clés API' : 'API Settings'}</span>
               </button>
 
               <button
                 onClick={syncOpenBankingNow}
                 disabled={openBankingConfig.status === 'SYNCING'}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-lg shadow-teal-500/20 transition active:scale-95 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm dark:shadow-lg shadow-teal-500/20 transition active:scale-95 disabled:opacity-50"
               >
                 <RefreshCw
                   className={`w-4 h-4 ${openBankingConfig.status === 'SYNCING' ? 'animate-spin' : ''}`}
@@ -713,9 +721,9 @@ export const CsvImportScreen: React.FC = () => {
 
           {/* Sync Status Details */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <span className="text-[11px] text-slate-400 block">{isFr ? 'Dernière synchronisation :' : 'Last Sync:'}</span>
-              <span className="text-sm font-bold text-white mt-1 block">
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">{isFr ? 'Dernière synchronisation :' : 'Last Sync:'}</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white mt-1 block">
                 {openBankingConfig.lastSyncTimestamp
                   ? new Date(openBankingConfig.lastSyncTimestamp).toLocaleTimeString(isFr ? 'fr-FR' : 'en-US', {
                       hour: '2-digit',
@@ -726,31 +734,31 @@ export const CsvImportScreen: React.FC = () => {
               </span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <span className="text-[11px] text-slate-400 block">{isFr ? 'Opérations synchronisées :' : 'Synced Transactions:'}</span>
-              <span className="text-sm font-bold text-teal-400 mt-1 block">
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">{isFr ? 'Opérations synchronisées :' : 'Synced Transactions:'}</span>
+              <span className="text-sm font-bold text-teal-700 dark:text-teal-400 mt-1 block">
                 {openBankingTx.length} {isFr ? 'opérations' : 'items'}
               </span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <span className="text-[11px] text-slate-400 block">{isFr ? 'Environnement :' : 'Environment:'}</span>
-              <span className="text-sm font-bold text-indigo-400 mt-1 block">
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">{isFr ? 'Environnement :' : 'Environment:'}</span>
+              <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-1 block">
                 {openBankingConfig.environment === 'SANDBOX' ? '🧪 Sandbox Simulator' : '⚡ Live Production'}
               </span>
             </div>
           </div>
 
           {/* Connected Remote Accounts Overview */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-teal-400" />
-                <h3 className="font-bold text-white text-sm">
+                <Building2 className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                   {isFr ? 'Comptes Bancaires Connectés (open-banking.io)' : 'Connected Bank Feeds'}
                 </h3>
               </div>
-              <span className="text-xs text-slate-400 font-semibold">
+              <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
                 {MOCK_SANDBOX_ACCOUNTS.length} {isFr ? 'comptes découverts' : 'accounts discovered'}
               </span>
             </div>
@@ -763,31 +771,31 @@ export const CsvImportScreen: React.FC = () => {
                 return (
                   <div
                     key={rAcc.id}
-                    className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-3"
+                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3"
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white">{rAcc.institution}</span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-500/10 text-teal-300 border border-teal-500/20">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">{rAcc.institution}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-500/20">
                           {rAcc.type}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-300 font-medium mt-1">{rAcc.name}</p>
+                      <p className="text-[11px] text-slate-700 dark:text-slate-300 font-medium mt-1">{rAcc.name}</p>
                       <p className="text-[10px] font-mono text-slate-500 mt-0.5">{rAcc.iban}</p>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-800/80 flex items-end justify-between">
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 flex items-end justify-between">
                       <div>
-                        <span className="text-[10px] text-slate-400 block">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 block">
                           {isFr ? 'Lié à :' : 'Mapped to:'}
                         </span>
-                        <span className="text-xs font-bold text-teal-300">
+                        <span className="text-xs font-bold text-teal-700 dark:text-teal-300">
                           {localAcc ? localAcc.name : (isFr ? 'Non associé' : 'Unmapped')}
                         </span>
                       </div>
 
                       <div className="text-right">
-                        <span className="text-xs font-extrabold text-white">
+                        <span className="text-xs font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
                           {rAcc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })} {currency}
                         </span>
                       </div>
@@ -799,12 +807,12 @@ export const CsvImportScreen: React.FC = () => {
           </div>
 
           {/* Recent Open Banking Transactions */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="font-bold text-white text-sm">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-3">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                 {isFr ? 'Dernières Opérations Synchronisées via open-banking.io' : 'Recent Synced Transactions'}
               </h3>
-              <span className="text-xs text-slate-400">{openBankingTx.length} {isFr ? 'opérations' : 'items'}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{openBankingTx.length} {isFr ? 'opérations' : 'items'}</span>
             </div>
 
             {openBankingTx.length === 0 ? (
@@ -817,7 +825,7 @@ export const CsvImportScreen: React.FC = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold">
                       <th className="py-2 px-3">{isFr ? 'Date' : 'Date'}</th>
                       <th className="py-2 px-3">{isFr ? 'Libellé' : 'Description'}</th>
                       <th className="py-2 px-3">
@@ -827,43 +835,45 @@ export const CsvImportScreen: React.FC = () => {
                       <th className="py-2 px-3 text-right">{isFr ? 'Montant' : 'Amount'}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-medium">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
                     {openBankingTx.slice(0, 8).map(tx => {
                       const isUnassigned = !tx.categoryId || !tx.budgetId;
                       return (
-                        <tr key={tx.id} className="hover:bg-slate-800/30 transition">
-                          <td className="py-2.5 px-3 text-slate-400 font-mono tabular-nums whitespace-nowrap">
+                        <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                          <td className="py-2.5 px-3 text-slate-500 dark:text-slate-400 font-mono tabular-nums whitespace-nowrap">
                             {new Date(tx.date).toLocaleDateString(isFr ? 'fr-FR' : 'en-US')}
                           </td>
                           <td className="py-2.5 px-3">
-                            <span className="font-semibold text-white block">{tx.title}</span>
+                            <span className="font-semibold text-slate-900 dark:text-white block">{tx.title}</span>
                             <span className="text-[10px] font-mono text-slate-500">{tx.originalBankLabel}</span>
                           </td>
                           <td className="py-2.5 px-3">
                             {isUnassigned ? (
-                              <span className="text-[11px] font-medium text-amber-300">
+                              <span className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
                                 {isFr ? 'À catégoriser' : 'Unassigned'}
                               </span>
                             ) : (
-                              <span className="text-[11px] font-semibold text-slate-200">
+                              <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
                                 {tx.categoryName}
                                 {tx.budgetTitle && (
                                   <>
-                                    <span className="text-slate-600 mx-1">·</span>
-                                    <span className="text-teal-300">{tx.budgetTitle}</span>
+                                    <span className="text-slate-400 dark:text-slate-600 mx-1">·</span>
+                                    <span className="text-teal-700 dark:text-teal-300">{tx.budgetTitle}</span>
                                   </>
                                 )}
                               </span>
                             )}
                           </td>
                           <td className="py-2.5 px-3">
-                            <span className="text-[10px] font-bold text-teal-300 uppercase tracking-wider">
+                            <span className="text-[10px] font-bold text-teal-700 dark:text-teal-300 uppercase tracking-wider">
                               {tx.status}
                             </span>
                           </td>
                           <td
                             className={`py-2.5 px-3 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
-                              tx.amount < 0 ? 'text-slate-100' : 'text-emerald-400'
+                              tx.amount < 0
+                                ? 'text-slate-900 dark:text-slate-100'
+                                : 'text-emerald-600 dark:text-emerald-400'
                             }`}
                           >
                             {tx.amount < 0 ? '' : '+'}

@@ -201,15 +201,15 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <h2 className="text-lg font-bold text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm">
+      <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">
             {isFr ? 'Nouvelle Transaction Manuelle' : 'New Manual Transaction'}
           </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -217,14 +217,14 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {/* Expense vs Income Toggle */}
-          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950/60 rounded-xl border border-slate-800">
+          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={() => handleDirectionChange(true)}
-              className={`flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition ${
+              className={`flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition cursor-pointer ${
                 isExpense
-                  ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-rose-600 dark:bg-rose-500 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
               <ArrowDownRight className="w-4 h-4" />
@@ -233,10 +233,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <button
               type="button"
               onClick={() => handleDirectionChange(false)}
-              className={`flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition ${
+              className={`flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition cursor-pointer ${
                 !isExpense
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-emerald-600 dark:bg-emerald-500 text-white dark:text-slate-950 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
               <ArrowUpRight className="w-4 h-4" />
@@ -246,7 +246,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Amount Input */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Montant' : 'Amount'} ({currency})
             </label>
             <div className="relative">
@@ -257,7 +257,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 placeholder="0.00"
                 value={amountStr}
                 onChange={e => setAmountStr(e.target.value)}
-                className="w-full text-2xl font-bold font-mono bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 transition"
+                className="w-full text-2xl font-bold font-mono tabular-nums bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition"
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-semibold">
                 {currency}
@@ -267,7 +267,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Title */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Description / Commerçant' : 'Description / Merchant'}
             </label>
             <input
@@ -276,21 +276,21 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               placeholder={isFr ? 'Ex: Courses, Restaurant, Salaire...' : 'e.g. Groceries, Dinner, Salary...'}
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500 transition"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition"
             />
           </div>
 
           {/* Account & Member */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                 <Wallet className="w-3.5 h-3.5" />
                 {isFr ? 'Compte Bancaire' : 'Account'}
               </label>
               <select
                 value={selectedAccountId}
                 onChange={e => setSelectedAccountId(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 {activeAccounts.map(acc => (
                   <option key={acc.id} value={acc.id}>
@@ -301,14 +301,14 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                 <User className="w-3.5 h-3.5" />
                 {isFr ? 'Membre de la famille' : 'Family Member'}
               </label>
               <select
                 value={selectedMemberId}
                 onChange={e => setSelectedMemberId(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 {members.map(m => (
                   <option key={m.id} value={m.id}>
@@ -322,7 +322,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           {/* Category & Mandatory Sub-Category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                 <Tag className="w-3.5 h-3.5" />
                 {isFr ? 'Catégorie' : 'Category'}
               </label>
@@ -336,7 +336,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     activeBudgets.find(b => b.categoryId === newCatId);
                   setSelectedBudgetId(firstBudget?.id || 0);
                 }}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 {activeCategories.map(c => (
                   <option key={c.id} value={c.id}>
@@ -347,14 +347,14 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Sous-catégorie (obligatoire)' : 'Sub-category (required)'}
               </label>
               <select
                 value={selectedBudgetId}
                 onChange={e => setSelectedBudgetId(parseInt(e.target.value, 10))}
                 disabled={filteredBudgets.length === 0}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-50"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition disabled:opacity-50"
               >
                 {filteredBudgets.length === 0 ? (
                   <option value={0}>
@@ -377,7 +377,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Informational note when offsetting an opposite-direction budget */}
           {selectedBudget && selectedBudget.isExpense !== isExpense && (
-            <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/25 text-[11px] text-teal-200">
+            <div className="p-2.5 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/25 text-[11px] text-teal-800 dark:text-teal-200">
               {!isExpense && selectedBudget.isExpense
                 ? isFr
                   ? `Remboursement / crédit : ce revenu réduira le net dépensé de « ${selectedBudget.title} ».`
@@ -390,9 +390,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Blocking notice when selected category lacks any sub-category */}
           {filteredBudgets.length === 0 && (
-            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-200">
               <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <span>
                   {isFr
                     ? 'Cette catégorie n’a aucune sous-catégorie. Créez-en une dans le Planificateur de Budget pour continuer.'
@@ -405,7 +405,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                   onClose();
                   navigateTo('BUDGET_PLANNER');
                 }}
-                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition"
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap shrink-0 transition cursor-pointer"
               >
                 {isFr ? 'Planificateur' : 'Budget Planner'}
               </button>
@@ -415,7 +415,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           {/* Date & Payment Method */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5" />
                 {isFr ? 'Date' : 'Date'}
               </label>
@@ -423,18 +423,18 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 type="date"
                 value={dateStr}
                 onChange={e => setDateStr(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                 {isFr ? 'Moyen de paiement' : 'Payment Method'}
               </label>
               <select
                 value={paymentMethod}
                 onChange={e => setPaymentMethod(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500 transition"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
                 <option value={isFr ? 'Carte Bancaire' : 'Card'}>{isFr ? 'Carte Bancaire' : 'Card'}</option>
                 <option value="Visa Premier">Visa Premier</option>
@@ -447,9 +447,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Deferred Card Billing Period (auto-computed, editable) */}
           {selectedAccount?.type === 'DEFERRED_CARD' && (
-            <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <label className="text-xs font-medium text-slate-300">
+                <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
                   {isFr ? 'Période Débit Différé (AAAA-MM)' : 'Deferred Card Period (YYYY-MM)'}
                 </label>
                 {isPeriodManuallyEdited && computedDefaultPeriod && creditCardPeriod !== computedDefaultPeriod && (
@@ -459,7 +459,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       setCreditCardPeriod(computedDefaultPeriod);
                       setIsPeriodManuallyEdited(false);
                     }}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-300 hover:text-teal-200 cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 hover:text-teal-700 dark:text-teal-300 dark:hover:text-teal-200 cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />
                     <span>{isFr ? `Auto (${computedDefaultPeriod})` : `Auto (${computedDefaultPeriod})`}</span>
@@ -474,7 +474,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     setCreditCardPeriod(shiftCardPeriod(creditCardPeriod || computedDefaultPeriod, -1));
                     setIsPeriodManuallyEdited(true);
                   }}
-                  className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                  className="p-2 rounded-lg bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
@@ -486,7 +486,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     setCreditCardPeriod(e.target.value);
                     setIsPeriodManuallyEdited(true);
                   }}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-center font-semibold text-white focus:outline-none focus:border-teal-500"
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs font-mono tabular-nums text-center font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                 />
                 <button
                   type="button"
@@ -494,16 +494,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     setCreditCardPeriod(shiftCardPeriod(creditCardPeriod || computedDefaultPeriod, 1));
                     setIsPeriodManuallyEdited(true);
                   }}
-                  className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                  className="p-2 rounded-lg bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               {isValidCardPeriod(creditCardPeriod) && (
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {isFr ? 'Cycle :' : 'Cycle:'}{' '}
-                  <span className="text-slate-300">
+                  <span className="text-slate-700 dark:text-slate-300">
                     {formatPeriodCycleRange(creditCardPeriod, selectedAccount.billingCycleClosingDay, language)}
                   </span>
                   <span aria-hidden="true"> · </span>
@@ -519,7 +519,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
           {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Notes ou mémo (optionnel)' : 'Notes or memo (optional)'}
             </label>
             <textarea
@@ -527,23 +527,23 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               placeholder={isFr ? 'Ajoutez un commentaire...' : 'Add a note...'}
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500 transition"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition"
             />
           </div>
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
             >
               {isFr ? 'Annuler' : 'Cancel'}
             </button>
             <button
               type="submit"
               disabled={!canSubmit}
-              className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition active:scale-95"
+              className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 disabled:opacity-40 disabled:pointer-events-none text-white dark:text-slate-950 font-bold text-sm shadow-sm transition active:scale-95 cursor-pointer"
             >
               {isFr ? 'Enregistrer' : 'Save Transaction'}
             </button>

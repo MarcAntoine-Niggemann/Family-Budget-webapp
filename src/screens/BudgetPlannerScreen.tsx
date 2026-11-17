@@ -40,10 +40,12 @@ export const BudgetPlannerScreen: React.FC = () => {
     addBudget,
     updateBudget,
     deleteBudget,
-    drillDownToTransactions
+    drillDownToTransactions,
+    resolvedTheme
   } = useBudget();
 
   const isFr = language === 'fr';
+  const isDark = resolvedTheme === 'dark';
 
   const activeCategories = categories.filter(c => !c.isDeleted);
   const activeCategoryIds = new Set(activeCategories.map(c => c.id));
@@ -346,10 +348,10 @@ export const BudgetPlannerScreen: React.FC = () => {
       {/* Month/Year Navigation & Action Header */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
             {isFr ? 'Planificateur de Budget' : 'Budget Planner'}
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {viewMode === 'MONTH'
               ? isFr
                 ? 'Catégories et sous-catégories budgétaires mois par mois'
@@ -363,7 +365,7 @@ export const BudgetPlannerScreen: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           {/* Month / Year Mode Switcher */}
           <div
-            className="grid grid-cols-2 p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-semibold"
+            className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold"
             role="group"
             aria-label={isFr ? 'Période budgétaire' : 'Budget period mode'}
           >
@@ -372,8 +374,8 @@ export const BudgetPlannerScreen: React.FC = () => {
               onClick={() => setViewMode('MONTH')}
               className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                 viewMode === 'MONTH'
-                  ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               {isFr ? 'Mois' : 'Month'}
@@ -383,8 +385,8 @@ export const BudgetPlannerScreen: React.FC = () => {
               onClick={() => setViewMode('YEAR')}
               className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                 viewMode === 'YEAR'
-                  ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               {isFr ? 'Année' : 'Year'}
@@ -393,7 +395,7 @@ export const BudgetPlannerScreen: React.FC = () => {
 
           {/* Period Switcher (Month or Year) */}
           {viewMode === 'MONTH' ? (
-            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+            <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 text-xs shadow-sm dark:shadow-none">
               <button
                 type="button"
                 onClick={() => {
@@ -404,12 +406,12 @@ export const BudgetPlannerScreen: React.FC = () => {
                     setSelectedMonth(m => m - 1);
                   }
                 }}
-                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                className="px-2.5 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 aria-label={isFr ? 'Mois précédent' : 'Previous month'}
               >
                 ←
               </button>
-              <span className="px-3 font-semibold text-slate-200 capitalize whitespace-nowrap">
+              <span className="px-3 font-semibold text-slate-800 dark:text-slate-200 capitalize whitespace-nowrap">
                 {monthLabel}
               </span>
               <button
@@ -422,29 +424,29 @@ export const BudgetPlannerScreen: React.FC = () => {
                     setSelectedMonth(m => m + 1);
                   }
                 }}
-                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                className="px-2.5 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 aria-label={isFr ? 'Mois suivant' : 'Next month'}
               >
                 →
               </button>
             </div>
           ) : (
-            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+            <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 text-xs shadow-sm dark:shadow-none">
               <button
                 type="button"
                 onClick={() => setSelectedYear(y => y - 1)}
-                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                className="px-2.5 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 aria-label={isFr ? 'Année précédente' : 'Previous year'}
               >
                 ←
               </button>
-              <span className="px-3 font-semibold text-slate-200 font-mono tabular-nums whitespace-nowrap">
+              <span className="px-3 font-semibold text-slate-800 dark:text-slate-200 font-mono tabular-nums whitespace-nowrap">
                 {selectedYear}
               </span>
               <button
                 type="button"
                 onClick={() => setSelectedYear(y => y + 1)}
-                className="px-2.5 py-1 text-slate-400 hover:text-slate-200 transition rounded-lg hover:bg-slate-800 cursor-pointer"
+                className="px-2.5 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                 aria-label={isFr ? 'Année suivante' : 'Next year'}
               >
                 →
@@ -455,7 +457,7 @@ export const BudgetPlannerScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => handleOpenCatModal()}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm dark:shadow-md shadow-teal-500/20 transition active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>{isFr ? 'Nouvelle Catégorie' : 'New Category'}</span>
@@ -465,8 +467,8 @@ export const BudgetPlannerScreen: React.FC = () => {
 
       {/* Summary Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-          <span className="text-xs font-semibold text-slate-400 block">
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
             {viewMode === 'MONTH'
               ? isFr
                 ? 'Dépenses du mois (Réalisé / Prévu)'
@@ -476,18 +478,20 @@ export const BudgetPlannerScreen: React.FC = () => {
               : `${selectedYear} Expenses (Actual / Budget)`}
           </span>
           <div className="mt-2 flex items-baseline gap-2 tabular-nums">
-            <span className="text-2xl font-bold text-white font-mono">
+            <span className="text-2xl font-bold text-slate-900 dark:text-white font-mono">
               {totalActualExpenses.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
               / {totalExpenseBudget.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}
             </span>
           </div>
           <div className="mt-2 text-xs font-medium flex items-center justify-between tabular-nums">
-            <span className="text-slate-400">{isFr ? 'Reste à dépenser' : 'Remaining'}</span>
+            <span className="text-slate-500 dark:text-slate-400">{isFr ? 'Reste à dépenser' : 'Remaining'}</span>
             <span
               className={`font-mono ${
-                totalExpenseBudget - totalActualExpenses >= 0 ? 'text-teal-400' : 'text-rose-400'
+                totalExpenseBudget - totalActualExpenses >= 0
+                  ? 'text-teal-700 dark:text-teal-400'
+                  : 'text-rose-600 dark:text-rose-400'
               }`}
             >
               {(totalExpenseBudget - totalActualExpenses).toLocaleString(undefined, {
@@ -498,8 +502,8 @@ export const BudgetPlannerScreen: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-          <span className="text-xs font-semibold text-slate-400 block">
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
             {viewMode === 'MONTH'
               ? isFr
                 ? 'Revenus du mois (Reçus / Attendus)'
@@ -509,16 +513,16 @@ export const BudgetPlannerScreen: React.FC = () => {
               : `${selectedYear} Income (Received / Target)`}
           </span>
           <div className="mt-2 flex items-baseline gap-2 tabular-nums">
-            <span className="text-2xl font-bold text-emerald-400 font-mono">
+            <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono">
               {totalActualIncome.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
               / {totalIncomeBudget.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}
             </span>
           </div>
           <div className="mt-2 text-xs font-medium flex items-center justify-between tabular-nums">
-            <span className="text-slate-400">{isFr ? 'Taux d’atteinte' : 'Completion'}</span>
-            <span className="text-emerald-400 font-mono">
+            <span className="text-slate-500 dark:text-slate-400">{isFr ? 'Taux d’atteinte' : 'Completion'}</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-mono">
               {totalIncomeBudget > 0
                 ? `${Math.round((totalActualIncome / totalIncomeBudget) * 100)}%`
                 : '—'}
@@ -526,8 +530,8 @@ export const BudgetPlannerScreen: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-          <span className="text-xs font-semibold text-slate-400 block">
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">
             {viewMode === 'MONTH'
               ? isFr
                 ? 'Solde Budgétaire Prévu'
@@ -539,7 +543,9 @@ export const BudgetPlannerScreen: React.FC = () => {
           <div className="mt-2 flex items-baseline gap-2 tabular-nums">
             <span
               className={`text-2xl font-bold font-mono ${
-                projectedPeriodNet >= 0 ? 'text-indigo-400' : 'text-rose-400'
+                projectedPeriodNet >= 0
+                  ? 'text-indigo-600 dark:text-indigo-400'
+                  : 'text-rose-600 dark:text-rose-400'
               }`}
             >
               {projectedPeriodNet >= 0 ? '+' : ''}
@@ -547,12 +553,16 @@ export const BudgetPlannerScreen: React.FC = () => {
                 maximumFractionDigits: 2
               })}
             </span>
-            <span className="text-xs text-slate-400">{currency}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{currency}</span>
           </div>
           <div className="mt-2 text-xs font-medium flex items-center justify-between tabular-nums">
-            <span className="text-slate-400">{isFr ? 'Solde réel constaté' : 'Actual net so far'}</span>
+            <span className="text-slate-500 dark:text-slate-400">{isFr ? 'Solde réel constaté' : 'Actual net so far'}</span>
             <span
-              className={`font-mono ${actualPeriodNet >= 0 ? 'text-teal-400' : 'text-rose-400'}`}
+              className={`font-mono ${
+                actualPeriodNet >= 0
+                  ? 'text-teal-700 dark:text-teal-400'
+                  : 'text-rose-600 dark:text-rose-400'
+              }`}
             >
               {actualPeriodNet >= 0 ? '+' : ''}
               {actualPeriodNet.toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}
@@ -563,18 +573,18 @@ export const BudgetPlannerScreen: React.FC = () => {
 
       {/* Year Graph with Monthly Net Values (Year Mode Only) */}
       {viewMode === 'YEAR' && (
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-lg space-y-4">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm dark:shadow-lg space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-teal-400 shrink-0" />
-                <h2 className="text-sm font-bold text-white">
+                <BarChart3 className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                   {isFr
                     ? `Solde Net Mensuel — ${selectedYear}`
                     : `Monthly Net Values — ${selectedYear}`}
                 </h2>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {isFr
                   ? 'Revenus moins dépenses pour chaque mois (budget prévu vs réalisé). Cliquez sur un mois pour l’inspecter.'
                   : 'Income minus expenses for each month (planned budget vs. actual). Click any month to inspect or open.'}
@@ -583,14 +593,14 @@ export const BudgetPlannerScreen: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-3">
               {/* Series Filter */}
-              <div className="grid grid-cols-3 p-1 bg-slate-950 border border-slate-800 rounded-xl text-[11px] font-semibold">
+              <div className="grid grid-cols-3 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] font-semibold">
                 <button
                   type="button"
                   onClick={() => setGraphSeriesMode('BOTH')}
                   className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                     graphSeriesMode === 'BOTH'
-                      ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   {isFr ? 'Prévu & Réel' : 'Both'}
@@ -600,8 +610,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                   onClick={() => setGraphSeriesMode('PLANNED')}
                   className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                     graphSeriesMode === 'PLANNED'
-                      ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   {isFr ? 'Prévu' : 'Planned'}
@@ -611,8 +621,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                   onClick={() => setGraphSeriesMode('ACTUAL')}
                   className={`px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
                     graphSeriesMode === 'ACTUAL'
-                      ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
                 >
                   {isFr ? 'Réalisé' : 'Actual'}
@@ -620,21 +630,21 @@ export const BudgetPlannerScreen: React.FC = () => {
               </div>
 
               {/* Legend */}
-              <div className="flex items-center gap-3 text-[11px] text-slate-400">
+              <div className="flex items-center gap-3 text-[11px] text-slate-600 dark:text-slate-400">
                 {graphSeriesMode !== 'ACTUAL' && (
                   <span className="flex items-center gap-1.5 whitespace-nowrap">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-indigo-400 inline-block" />
+                    <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 dark:bg-indigo-400 inline-block" />
                     {isFr ? 'Net prévu' : 'Planned net'}
                   </span>
                 )}
                 {graphSeriesMode !== 'PLANNED' && (
                   <span className="flex items-center gap-1.5 whitespace-nowrap">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-teal-400 inline-block" />
+                    <span className="w-2.5 h-2.5 rounded-sm bg-teal-600 dark:bg-teal-400 inline-block" />
                     {isFr ? 'Net réel' : 'Actual net'}
                   </span>
                 )}
                 <span className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" />
+                  <span className="w-2.5 h-2.5 rounded-sm bg-rose-600 dark:bg-rose-500 inline-block" />
                   {isFr ? 'Déficit' : 'Deficit'}
                 </span>
               </div>
@@ -700,7 +710,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         y1={padY + plotH * 0.25}
                         x2={width - padX}
                         y2={padY + plotH * 0.25}
-                        stroke="#1e293b"
+                        stroke={isDark ? '#1e293b' : '#e2e8f0'}
                         strokeDasharray="3 3"
                       />
                       <line
@@ -708,7 +718,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         y1={padY + plotH * 0.5}
                         x2={width - padX}
                         y2={padY + plotH * 0.5}
-                        stroke="#1e293b"
+                        stroke={isDark ? '#1e293b' : '#e2e8f0'}
                         strokeDasharray="3 3"
                       />
                       <line
@@ -716,7 +726,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         y1={padY + plotH * 0.75}
                         x2={width - padX}
                         y2={padY + plotH * 0.75}
-                        stroke="#1e293b"
+                        stroke={isDark ? '#1e293b' : '#e2e8f0'}
                         strokeDasharray="3 3"
                       />
 
@@ -726,7 +736,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         y1={zeroY}
                         x2={width - padX}
                         y2={zeroY}
-                        stroke="#475569"
+                        stroke={isDark ? '#475569' : '#94a3b8'}
                         strokeWidth="1.4"
                       />
 
@@ -778,8 +788,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 width={Math.max(4, colW - 4)}
                                 height={plotH + 12}
                                 rx={6}
-                                fill="#1e293b"
-                                fillOpacity="0.55"
+                                fill={isDark ? '#1e293b' : '#f1f5f9'}
+                                fillOpacity={isDark ? '0.55' : '0.9'}
                               />
                             )}
 
@@ -791,7 +801,13 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 width={barWidth}
                                 height={plannedH}
                                 rx={3}
-                                fill={m.plannedNet >= 0 ? '#818cf8' : '#f59e0b'}
+                                fill={
+                                  m.plannedNet >= 0
+                                    ? isDark
+                                      ? '#818cf8'
+                                      : '#6366f1'
+                                    : '#f59e0b'
+                                }
                                 fillOpacity={isInspected ? 0.95 : 0.78}
                               />
                             )}
@@ -804,7 +820,15 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 width={barWidth}
                                 height={actualH}
                                 rx={3}
-                                fill={m.actualNet >= 0 ? '#2dd4bf' : '#f43f5e'}
+                                fill={
+                                  m.actualNet >= 0
+                                    ? isDark
+                                      ? '#2dd4bf'
+                                      : '#0d9488'
+                                    : isDark
+                                    ? '#f43f5e'
+                                    : '#e11d48'
+                                }
                                 fillOpacity={isInspected ? 1 : 0.85}
                               />
                             )}
@@ -824,9 +848,15 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 fill={
                                   singleBarVal >= 0
                                     ? graphSeriesMode === 'PLANNED'
-                                      ? '#a5b4fc'
-                                      : '#5eead4'
-                                    : '#fda4af'
+                                      ? isDark
+                                        ? '#a5b4fc'
+                                        : '#4f46e5'
+                                      : isDark
+                                      ? '#5eead4'
+                                      : '#0f766e'
+                                    : isDark
+                                    ? '#fda4af'
+                                    : '#e11d48'
                                 }
                               >
                                 {formatCompactNet(singleBarVal)}
@@ -866,17 +896,17 @@ export const BudgetPlannerScreen: React.FC = () => {
                           onClick={() => setInspectedMonthIdx(idx)}
                           className={`px-1 py-1.5 rounded-lg text-center transition cursor-pointer border ${
                             isInspected
-                              ? 'bg-slate-800 border-teal-500/50'
-                              : 'bg-slate-950/40 border-transparent hover:bg-slate-800/50'
+                              ? 'bg-slate-100 dark:bg-slate-800 border-teal-500/60 dark:border-teal-500/50'
+                              : 'bg-slate-50/70 dark:bg-slate-950/40 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/50'
                           }`}
                         >
                           <div
                             className={`text-[10px] font-semibold capitalize truncate ${
                               isCurrentCalendarMonth
-                                ? 'text-teal-400'
+                                ? 'text-teal-700 dark:text-teal-400'
                                 : isInspected
-                                ? 'text-white'
-                                : 'text-slate-400'
+                                ? 'text-slate-900 dark:text-white'
+                                : 'text-slate-500 dark:text-slate-400'
                             }`}
                           >
                             {m.shortName}
@@ -884,7 +914,9 @@ export const BudgetPlannerScreen: React.FC = () => {
                           {graphSeriesMode !== 'ACTUAL' && (
                             <div
                               className={`text-[10px] font-mono tabular-nums mt-0.5 ${
-                                m.plannedNet >= 0 ? 'text-indigo-300' : 'text-amber-400'
+                                m.plannedNet >= 0
+                                  ? 'text-indigo-600 dark:text-indigo-300'
+                                  : 'text-amber-600 dark:text-amber-400'
                               }`}
                               title={isFr ? 'Net prévu' : 'Planned net'}
                             >
@@ -895,10 +927,10 @@ export const BudgetPlannerScreen: React.FC = () => {
                             <div
                               className={`text-[10px] font-mono tabular-nums ${
                                 !m.hasActualTx
-                                  ? 'text-slate-600'
+                                  ? 'text-slate-400 dark:text-slate-600'
                                   : m.actualNet >= 0
-                                  ? 'text-teal-400'
-                                  : 'text-rose-400'
+                                  ? 'text-teal-700 dark:text-teal-400'
+                                  : 'text-rose-600 dark:text-rose-400'
                               }`}
                               title={isFr ? 'Net réel' : 'Actual net'}
                             >
@@ -912,17 +944,19 @@ export const BudgetPlannerScreen: React.FC = () => {
                 </div>
 
                 {/* Inspected Month Detail Bar */}
-                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 tabular-nums">
-                    <span className="font-semibold text-white capitalize">
+                    <span className="font-semibold text-slate-900 dark:text-white capitalize">
                       {activeMonthData.longName} {selectedYear}
                     </span>
 
-                    <span className="text-slate-400 font-mono">
+                    <span className="text-slate-500 dark:text-slate-400 font-mono">
                       <span className="font-sans">{isFr ? 'Prévu :' : 'Planned:'}</span>{' '}
                       <strong
                         className={
-                          activeMonthData.plannedNet >= 0 ? 'text-indigo-300' : 'text-amber-400'
+                          activeMonthData.plannedNet >= 0
+                            ? 'text-indigo-600 dark:text-indigo-300'
+                            : 'text-amber-600 dark:text-amber-400'
                         }
                       >
                         {activeMonthData.plannedNet >= 0 ? '+' : ''}
@@ -938,11 +972,13 @@ export const BudgetPlannerScreen: React.FC = () => {
                     </span>
 
                     {activeMonthData.hasActualTx ? (
-                      <span className="text-slate-400 font-mono">
+                      <span className="text-slate-500 dark:text-slate-400 font-mono">
                         <span className="font-sans">{isFr ? 'Réel :' : 'Actual:'}</span>{' '}
                         <strong
                           className={
-                            activeMonthData.actualNet >= 0 ? 'text-teal-300' : 'text-rose-400'
+                            activeMonthData.actualNet >= 0
+                              ? 'text-teal-700 dark:text-teal-300'
+                              : 'text-rose-600 dark:text-rose-400'
                           }
                         >
                           {activeMonthData.actualNet >= 0 ? '+' : ''}
@@ -965,7 +1001,9 @@ export const BudgetPlannerScreen: React.FC = () => {
                     {activeVariance !== null && (
                       <span
                         className={`font-mono font-semibold ${
-                          activeVariance >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          activeVariance >= 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400'
                         }`}
                       >
                         ({activeVariance >= 0 ? '+' : ''}
@@ -981,7 +1019,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                       setSelectedMonth(activeMonthData.monthIndex);
                       setViewMode('MONTH');
                     }}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer self-start lg:self-auto"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 dark:border-transparent dark:bg-slate-800 dark:hover:bg-slate-700 text-teal-700 dark:text-teal-300 font-semibold text-xs transition whitespace-nowrap shrink-0 cursor-pointer self-start lg:self-auto shadow-sm dark:shadow-none"
                   >
                     <Calendar className="w-3.5 h-3.5" />
                     <span>{isFr ? 'Ouvrir ce mois' : 'Open Month'}</span>
@@ -1021,7 +1059,7 @@ export const BudgetPlannerScreen: React.FC = () => {
           return (
             <div
               key={cat.id}
-              className="rounded-2xl bg-slate-900 border border-slate-800 p-5 shadow-lg space-y-4"
+              className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm dark:shadow-lg space-y-4"
             >
               {/* Category Wrapper Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1054,16 +1092,16 @@ export const BudgetPlannerScreen: React.FC = () => {
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <h3 className="font-bold text-base text-white group-hover/cat:text-teal-300 transition truncate">
+                      <h3 className="font-bold text-base text-slate-900 dark:text-white group-hover/cat:text-teal-700 dark:group-hover/cat:text-teal-300 transition truncate">
                         {cat.name}
                       </h3>
-                      <ArrowUpRight className="w-3.5 h-3.5 text-slate-500 group-hover/cat:text-teal-300 transition shrink-0" />
+                      <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover/cat:text-teal-600 dark:group-hover/cat:text-teal-300 transition shrink-0" />
                     </div>
-                    <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 tabular-nums">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 tabular-nums">
                       {hasExpenseLines && (
                         <span>
                           {isFr ? 'Dépenses :' : 'Spent:'}{' '}
-                          <strong className="text-slate-200 font-mono">
+                          <strong className="text-slate-800 dark:text-slate-200 font-mono">
                             {catExpenses.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                           </strong>{' '}
                           /{' '}
@@ -1075,7 +1113,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                       {hasIncomeLines && (
                         <span>
                           {isFr ? 'Revenus :' : 'Income:'}{' '}
-                          <strong className="text-emerald-400 font-mono">
+                          <strong className="text-emerald-600 dark:text-emerald-400 font-mono">
                             {catIncomeActual.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                           </strong>{' '}
                           /{' '}
@@ -1095,7 +1133,9 @@ export const BudgetPlannerScreen: React.FC = () => {
                   {hasExpenseLines && catExpenseBudget > 0 && (
                     <span
                       className={`text-xs font-bold font-mono tabular-nums ${
-                        isOver ? 'text-rose-400' : 'text-teal-400'
+                        isOver
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-teal-700 dark:text-teal-400'
                       }`}
                     >
                       {percentUsed}%
@@ -1104,7 +1144,7 @@ export const BudgetPlannerScreen: React.FC = () => {
 
                   <button
                     onClick={() => handleOpenCatModal(cat)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition"
                     title={isFr ? 'Modifier catégorie' : 'Edit category'}
                   >
                     <Edit2 className="w-4 h-4" />
@@ -1119,7 +1159,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         deleteCategory(cat.id);
                       }
                     }}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                    className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                     title={isFr ? 'Supprimer' : 'Delete'}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1129,10 +1169,10 @@ export const BudgetPlannerScreen: React.FC = () => {
 
               {/* Category Expense Progress Bar */}
               {hasExpenseLines && (
-                <div className="w-full h-1.5 rounded-full bg-slate-950 overflow-hidden">
+                <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-950 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${
-                      isOver ? 'bg-rose-500' : 'bg-teal-500'
+                      isOver ? 'bg-rose-500' : 'bg-teal-600 dark:bg-teal-500'
                     }`}
                     style={{ width: `${percentUsed}%` }}
                   />
@@ -1140,15 +1180,15 @@ export const BudgetPlannerScreen: React.FC = () => {
               )}
 
               {/* Sub-Categories (Real Budget Lines) */}
-              <div className="pt-3 border-t border-slate-800/60 space-y-2.5">
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800/60 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
                   <span>
                     {isFr ? 'Sous-catégories & Lignes budgétaires' : 'Sub-categories & Budget lines'} (
                     {catBudgets.length})
                   </span>
                   <button
                     onClick={() => handleOpenBudgetModal(cat.id)}
-                    className="text-teal-400 hover:text-teal-300 flex items-center gap-1 font-semibold transition whitespace-nowrap"
+                    className="text-teal-700 hover:text-teal-600 dark:text-teal-400 dark:hover:text-teal-300 flex items-center gap-1 font-semibold transition whitespace-nowrap"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>{isFr ? 'Ajouter une sous-catégorie' : 'Add sub-category'}</span>
@@ -1162,7 +1202,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                       : 'No sub-categories configured. Add at least one sub-category to assign transactions or rules.'}
                   </p>
                 ) : (
-                  <div className="divide-y divide-slate-800/60 rounded-xl bg-slate-950/50 border border-slate-800/80">
+                  <div className="divide-y divide-slate-200 dark:divide-slate-800/60 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/80">
                     {catBudgets.map(b => {
                       const activeInSelectedMonth = isBudgetActiveInMonth(b, selectedYear, selectedMonth1);
                       const activeMonthsInYear = getBudgetActiveMonthsInYear(b, selectedYear);
@@ -1197,25 +1237,25 @@ export const BudgetPlannerScreen: React.FC = () => {
                               ? `Voir les transactions de cette sous-catégorie en ${selectedYear}`
                               : `View transactions for this sub-category in ${selectedYear}`
                           }
-                          className={`px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-900/70 transition cursor-pointer group/sub ${
+                          className={`px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-100/80 dark:hover:bg-slate-900/70 transition cursor-pointer group/sub ${
                             !b.isActive ? 'opacity-55' : ''
                           }`}
                         >
                           <div className="min-w-0 space-y-0.5">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-slate-100 group-hover/sub:text-teal-300 transition">
+                              <span className="font-semibold text-slate-900 dark:text-slate-100 group-hover/sub:text-teal-700 dark:group-hover/sub:text-teal-300 transition">
                                 {b.title}
                               </span>
-                              <ArrowUpRight className="w-3 h-3 text-slate-600 group-hover/sub:text-teal-300 transition shrink-0" />
+                              <ArrowUpRight className="w-3 h-3 text-slate-400 dark:text-slate-600 group-hover/sub:text-teal-600 dark:group-hover/sub:text-teal-300 transition shrink-0" />
                               {!b.isActive && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-medium">
+                                <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium">
                                   <PauseCircle className="w-3 h-3" />
                                   {isFr ? 'En pause' : 'Paused'}
                                 </span>
                               )}
                             </div>
 
-                            <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                               <span>{formatBudgetScheduleLabel(b, language)}</span>
                               {windowLabel && (
                                 <>
@@ -1230,7 +1270,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 b.month !== selectedMonth1 && (
                                   <>
                                     <span aria-hidden="true">·</span>
-                                    <span className="text-indigo-300">
+                                    <span className="text-indigo-600 dark:text-indigo-300">
                                       {isFr
                                         ? `0 ${currency} ce mois-ci (prévu en ${getMonthShortName(b.month, language)})`
                                         : `0 ${currency} this month (scheduled ${getMonthShortName(b.month, language)})`}
@@ -1260,7 +1300,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 activeMonthsInYear < 12 && (
                                   <>
                                     <span aria-hidden="true">·</span>
-                                    <span className="text-indigo-300">
+                                    <span className="text-indigo-600 dark:text-indigo-300">
                                       {isFr
                                         ? `${activeMonthsInYear}/12 mois actifs`
                                         : `${activeMonthsInYear}/12 active months`}
@@ -1269,7 +1309,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                                 )}
                             </div>
                             {subActuals.offsetAmount > 0 && (
-                              <div className="text-[11px] text-teal-300/90 font-mono tabular-nums">
+                              <div className="text-[11px] text-teal-700 dark:text-teal-300/90 font-mono tabular-nums">
                                 {b.isExpense
                                   ? isFr
                                     ? `Dépenses ${subActuals.grossExpense.toLocaleString(undefined, { maximumFractionDigits: 2 })} − Crédits ${subActuals.grossIncome.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`
@@ -1283,20 +1323,26 @@ export const BudgetPlannerScreen: React.FC = () => {
 
                           <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 tabular-nums">
                             <div className="text-right">
-                              <div className="font-mono font-bold text-slate-100">
+                              <div className="font-mono font-bold text-slate-900 dark:text-slate-100">
                                 <span
                                   className={
                                     subOver
-                                      ? 'text-rose-400'
+                                      ? 'text-rose-600 dark:text-rose-400'
                                       : b.isExpense && actualForSubCat < 0
-                                      ? 'text-emerald-400'
+                                      ? 'text-emerald-600 dark:text-emerald-400'
                                       : ''
                                   }
                                 >
                                   {actualForSubCat.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                 </span>
-                                <span className="text-slate-500 font-normal"> / </span>
-                                <span className={b.isExpense ? 'text-slate-100' : 'text-emerald-400'}>
+                                <span className="text-slate-400 dark:text-slate-500 font-normal"> / </span>
+                                <span
+                                  className={
+                                    b.isExpense
+                                      ? 'text-slate-700 dark:text-slate-100'
+                                      : 'text-emerald-600 dark:text-emerald-400'
+                                  }
+                                >
                                   {periodBudgeted.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
                                   {currency}
                                 </span>
@@ -1321,7 +1367,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                                   e.stopPropagation();
                                   handleOpenBudgetModal(cat.id, b);
                                 }}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition"
                                 title={isFr ? 'Modifier sous-catégorie' : 'Edit sub-category'}
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -1331,7 +1377,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                                   e.stopPropagation();
                                   deleteBudget(b.id);
                                 }}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                                className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition"
                                 title={isFr ? 'Supprimer sous-catégorie' : 'Delete sub-category'}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1351,10 +1397,10 @@ export const BudgetPlannerScreen: React.FC = () => {
 
       {/* Category Wrapper Modal */}
       {isCategoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-white">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                 {editingCategory
                   ? isFr
                     ? 'Modifier la catégorie'
@@ -1363,7 +1409,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                   ? 'Nouvelle catégorie'
                   : 'New Category'}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {isFr
                   ? 'Regroupement visuel (nom, icône et couleur) pour vos sous-catégories budgétaires'
                   : 'Visual wrapper (name, icon, and color) for your sub-category budget lines'}
@@ -1372,7 +1418,7 @@ export const BudgetPlannerScreen: React.FC = () => {
 
             <form onSubmit={handleSaveCat} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                   {isFr ? 'Nom de la catégorie' : 'Category Name'}
                 </label>
                 <input
@@ -1381,19 +1427,19 @@ export const BudgetPlannerScreen: React.FC = () => {
                   placeholder={isFr ? 'Ex: Logement, Vacances, Véhicules...' : 'e.g. Housing, Vehicles, Health...'}
                   value={catName}
                   onChange={e => setCatName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                     {isFr ? 'Icône' : 'Icon'}
                   </label>
                   <select
                     value={catIcon}
                     onChange={e => setCatIcon(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-teal-500"
                   >
                     <option value="ShoppingCart">ShoppingCart (Courses)</option>
                     <option value="Home">Home (Logement)</option>
@@ -1409,29 +1455,29 @@ export const BudgetPlannerScreen: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                     {isFr ? 'Couleur' : 'Color'}
                   </label>
                   <input
                     type="color"
                     value={catColorHex}
                     onChange={e => setCatColorHex(e.target.value)}
-                    className="w-full h-9 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1 cursor-pointer"
+                    className="w-full h-9 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-2 py-1 cursor-pointer"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsCategoryModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 transition"
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition"
                 >
                   {isFr ? 'Annuler' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm shadow-md transition"
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-sm shadow-md transition"
                 >
                   {isFr ? 'Enregistrer' : 'Save'}
                 </button>
@@ -1443,10 +1489,10 @@ export const BudgetPlannerScreen: React.FC = () => {
 
       {/* Sub-Category Budget Line Modal */}
       {isBudgetModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
-              <h2 className="text-lg font-bold text-white">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                 {editingBudget
                   ? isFr
                     ? 'Modifier la sous-catégorie'
@@ -1455,7 +1501,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                   ? 'Nouvelle sous-catégorie budgétaire'
                   : 'New Sub-Category Budget Line'}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {activeCategories.find(c => c.id === targetCategoryId)?.name}
               </p>
             </div>
@@ -1463,14 +1509,14 @@ export const BudgetPlannerScreen: React.FC = () => {
             <form onSubmit={handleSaveBudget} className="space-y-4">
               {/* Expense vs Income */}
               <div className="space-y-1.5">
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs font-semibold">
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
                   <button
                     type="button"
                     onClick={() => setBudgetIsExpense(true)}
                     className={`py-2 rounded-lg transition ${
                       budgetIsExpense
-                        ? 'bg-rose-500 text-white shadow-md'
-                        : 'text-slate-400 hover:text-slate-200'
+                        ? 'bg-rose-600 dark:bg-rose-500 text-white shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
                     {isFr ? 'Dépense / Débit' : 'Spending / Expense'}
@@ -1480,14 +1526,14 @@ export const BudgetPlannerScreen: React.FC = () => {
                     onClick={() => setBudgetIsExpense(false)}
                     className={`py-2 rounded-lg transition ${
                       !budgetIsExpense
-                        ? 'bg-emerald-500 text-slate-950 shadow-md'
-                        : 'text-slate-400 hover:text-slate-200'
+                        ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-slate-950 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
                     {isFr ? 'Revenu / Crédit' : 'Income / Salary'}
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {isFr
                     ? 'Définit le sens de l’objectif budgétaire (les opérations de sens opposé, comme un remboursement ou un loyer perçu, viendront en déduction du net).'
                     : 'Sets the budget goal direction (opposite-flow transactions like reimbursements or rent offsets will reduce the net actual).'}
@@ -1497,7 +1543,7 @@ export const BudgetPlannerScreen: React.FC = () => {
               {/* Title & Amount */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                     {isFr ? 'Nom de la sous-catégorie' : 'Sub-category Name'}
                   </label>
                   <input
@@ -1510,12 +1556,12 @@ export const BudgetPlannerScreen: React.FC = () => {
                     }
                     value={budgetTitle}
                     onChange={e => setBudgetTitle(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                     {budgetFreq === 'YEARLY'
                       ? isFr
                         ? `Montant annuel (${currency})`
@@ -1532,17 +1578,17 @@ export const BudgetPlannerScreen: React.FC = () => {
                     placeholder="0.00"
                     value={budgetAmountStr}
                     onChange={e => setBudgetAmountStr(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm font-bold font-mono text-white focus:outline-none focus:border-teal-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm font-bold font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                   />
                 </div>
               </div>
 
               {/* Recurrence: Monthly vs Yearly */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
                   {isFr ? 'Périodicité' : 'Recurrence'}
                 </label>
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs font-semibold">
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold">
                   <button
                     type="button"
                     onClick={() => {
@@ -1551,8 +1597,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                     }}
                     className={`py-2 rounded-lg transition ${
                       budgetFreq === 'MONTHLY'
-                        ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                        : 'text-slate-400 hover:text-slate-200'
+                        ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
                     {isFr ? 'Mensuel' : 'Monthly'}
@@ -1562,8 +1608,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                     onClick={() => setBudgetFreq('YEARLY')}
                     className={`py-2 rounded-lg transition ${
                       budgetFreq === 'YEARLY'
-                        ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                        : 'text-slate-400 hover:text-slate-200'
+                        ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
                     {isFr ? 'Annuel' : 'Yearly'}
@@ -1573,8 +1619,8 @@ export const BudgetPlannerScreen: React.FC = () => {
 
               {/* Scheduling rules */}
               {budgetFreq === 'MONTHLY' ? (
-                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
-                  <label className="block text-xs font-medium text-slate-300">
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-3">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                     {isFr ? 'Répartition dans le mois' : 'Monthly Allocation'}
                   </label>
                   <div className="grid grid-cols-2 gap-2 text-xs font-semibold">
@@ -1583,8 +1629,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                       onClick={() => setHasSpecificDay(false)}
                       className={`py-2 px-3 rounded-lg border transition text-center ${
                         !hasSpecificDay
-                          ? 'bg-slate-800 border-teal-500/60 text-teal-300'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                          ? 'bg-teal-50 dark:bg-slate-800 border-teal-500/60 text-teal-700 dark:text-teal-300'
+                          : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                       }`}
                     >
                       {isFr ? 'Réparti sur le mois' : 'Spread in month'}
@@ -1594,8 +1640,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                       onClick={() => setHasSpecificDay(true)}
                       className={`py-2 px-3 rounded-lg border transition text-center ${
                         hasSpecificDay
-                          ? 'bg-slate-800 border-teal-500/60 text-teal-300'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                          ? 'bg-teal-50 dark:bg-slate-800 border-teal-500/60 text-teal-700 dark:text-teal-300'
+                          : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                       }`}
                     >
                       {isFr ? 'Jour précis du mois' : 'Specific day of month'}
@@ -1604,7 +1650,7 @@ export const BudgetPlannerScreen: React.FC = () => {
 
                   {hasSpecificDay ? (
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">
+                      <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                         {isFr ? 'Jour d’échéance (1 à 31)' : 'Day of month (1–31)'}
                       </label>
                       <input
@@ -1614,11 +1660,11 @@ export const BudgetPlannerScreen: React.FC = () => {
                         required
                         value={budgetDay}
                         onChange={e => setBudgetDay(Math.max(1, Math.min(31, parseInt(e.target.value, 10) || 1)))}
-                        className="w-32 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-teal-500"
+                        className="w-32 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                       />
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       {isFr
                         ? 'Idéal pour l’alimentation, le carburant ou les dépenses courantes réparties sur tout le mois.'
                         : 'Ideal for groceries, fuel, or discretionary spending spread evenly across the month.'}
@@ -1626,9 +1672,9 @@ export const BudgetPlannerScreen: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                       {isFr ? 'Mois d’affectation dans l’année' : 'Assigned Month of Year'}
                     </label>
                     <select
@@ -1638,7 +1684,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         setBudgetMonth(val);
                         if (val === '') setHasSpecificDay(false);
                       }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-teal-500"
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-teal-500"
                     >
                       <option value="">
                         {isFr
@@ -1655,7 +1701,7 @@ export const BudgetPlannerScreen: React.FC = () => {
 
                   {budgetMonth !== '' ? (
                     <div className="space-y-2.5 pt-1">
-                      <label className="block text-xs font-medium text-slate-300">
+                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
                         {isFr ? 'Échéance dans le mois sélectionné' : 'Timing Within Assigned Month'}
                       </label>
                       <div className="grid grid-cols-2 gap-2 text-xs font-semibold">
@@ -1664,8 +1710,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                           onClick={() => setHasSpecificDay(false)}
                           className={`py-2 px-3 rounded-lg border transition text-center ${
                             !hasSpecificDay
-                              ? 'bg-slate-800 border-teal-500/60 text-teal-300'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                              ? 'bg-teal-50 dark:bg-slate-800 border-teal-500/60 text-teal-700 dark:text-teal-300'
+                              : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                           }`}
                         >
                           {isFr ? 'Réparti sur ce mois' : 'Spread in month'}
@@ -1675,8 +1721,8 @@ export const BudgetPlannerScreen: React.FC = () => {
                           onClick={() => setHasSpecificDay(true)}
                           className={`py-2 px-3 rounded-lg border transition text-center ${
                             hasSpecificDay
-                              ? 'bg-slate-800 border-teal-500/60 text-teal-300'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                              ? 'bg-teal-50 dark:bg-slate-800 border-teal-500/60 text-teal-700 dark:text-teal-300'
+                              : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                           }`}
                         >
                           {isFr ? 'Jour précis' : 'Specific day'}
@@ -1685,7 +1731,7 @@ export const BudgetPlannerScreen: React.FC = () => {
 
                       {hasSpecificDay ? (
                         <div>
-                          <label className="block text-[11px] text-slate-400 mb-1">
+                          <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                             {isFr ? 'Jour d’exécution (1 à 31)' : 'Execution day (1–31)'}
                           </label>
                           <input
@@ -1697,11 +1743,11 @@ export const BudgetPlannerScreen: React.FC = () => {
                             onChange={e =>
                               setBudgetDay(Math.max(1, Math.min(31, parseInt(e.target.value, 10) || 1)))
                             }
-                            className="w-32 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-teal-500"
+                            className="w-32 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                           />
                         </div>
                       ) : (
-                        <p className="text-[11px] text-slate-400">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
                           {isFr
                             ? 'Ex: budget vacances réservé sur un mois précis, dépensé progressivement pendant ce mois.'
                             : 'Example: vacation budget allocated to a specific month and spent throughout that month.'}
@@ -1709,7 +1755,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                       )}
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       {isFr
                         ? 'Le montant annuel est lissé sur 12 mois dans la trésorerie et le budget mensuel.'
                         : 'The annual amount is amortized evenly (÷ 12) across monthly budgets and forecasts.'}
@@ -1719,30 +1765,30 @@ export const BudgetPlannerScreen: React.FC = () => {
               )}
 
               {/* Optional Validity Window & Notes */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/50">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
                 <button
                   type="button"
                   onClick={() => setShowWindowOptions(prev => !prev)}
-                  className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-semibold text-slate-300 hover:text-white transition"
+                  className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition"
                 >
                   <span className="flex items-center gap-2">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <Calendar className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                     {isFr ? 'Période de validité & options (facultatif)' : 'Validity window & options (optional)'}
                   </span>
                   {showWindowOptions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
 
                 {showWindowOptions && (
-                  <div className="px-3.5 pb-3.5 pt-2 border-t border-slate-800/80 space-y-3 text-xs">
+                  <div className="px-3.5 pb-3.5 pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-3 text-xs">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">
+                        <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                           {isFr ? 'Mois de début' : 'Start Month'}
                         </label>
                         <select
                           value={startMonth}
                           onChange={e => setStartMonth(e.target.value ? parseInt(e.target.value, 10) : '')}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-teal-500"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-teal-500"
                         >
                           <option value="">—</option>
                           {Array.from({ length: 12 }, (_, idx) => idx + 1).map(m => (
@@ -1753,7 +1799,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">
+                        <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                           {isFr ? 'Année de début' : 'Start Year'}
                         </label>
                         <input
@@ -1763,20 +1809,20 @@ export const BudgetPlannerScreen: React.FC = () => {
                           placeholder={String(selectedYear)}
                           value={startYear}
                           onChange={e => setStartYear(e.target.value ? parseInt(e.target.value, 10) : '')}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 focus:outline-none focus:border-teal-500"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-teal-500"
                         />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">
+                        <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                           {isFr ? 'Mois de fin' : 'End Month'}
                         </label>
                         <select
                           value={endMonth}
                           onChange={e => setEndMonth(e.target.value ? parseInt(e.target.value, 10) : '')}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-teal-500"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-teal-500"
                         >
                           <option value="">—</option>
                           {Array.from({ length: 12 }, (_, idx) => idx + 1).map(m => (
@@ -1787,7 +1833,7 @@ export const BudgetPlannerScreen: React.FC = () => {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[11px] text-slate-400 mb-1">
+                        <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                           {isFr ? 'Année de fin' : 'End Year'}
                         </label>
                         <input
@@ -1797,13 +1843,13 @@ export const BudgetPlannerScreen: React.FC = () => {
                           placeholder="—"
                           value={endYear}
                           onChange={e => setEndYear(e.target.value ? parseInt(e.target.value, 10) : '')}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-200 focus:outline-none focus:border-teal-500"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-teal-500"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">
+                      <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
                         {isFr ? 'Notes' : 'Notes'}
                       </label>
                       <input
@@ -1811,16 +1857,16 @@ export const BudgetPlannerScreen: React.FC = () => {
                         placeholder={isFr ? 'Précisions facultatives...' : 'Optional memo...'}
                         value={budgetNotes}
                         onChange={e => setBudgetNotes(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-teal-500"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-teal-500"
                       />
                     </div>
 
-                    <label className="flex items-center gap-2 text-slate-300 cursor-pointer pt-1">
+                    <label className="flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
                       <input
                         type="checkbox"
                         checked={budgetIsActive}
                         onChange={e => setBudgetIsActive(e.target.checked)}
-                        className="w-4 h-4 rounded text-teal-500 bg-slate-900 border-slate-700"
+                        className="w-4 h-4 rounded text-teal-600 dark:text-teal-500 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
                       />
                       <span>
                         {isFr ? 'Sous-catégorie active dans les calculs' : 'Active in budgets and forecasts'}
@@ -1830,17 +1876,17 @@ export const BudgetPlannerScreen: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsBudgetModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-slate-200 transition"
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition"
                 >
                   {isFr ? 'Annuler' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm shadow-md transition"
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-sm shadow-md transition"
                 >
                   {isFr ? 'Enregistrer' : 'Save'}
                 </button>

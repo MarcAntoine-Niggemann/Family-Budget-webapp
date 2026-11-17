@@ -20,13 +20,16 @@ import {
   Fingerprint,
   Trash2,
   Lock,
-  KeyRound
+  KeyRound,
+  Sun,
+  Moon,
+  Monitor
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { ShareVaultQrModal } from '../components/ShareVaultQrModal';
 import { AccountModal } from '../components/AccountModal';
 import { CategoryIcon } from '../components/CategoryIcon';
-import { AccountEntity, AccountType } from '../types';
+import { AccountEntity, AccountType, ThemePreference } from '../types';
 import {
   BiometricStatus,
   checkBiometricSupport
@@ -89,6 +92,9 @@ export const FirebaseSyncScreen: React.FC = () => {
     resetToMockData,
     language,
     setLanguage,
+    themePreference,
+    resolvedTheme,
+    setThemePreference,
     firebaseUser,
     loginWithGoogle,
     lockVault,
@@ -240,18 +246,63 @@ export const FirebaseSyncScreen: React.FC = () => {
     ? 'Jamais'
     : 'Never';
 
+  const handleSelectTheme = (nextTheme: ThemePreference) => {
+    setThemePreference(nextTheme);
+    const label =
+      nextTheme === 'system'
+        ? isFr
+          ? 'Thème : Automatique (système)'
+          : 'Theme: System (Auto)'
+        : nextTheme === 'light'
+        ? isFr
+          ? 'Thème : Clair'
+          : 'Theme: Light'
+        : isFr
+        ? 'Thème : Sombre'
+        : 'Theme: Dark';
+    showToast(label);
+  };
+
+  const themeOptions: {
+    value: ThemePreference;
+    label: string;
+    description: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      value: 'system',
+      label: isFr ? 'Système (Auto)' : 'System (Auto)',
+      description: isFr
+        ? `Suit l’appareil (actuel : ${resolvedTheme === 'dark' ? 'Sombre' : 'Clair'})`
+        : `Matches browser/OS (currently ${resolvedTheme === 'dark' ? 'Dark' : 'Light'})`,
+      icon: <Monitor className="w-4 h-4" />
+    },
+    {
+      value: 'light',
+      label: isFr ? 'Clair' : 'Light',
+      description: isFr ? 'Surfaces blanches et ardoise claire' : 'Crisp cool slate & white surfaces',
+      icon: <Sun className="w-4 h-4" />
+    },
+    {
+      value: 'dark',
+      label: isFr ? 'Sombre' : 'Dark',
+      description: isFr ? 'Thème nocturne ardoise profonde' : 'Deep slate low-light workspace',
+      icon: <Moon className="w-4 h-4" />
+    }
+  ];
+
   return (
     <div className="space-y-6 pb-12 max-w-4xl mx-auto">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
             {isFr ? 'Configuration du Coffre & Synchronisation' : 'Vault Config & Cloud Sync'}
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {isFr
-              ? 'Chiffrement local AES-256-GCM, membres RBAC, biométrie et synchronisation Firestore'
-              : 'AES-256-GCM local encryption, family RBAC, biometrics, and Cloud Firestore sync'}
+              ? 'Chiffrement local AES-256-GCM, membres RBAC, biométrie, apparence et synchronisation Firestore'
+              : 'AES-256-GCM local encryption, family RBAC, biometrics, appearance, and Cloud Firestore sync'}
           </p>
         </div>
 
@@ -260,9 +311,9 @@ export const FirebaseSyncScreen: React.FC = () => {
             <button
               type="button"
               onClick={() => lockVault()}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition whitespace-nowrap cursor-pointer shadow-sm dark:shadow-none"
             >
-              <Lock className="w-3.5 h-3.5 text-teal-400" />
+              <Lock className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
               <span>{isFr ? 'Verrouiller le coffre' : 'Lock Vault'}</span>
             </button>
           )}
@@ -270,7 +321,7 @@ export const FirebaseSyncScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => logout()}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-200 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/15 dark:hover:bg-rose-500/25 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-200 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>
@@ -280,12 +331,75 @@ export const FirebaseSyncScreen: React.FC = () => {
         </div>
       </div>
 
+      {/* Appearance & Theme Selector Card */}
+      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-500/15 border border-teal-200 dark:border-teal-500/30 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+              {resolvedTheme === 'dark' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900 dark:text-white text-base">
+                {isFr ? 'Apparence & Thème' : 'Appearance & Theme'}
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {isFr
+                  ? 'Préférence enregistrée localement sur cet appareil (par défaut selon votre navigateur)'
+                  : 'Saved locally on this device (automatically follows your browser/OS by default)'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-label={isFr ? 'Choix du thème' : 'Theme preference'}>
+          {themeOptions.map(opt => {
+            const isSelected = themePreference === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                onClick={() => handleSelectTheme(opt.value)}
+                className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex items-start gap-3 ${
+                  isSelected
+                    ? 'bg-teal-50/90 dark:bg-teal-500/15 border-teal-500 dark:border-teal-500/60 ring-1 ring-teal-500/30'
+                    : 'bg-slate-50 hover:bg-slate-100/80 dark:bg-slate-950/70 dark:hover:bg-slate-950 border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    isSelected
+                      ? 'bg-teal-600 dark:bg-teal-500 text-white dark:text-slate-950'
+                      : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {opt.icon}
+                </div>
+                <div className="min-w-0">
+                  <span
+                    className={`block text-xs font-bold ${
+                      isSelected ? 'text-teal-800 dark:text-teal-200' : 'text-slate-900 dark:text-white'
+                    }`}
+                  >
+                    {opt.label}
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                    {opt.description}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Cloud & Outbox Sync Status Card */}
       <div
-        className={`p-5 rounded-2xl bg-slate-900 border shadow-xl space-y-4 ${
+        className={`p-5 rounded-2xl bg-white dark:bg-slate-900 border shadow-sm dark:shadow-xl space-y-4 ${
           syncState.lastSyncStatus === 'ERROR'
-            ? 'border-rose-500/50'
-            : 'border-slate-800'
+            ? 'border-rose-300 dark:border-rose-500/50'
+            : 'border-slate-200 dark:border-slate-800'
         }`}
       >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -293,8 +407,8 @@ export const FirebaseSyncScreen: React.FC = () => {
             <div
               className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                 syncState.lastSyncStatus === 'ERROR'
-                  ? 'bg-rose-500/20 text-rose-400'
-                  : 'bg-teal-500/20 text-teal-300'
+                  ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400'
+                  : 'bg-teal-50 text-teal-600 dark:bg-teal-500/20 dark:text-teal-300'
               }`}
             >
               {syncState.lastSyncStatus === 'SYNCING' ? (
@@ -306,12 +420,14 @@ export const FirebaseSyncScreen: React.FC = () => {
               )}
             </div>
             <div>
-              <h2 className="font-bold text-base text-white">
+              <h2 className="font-bold text-base text-slate-900 dark:text-white">
                 {isFr ? 'Statut de Synchronisation du Coffre' : 'Vault Synchronization Status'}
               </h2>
               <p
                 className={`text-xs mt-0.5 ${
-                  syncState.lastSyncStatus === 'ERROR' ? 'text-rose-300 font-medium' : 'text-slate-400'
+                  syncState.lastSyncStatus === 'ERROR'
+                    ? 'text-rose-600 dark:text-rose-300 font-medium'
+                    : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {syncState.lastSyncMessage || (isFr ? 'Prêt.' : 'Ready.')}
@@ -323,10 +439,10 @@ export const FirebaseSyncScreen: React.FC = () => {
             {isFirestoreMode && isByobConfigured && (
               <button
                 onClick={() => setIsShareModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer"
                 title={isFr ? 'Partager le QR Code du Coffre' : 'Share Vault QR Code'}
               >
-                <QrCode className="w-4 h-4 text-teal-400" />
+                <QrCode className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 <span>{isFr ? 'Partager QR' : 'Share QR'}</span>
               </button>
             )}
@@ -335,7 +451,7 @@ export const FirebaseSyncScreen: React.FC = () => {
               <button
                 onClick={() => syncWithFirebaseNow()}
                 disabled={syncState.lastSyncStatus === 'SYNCING'}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm transition active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw
                   className={`w-4 h-4 ${syncState.lastSyncStatus === 'SYNCING' ? 'animate-spin' : ''}`}
@@ -346,22 +462,22 @@ export const FirebaseSyncScreen: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-800 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
           <div>
             <span className="text-slate-500 block">{isFr ? 'Dernière synchro :' : 'Last Sync:'}</span>
-            <span className="font-semibold text-slate-200 mt-0.5 block">{lastSyncDateStr}</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 block">{lastSyncDateStr}</span>
           </div>
           <div>
             <span className="text-slate-500 block">
               {isFr ? 'Modifications en attente :' : 'Outbox Queue:'}
             </span>
-            <span className="font-semibold text-teal-400 mt-0.5 block tabular-nums">
+            <span className="font-semibold text-teal-600 dark:text-teal-400 mt-0.5 block tabular-nums">
               {syncState.pendingOutboxCount} {isFr ? 'opérations' : 'items'}
             </span>
           </div>
           <div>
             <span className="text-slate-500 block">{isFr ? 'Mode actif :' : 'Active Mode:'}</span>
-            <span className="font-semibold text-indigo-300 mt-0.5 block">
+            <span className="font-semibold text-indigo-600 dark:text-indigo-300 mt-0.5 block">
               {isFirestoreMode && isByobConfigured
                 ? isActuallyAuthenticated
                   ? `Firestore BYOB (${config.projectId})`
@@ -377,10 +493,10 @@ export const FirebaseSyncScreen: React.FC = () => {
       </div>
 
       {/* Private Cloud BYOB & Fingerprint Card */}
-      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center p-2 shadow-md shrink-0 overflow-hidden">
+            <div className="w-12 h-12 rounded-2xl bg-teal-50 dark:bg-teal-500/15 border border-teal-200 dark:border-teal-500/30 text-teal-600 dark:text-teal-400 flex items-center justify-center p-2 shadow-sm shrink-0 overflow-hidden">
               {firebaseUser?.photoURL ? (
                 <img src={firebaseUser.photoURL} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover rounded-xl" />
               ) : (
@@ -388,12 +504,12 @@ export const FirebaseSyncScreen: React.FC = () => {
               )}
             </div>
             <div>
-              <h2 className="font-bold text-base text-white">
+              <h2 className="font-bold text-base text-slate-900 dark:text-white">
                 {isFirestoreMode && isByobConfigured
                   ? (isFr ? 'Firebase Privé (BYOB) & Google OAuth' : 'Private Firebase (BYOB) & Google OAuth')
                   : (isFr ? 'Session Démo en Mémoire' : 'In-Memory Demo Session')}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {isFirestoreMode && isByobConfigured
                   ? isActuallyAuthenticated
                     ? `${isFr ? 'Projet' : 'Project'}: ${config.projectId} · ${firebaseUser.email}`
@@ -414,7 +530,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleGoogleSignIn}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs shadow-lg transition active:scale-95 cursor-pointer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs shadow-sm transition active:scale-95 cursor-pointer"
                   >
                     <span>{isFr ? 'Se connecter avec Google' : 'Sign in with Google'}</span>
                   </button>
@@ -423,7 +539,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => forgetByobConfig()}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-rose-300 transition cursor-pointer"
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-rose-600 dark:text-rose-300 transition cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>{isFr ? 'Oublier config BYOB & Déconnexion' : 'Forget BYOB Config & Log Out'}</span>
@@ -433,7 +549,7 @@ export const FirebaseSyncScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={() => logout()}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition cursor-pointer"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs transition cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>{isFr ? 'Quitter Démo & Connecter Firestore' : 'Exit Demo & Connect Firestore'}</span>
@@ -443,25 +559,25 @@ export const FirebaseSyncScreen: React.FC = () => {
         </div>
 
         {authError && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <span>{authError}</span>
           </div>
         )}
 
         {/* Encrypted Vault Security: Biometrics + Vault PIN */}
         {isFirestoreMode && isByobConfigured && (
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-teal-500/15 text-teal-400 flex items-center justify-center shrink-0">
+                <div className="w-9 h-9 rounded-lg bg-teal-50 dark:bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
                   <Fingerprint className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="font-semibold text-xs text-white block">
+                  <span className="font-semibold text-xs text-slate-900 dark:text-white block">
                     {isFr ? 'Chiffrement Local & Verrouillage du Coffre' : 'Local AES-256-GCM Encryption & Vault Lock'}
                   </span>
-                  <span className="text-[11px] text-slate-400 block">
+                  <span className="text-[11px] text-slate-600 dark:text-slate-400 block">
                     {vaultLockMeta?.encryptionMode === 'WEBAUTHN_PRF'
                       ? isFr
                         ? 'Clé matérielle WebAuthn PRF stricte — aucune donnée en clair dans le navigateur.'
@@ -487,7 +603,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                   type="button"
                   disabled={biometricLoading || !biometricStatus.isPlatformAvailable}
                   onClick={handleEnrollFingerprint}
-                  className="px-3.5 py-2 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-300 font-semibold text-xs transition disabled:opacity-40 whitespace-nowrap cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 dark:bg-teal-500/15 dark:hover:bg-teal-500/25 border border-teal-200 dark:border-teal-500/30 text-teal-700 dark:text-teal-300 font-semibold text-xs transition disabled:opacity-40 whitespace-nowrap cursor-pointer"
                 >
                   {vaultLockMeta?.credentialId
                     ? isFr
@@ -502,7 +618,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleRemoveFingerprint}
-                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+                    className="px-3 py-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
                   >
                     {isFr ? 'Retirer' : 'Remove'}
                   </button>
@@ -512,10 +628,10 @@ export const FirebaseSyncScreen: React.FC = () => {
 
             <form
               onSubmit={handleSavePin}
-              className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-end gap-3"
+              className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-end gap-3"
             >
               <div className="flex-1">
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
                   {vaultLockMeta?.wrappedDekPin
                     ? isFr
                       ? 'Changer le Code PIN du coffre (6+ car.)'
@@ -530,12 +646,12 @@ export const FirebaseSyncScreen: React.FC = () => {
                   value={newVaultPin}
                   onChange={e => setNewVaultPin(e.target.value)}
                   placeholder="••••••"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                 />
               </div>
 
               <div className="flex-1">
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
                   {isFr ? 'Confirmer le Code PIN' : 'Confirm Vault PIN'}
                 </label>
                 <input
@@ -544,7 +660,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                   value={confirmVaultPin}
                   onChange={e => setConfirmVaultPin(e.target.value)}
                   placeholder="••••••"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
                 />
               </div>
 
@@ -552,9 +668,9 @@ export const FirebaseSyncScreen: React.FC = () => {
                 <button
                   type="submit"
                   disabled={pinSaving || newVaultPin.trim().length < 6}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition disabled:opacity-40 whitespace-nowrap cursor-pointer"
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition disabled:opacity-40 whitespace-nowrap cursor-pointer"
                 >
-                  <KeyRound className="w-3.5 h-3.5 text-teal-400" />
+                  <KeyRound className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                   <span>{isFr ? 'Enregistrer PIN' : 'Save PIN'}</span>
                 </button>
 
@@ -562,7 +678,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleRemovePin}
-                    className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/15 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
+                    className="px-3 py-2 rounded-xl bg-white hover:bg-rose-50 dark:bg-slate-900 dark:hover:bg-rose-500/15 border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-500/40 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-300 font-semibold text-xs transition whitespace-nowrap cursor-pointer"
                   >
                     {isFr ? 'Retirer PIN' : 'Remove PIN'}
                   </button>
@@ -573,14 +689,14 @@ export const FirebaseSyncScreen: React.FC = () => {
         )}
 
         {isFirestoreMode && isByobConfigured && (
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
             <div className="space-y-1 max-w-xl">
-              <p className="text-slate-300 font-medium">
+              <p className="text-slate-800 dark:text-slate-300 font-medium">
                 {isFr
                   ? 'Actions de synchronisation & règles de sécurité Firestore :'
                   : 'Firestore synchronization actions & security rules:'}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {isFr
                   ? 'Si vous obtenez une erreur « permission-denied », copiez ces règles dans Firebase Console → Firestore Database → Rules puis rechargez le coffre.'
                   : 'If you see a "permission-denied" error, copy these rules to Firebase Console → Firestore Database → Rules and resync.'}
@@ -591,9 +707,9 @@ export const FirebaseSyncScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCopyRules}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer"
               >
-                {copiedRules ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-teal-400" />}
+                {copiedRules ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />}
                 <span>{copiedRules ? (isFr ? 'Règles copiées !' : 'Rules Copied!') : (isFr ? 'Copier firestore.rules' : 'Copy firestore.rules')}</span>
               </button>
 
@@ -601,7 +717,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                 type="button"
                 disabled={!isActuallyAuthenticated || syncState.lastSyncStatus === 'SYNCING'}
                 onClick={() => syncWithFirebaseNow({ forceFullPull: true, resetCacheBeforePull: true })}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-xs font-semibold text-indigo-200 transition disabled:opacity-40 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/30 border border-indigo-200 dark:border-indigo-500/40 text-xs font-semibold text-indigo-700 dark:text-indigo-200 transition disabled:opacity-40 cursor-pointer"
               >
                 <DownloadCloud className="w-3.5 h-3.5" />
                 <span>{isFr ? 'Tout recharger depuis Firestore' : 'Reset Cache & Pull Firestore'}</span>
@@ -614,35 +730,35 @@ export const FirebaseSyncScreen: React.FC = () => {
       {/* Family Vault Identity Settings */}
       <form
         onSubmit={handleSaveVault}
-        className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4"
+        className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4"
       >
         <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5 text-teal-400" />
-          <h2 className="font-bold text-white text-base">
+          <Shield className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+          <h2 className="font-bold text-slate-900 dark:text-white text-base">
             {isFr ? 'Identité du Coffre Familial' : 'Vault Identity'}
           </h2>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Nom du Coffre Familial' : 'Family Vault Name'}
             </label>
             <input
               type="text"
               value={familyName}
               onChange={e => setFamilyName(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
               {isFr ? 'Utilisateur Actif' : 'Active User'}
             </label>
-            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs text-slate-200">
+            <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-800 dark:text-slate-200">
               <span className="font-semibold">{firebaseUser?.displayName || config.currentUserName}</span>
-              <span className="font-mono text-teal-300 font-bold text-[11px]">
+              <span className="font-mono text-teal-600 dark:text-teal-300 font-bold text-[11px]">
                 {config.currentUserRole}
               </span>
             </div>
@@ -652,7 +768,7 @@ export const FirebaseSyncScreen: React.FC = () => {
         <div className="flex items-center justify-end">
           <button
             type="submit"
-            className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md transition cursor-pointer"
+            className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm transition cursor-pointer"
           >
             {isFr ? 'Mettre à jour le coffre' : 'Save Vault Settings'}
           </button>
@@ -660,15 +776,15 @@ export const FirebaseSyncScreen: React.FC = () => {
       </form>
 
       {/* Bank Accounts & Cards Configuration */}
-      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <Wallet className="w-5 h-5 text-teal-400" />
+            <Wallet className="w-5 h-5 text-teal-600 dark:text-teal-400" />
             <div>
-              <h2 className="font-bold text-white text-base">
+              <h2 className="font-bold text-slate-900 dark:text-white text-base">
                 {isFr ? 'Comptes Bancaires & Cartes' : 'Bank Accounts & Cards'}
               </h2>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {isFr
                   ? 'Ajoutez, modifiez les soldes ou configurez vos comptes courants, cartes différées et livrets d’épargne'
                   : 'Add, edit balances, or configure checking accounts, deferred cards, and savings accounts'}
@@ -682,7 +798,7 @@ export const FirebaseSyncScreen: React.FC = () => {
               setSelectedAccount(null);
               setIsAccountModalOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-teal-500/20 transition active:scale-95 self-start sm:self-auto cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm transition active:scale-95 self-start sm:self-auto cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>{isFr ? 'Ajouter un compte' : 'Add Account'}</span>
@@ -702,28 +818,28 @@ export const FirebaseSyncScreen: React.FC = () => {
                   setSelectedAccount(acc);
                   setIsAccountModalOpen(true);
                 }}
-                className="p-3.5 rounded-xl bg-slate-950/70 hover:bg-slate-950 border border-slate-800 hover:border-teal-500/40 cursor-pointer transition flex items-start justify-between gap-3 group"
+                className="p-3.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 dark:bg-slate-950/70 dark:hover:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-500/40 cursor-pointer transition flex items-start justify-between gap-3 group"
               >
                 <div className="flex items-start gap-3 min-w-0">
                   <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm"
                     style={{ backgroundColor: `#${(acc.color || 0xff0f766e).toString(16).slice(-6)}` }}
                   >
                     <CategoryIcon name={acc.icon || acc.type} className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-bold text-xs text-white truncate group-hover:text-teal-300 transition">
+                      <span className="font-bold text-xs text-slate-900 dark:text-white truncate group-hover:text-teal-700 dark:group-hover:text-teal-300 transition">
                         {acc.name}
                       </span>
                       {acc.isDefault && (
-                        <span className="text-[10px] font-semibold text-teal-300">
+                        <span className="text-[10px] font-semibold text-teal-600 dark:text-teal-300">
                           · {isFr ? 'Défaut' : 'Default'}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-slate-400">
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                       <span>{getAccountTypeLabel(acc.type)}</span>
                       {acc.type === 'DEFERRED_CARD' && (
                         <span>
@@ -740,7 +856,7 @@ export const FirebaseSyncScreen: React.FC = () => {
                         </span>
                       ) : null}
                       {acc.includeInLiquidForecast && (
-                        <span className="text-emerald-400/90">
+                        <span className="text-emerald-600 dark:text-emerald-400/90">
                           · {isFr ? 'Trésorerie' : 'Liquid forecast'}
                         </span>
                       )}
@@ -752,13 +868,13 @@ export const FirebaseSyncScreen: React.FC = () => {
                   <div className="text-right">
                     <span
                       className={`text-xs font-extrabold tabular-nums block ${
-                        acc.currentBalance < 0 ? 'text-rose-400' : 'text-white'
+                        acc.currentBalance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
                       }`}
                     >
                       {acc.currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })} {acc.currency || currency}
                     </span>
                   </div>
-                  <div className="p-1.5 rounded-lg bg-slate-800/80 group-hover:bg-teal-500/20 text-slate-400 group-hover:text-teal-300 transition">
+                  <div className="p-1.5 rounded-lg bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-transparent group-hover:bg-teal-50 dark:group-hover:bg-teal-500/20 text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-300 transition">
                     <Pencil className="w-3.5 h-3.5" />
                   </div>
                 </div>
@@ -769,15 +885,15 @@ export const FirebaseSyncScreen: React.FC = () => {
       </div>
 
       {/* Family Members & RBAC Roles */}
-      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-teal-400" />
-            <h2 className="font-bold text-white text-base">
+            <Users className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+            <h2 className="font-bold text-slate-900 dark:text-white text-base">
               {isFr ? 'Membres de la Famille & Rôles RBAC' : 'Family Members & RBAC Roles'}
             </h2>
           </div>
-          <span className="text-xs text-slate-400 tabular-nums">
+          <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
             {members.length} {isFr ? 'membres' : 'members'}
           </span>
         </div>
@@ -786,22 +902,22 @@ export const FirebaseSyncScreen: React.FC = () => {
           {members.map(m => (
             <div
               key={m.id}
-              className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs"
+              className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs"
             >
               <div className="flex items-center gap-3">
                 <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm"
                   style={{ backgroundColor: `#${m.avatarColor.toString(16).slice(-6)}` }}
                 >
                   {m.name.charAt(0)}
                 </div>
                 <div>
-                  <span className="font-bold text-white block">{m.name}</span>
+                  <span className="font-bold text-slate-900 dark:text-white block">{m.name}</span>
                   <span className="text-[11px] text-slate-500">{m.email}</span>
                 </div>
               </div>
 
-              <span className="font-mono text-[11px] font-bold text-teal-300">
+              <span className="font-mono text-[11px] font-bold text-teal-600 dark:text-teal-300">
                 {m.role}
               </span>
             </div>
@@ -811,14 +927,14 @@ export const FirebaseSyncScreen: React.FC = () => {
 
       {/* Demo Mode Reset (Only visible in Demo Mode) */}
       {sessionMode === 'DEMO' && (
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-3">
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-3">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-amber-400" />
-            <h2 className="font-bold text-white text-base">
+            <Sparkles className="w-5 h-5 text-amber-500 dark:text-amber-400" />
+            <h2 className="font-bold text-slate-900 dark:text-white text-base">
               {isFr ? 'Démonstration & Langue' : 'Demo Mode Presets'}
             </h2>
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             {isFr
               ? 'Réinitialisez les données en mémoire vive en français ou en anglais. Aucune donnée n’est conservée localement après déconnexion.'
               : 'Reset the in-memory dataset in French or English. No data is kept locally after logging out.'}
@@ -830,9 +946,9 @@ export const FirebaseSyncScreen: React.FC = () => {
                 setLanguage('fr');
                 resetToMockData('fr');
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer"
             >
-              <Globe className="w-3.5 h-3.5 text-teal-400" />
+              <Globe className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
               <span>Charger Démo Famille Martin (Français)</span>
             </button>
 
@@ -841,9 +957,9 @@ export const FirebaseSyncScreen: React.FC = () => {
                 setLanguage('en');
                 resetToMockData('en');
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer"
             >
-              <Globe className="w-3.5 h-3.5 text-teal-400" />
+              <Globe className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
               <span>Load Smith Family Demo (English)</span>
             </button>
           </div>

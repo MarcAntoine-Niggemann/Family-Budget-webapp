@@ -36,8 +36,9 @@ function addDaysToDateInput(value: string, days: number): string {
 }
 
 export const CustomForecastScreen: React.FC = () => {
-  const { accounts, transactions, budgets, currency, language } = useBudget();
+  const { accounts, transactions, budgets, currency, language, resolvedTheme } = useBudget();
   const isFr = language === 'fr';
+  const isDark = resolvedTheme === 'dark';
 
   const todayStr = toDateInputValue(new Date());
   const includedAccounts = accounts.filter(a => !a.isDeleted && a.includeInLiquidForecast);
@@ -165,10 +166,10 @@ export const CustomForecastScreen: React.FC = () => {
       {/* Top Header */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
             {isFr ? 'Trésorerie Prévisionnelle Interactive' : 'Interactive Cash Flow Forecast'}
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {isFr
               ? 'Simulation jour par jour sur les comptes inclus dans la prévision selon vos budgets planifiés et répartis'
               : 'Day-by-day simulation across forecast-included accounts based on your scheduled and spread budgets'}
@@ -176,15 +177,15 @@ export const CustomForecastScreen: React.FC = () => {
         </div>
 
         {/* Horizon Picker */}
-        <div className="grid grid-cols-4 p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-semibold shrink-0">
+        <div className="grid grid-cols-4 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold shrink-0">
           {(['30', '60', '90'] as const).map(days => (
             <button
               key={days}
               onClick={() => handleSelectHorizon(days)}
               className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 horizonMode === days
-                  ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               {isFr ? `${days} Jours` : `${days} Days`}
@@ -194,8 +195,8 @@ export const CustomForecastScreen: React.FC = () => {
             onClick={() => handleSelectHorizon('CUSTOM')}
             className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
               horizonMode === 'CUSTOM'
-                ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
@@ -206,18 +207,18 @@ export const CustomForecastScreen: React.FC = () => {
 
       {/* Custom Date Range & Starting Point Controls */}
       {isCustomMode && (
-        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-lg space-y-3">
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-lg space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
             {/* Start Date */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
                 {isFr ? 'Date de début' : 'Start Date'}
               </label>
               <input
                 type="date"
                 value={customStartDate}
                 onChange={e => handleStartDateChange(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white font-mono focus:outline-none focus:border-teal-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-white font-mono focus:outline-none focus:border-teal-500"
               />
               {isCustomStart ? (
                 <button
@@ -226,7 +227,7 @@ export const CustomForecastScreen: React.FC = () => {
                     setHasCustomBalanceEdit(false);
                     handleStartDateChange(todayStr);
                   }}
-                  className="mt-1.5 text-[11px] text-teal-400 hover:text-teal-300 transition font-medium"
+                  className="mt-1.5 text-[11px] text-teal-700 hover:text-teal-600 dark:text-teal-400 dark:hover:text-teal-300 transition font-medium"
                 >
                   {isFr ? 'Revenir à aujourd’hui' : 'Reset to today'}
                 </button>
@@ -239,7 +240,7 @@ export const CustomForecastScreen: React.FC = () => {
 
             {/* End Date */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
+              <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
                 {isFr ? 'Date de fin' : 'End Date'}
               </label>
               <input
@@ -248,18 +249,18 @@ export const CustomForecastScreen: React.FC = () => {
                 min={customStartDate}
                 max={addDaysToDateInput(customStartDate, 1825)}
                 onChange={e => handleEndDateChange(e.target.value)}
-                className={`w-full px-3 py-2 rounded-xl bg-slate-950 border text-sm text-white font-mono focus:outline-none ${
+                className={`w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border text-sm text-slate-900 dark:text-white font-mono focus:outline-none ${
                   isEndBeforeStart
                     ? 'border-rose-500 focus:border-rose-400'
-                    : 'border-slate-700 focus:border-teal-500'
+                    : 'border-slate-300 dark:border-slate-700 focus:border-teal-500'
                 }`}
               />
               {isEndBeforeStart ? (
-                <span className="mt-1.5 block text-[11px] text-rose-400">
+                <span className="mt-1.5 block text-[11px] text-rose-600 dark:text-rose-400">
                   {isFr ? 'La date de fin doit être ≥ au début' : 'End date must be on or after start date'}
                 </span>
               ) : isRangeCapped ? (
-                <span className="mt-1.5 block text-[11px] text-amber-400">
+                <span className="mt-1.5 block text-[11px] text-amber-600 dark:text-amber-400">
                   {isFr ? 'Horizon plafonné à 5 ans (1826 jours)' : 'Range capped at 5 years (1,826 days)'}
                 </span>
               ) : (
@@ -272,7 +273,7 @@ export const CustomForecastScreen: React.FC = () => {
             {/* Starting Balance */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-semibold text-slate-400">
+                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                   {isCustomStart
                     ? isFr
                       ? 'Solde initial requis'
@@ -290,10 +291,10 @@ export const CustomForecastScreen: React.FC = () => {
                   value={customStartingBalanceStr}
                   placeholder={isFr ? 'Ex : 2500' : 'e.g. 2500'}
                   onChange={e => handleStartingBalanceChange(e.target.value)}
-                  className={`w-full px-3 py-2 pr-12 rounded-xl bg-slate-950 border text-sm text-white font-mono tabular-nums focus:outline-none ${
+                  className={`w-full px-3 py-2 pr-12 rounded-xl bg-slate-50 dark:bg-slate-950 border text-sm text-slate-900 dark:text-white font-mono tabular-nums focus:outline-none ${
                     needsStartingBalance
                       ? 'border-amber-500 ring-1 ring-amber-500/40 focus:border-amber-400'
-                      : 'border-slate-700 focus:border-teal-500'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-teal-500'
                   }`}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500 pointer-events-none">
@@ -302,7 +303,7 @@ export const CustomForecastScreen: React.FC = () => {
               </div>
               <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
                 {needsStartingBalance ? (
-                  <span className="text-amber-400">
+                  <span className="text-amber-600 dark:text-amber-400">
                     {isFr ? 'Indiquez le solde à cette date' : 'Specify balance on start date'}
                   </span>
                 ) : isCustomStart ? (
@@ -320,7 +321,7 @@ export const CustomForecastScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleUseLiveBalance}
-                    className="inline-flex items-center gap-1 text-teal-400 hover:text-teal-300 transition font-medium shrink-0"
+                    className="inline-flex items-center gap-1 text-teal-700 hover:text-teal-600 dark:text-teal-400 dark:hover:text-teal-300 transition font-medium shrink-0"
                   >
                     <RotateCcw className="w-3 h-3" />
                     <span>
@@ -342,15 +343,15 @@ export const CustomForecastScreen: React.FC = () => {
 
       {/* Prompt when custom start date lacks a starting balance */}
       {needsStartingBalance ? (
-        <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-200">
-          <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+        <div className="p-6 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex items-start gap-3 text-amber-900 dark:text-amber-200">
+          <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div>
             <h2 className="font-bold text-sm">
               {isFr
                 ? 'Solde de départ requis pour une date personnalisée'
                 : 'Starting Balance Required for Custom Start Date'}
             </h2>
-            <p className="text-xs text-amber-300/90 mt-1">
+            <p className="text-xs text-amber-800 dark:text-amber-300/90 mt-1">
               {isFr
                 ? `Comme la simulation démarre le ${customStartDate} au lieu d'aujourd'hui, saisissez le solde initial ci-dessus (ou cliquez sur « Solde actuel ») pour calculer la courbe.`
                 : `Because this forecast starts on ${customStartDate} instead of today, enter the starting balance above (or click "Use current") to compute the trajectory.`}
@@ -361,13 +362,13 @@ export const CustomForecastScreen: React.FC = () => {
         <>
           {/* Overdraft Warning Banner if lowest dip < 0 or buffer alert if < 500 */}
           {forecast.hasOverdraftRisk ? (
-            <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 flex items-start gap-3 shadow-lg">
-              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/40 text-rose-900 dark:text-rose-300 flex items-start gap-3 shadow-sm dark:shadow-lg">
+              <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
               <div>
-                <h2 className="font-bold text-sm text-rose-200">
+                <h2 className="font-bold text-sm text-rose-900 dark:text-rose-200">
                   {isFr ? 'Risque de Solde Négatif Détecté !' : 'Projected Negative Balance Warning!'}
                 </h2>
-                <p className="text-xs text-rose-300/90 mt-0.5 font-mono tabular-nums">
+                <p className="text-xs text-rose-800 dark:text-rose-300/90 mt-0.5 font-mono tabular-nums">
                   {isFr
                     ? `Votre disponible prévisionnel plonge à ${forecast.lowestBalance.toLocaleString()} ${currency} autour du ${forecast.lowestBalanceDate}. Ajustez vos dépenses prévues.`
                     : `Your projected balance drops to ${forecast.lowestBalance.toLocaleString()} ${currency} around ${forecast.lowestBalanceDate}. Adjust planned spending.`}
@@ -375,13 +376,13 @@ export const CustomForecastScreen: React.FC = () => {
               </div>
             </div>
           ) : forecast.hasBufferWarning ? (
-            <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-300 flex items-start gap-3 shadow-lg">
-              <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/40 text-amber-900 dark:text-amber-300 flex items-start gap-3 shadow-sm dark:shadow-lg">
+              <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
               <div>
-                <h2 className="font-bold text-sm text-amber-200">
+                <h2 className="font-bold text-sm text-amber-900 dark:text-amber-200">
                   {isFr ? 'Zone de Trésorerie Basse (< 500)' : 'Low Cash Buffer Warning (< 500)'}
                 </h2>
-                <p className="text-xs text-amber-300/90 mt-0.5 font-mono tabular-nums">
+                <p className="text-xs text-amber-800 dark:text-amber-300/90 mt-0.5 font-mono tabular-nums">
                   {isFr
                     ? `Minimum prévu à ${forecast.lowestBalance.toLocaleString()} ${currency} le ${forecast.lowestBalanceDate}.`
                     : `Minimum projected at ${forecast.lowestBalance.toLocaleString()} ${currency} on ${forecast.lowestBalanceDate}.`}
@@ -393,35 +394,35 @@ export const CustomForecastScreen: React.FC = () => {
           {/* Forecast Key Metrics */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             {/* Minimum Projected Balance (primary liquidity floor) */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tracking-wide block">
                 {isFr ? 'Minimum Prévu sur la Période' : 'Minimum Projected Balance'}
               </span>
               <div
                 className={`mt-2 text-2xl font-bold font-mono tabular-nums ${
                   forecast.lowestBalance >= 500
-                    ? 'text-teal-400'
+                    ? 'text-teal-700 dark:text-teal-400'
                     : forecast.lowestBalance >= 0
-                    ? 'text-amber-400'
-                    : 'text-rose-400'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
                 {forecast.lowestBalance.toLocaleString()} {currency}
               </div>
-              <span className="text-[11px] text-slate-400 mt-1 block">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
                 {isFr ? `Point bas atteint le ${forecast.lowestBalanceDate}` : `Lowest point on ${forecast.lowestBalanceDate}`}
               </span>
             </div>
 
             {/* Current Forecast Balance across included accounts or custom override */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tracking-wide block">
                 {isFr ? 'Solde Initial Prévisionnel' : 'Forecast Starting Balance'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-white font-mono tabular-nums">
+              <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white font-mono tabular-nums">
                 {forecast.currentTotalBalance.toLocaleString()} {currency}
               </div>
-              <span className="text-[11px] text-slate-400 mt-1 block">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
                 {usingCustomStartPoint
                   ? isFr
                     ? 'Point de départ personnalisé'
@@ -433,44 +434,44 @@ export const CustomForecastScreen: React.FC = () => {
             </div>
 
             {/* Upcoming Scheduled Bills */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tracking-wide block">
                 {isFr ? 'Échéances Dépenses Prévues' : 'Upcoming Scheduled Bills'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-rose-400 font-mono tabular-nums">
+              <div className="mt-2 text-2xl font-bold text-rose-600 dark:text-rose-400 font-mono tabular-nums">
                 -{forecast.upcomingBillsTotal.toLocaleString()} {currency}
               </div>
-              <span className="text-[11px] text-slate-400 mt-1 block">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
                 {isFr ? 'Prélèvements datés sur la période' : 'Dated debits in range'}
               </span>
             </div>
 
             {/* Upcoming Scheduled Income */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 tracking-wide block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 tracking-wide block">
                 {isFr ? 'Revenus Datés Attendus' : 'Upcoming Scheduled Income'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-emerald-400 font-mono tabular-nums">
+              <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
                 +{forecast.upcomingIncomeTotal.toLocaleString()} {currency}
               </div>
-              <span className="text-[11px] text-slate-400 mt-1 block">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
                 {isFr ? 'Crédits datés sur la période' : 'Dated credits in range'}
               </span>
             </div>
           </div>
 
           {/* Interactive Chart Container */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
               <div>
-                <h2 className="font-bold text-white text-sm">
+                <h2 className="font-bold text-slate-900 dark:text-white text-sm">
                   {isFr ? 'Courbe d’Évolution de Trésorerie' : 'Cash Flow Trajectory'}
                 </h2>
-                <p className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
                   {spanLabel} · {forecast.totalDays} {isFr ? 'jours' : 'days'}
                 </p>
               </div>
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
                 {isFr
                   ? 'Survolez ou cliquez sur la courbe pour examiner chaque date'
                   : 'Hover or tap to inspect daily balance & scheduled events'}
@@ -479,16 +480,18 @@ export const CustomForecastScreen: React.FC = () => {
 
             {/* Single-day view vs SVG Interactive Graph */}
             {timeline.length === 1 ? (
-              <div className="p-6 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+              <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
                 <div>
-                  <span className="text-xs text-slate-400 block">{timeline[0].dateStr}</span>
-                  <span className="text-sm font-semibold text-white mt-0.5 block">
+                  <span className="text-xs text-slate-500 dark:text-slate-400 block">{timeline[0].dateStr}</span>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-white mt-0.5 block">
                     {isFr ? 'Prévision sur une seule journée' : 'Single-day forecast snapshot'}
                   </span>
                 </div>
                 <span
                   className={`text-xl font-bold font-mono tabular-nums ${
-                    timeline[0].balance >= 0 ? 'text-teal-400' : 'text-rose-400'
+                    timeline[0].balance >= 0
+                      ? 'text-teal-700 dark:text-teal-400'
+                      : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
                   {timeline[0].balance.toLocaleString()} {currency}
@@ -556,15 +559,23 @@ export const CustomForecastScreen: React.FC = () => {
                         >
                           <defs>
                             <linearGradient id="cfGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.35" />
-                              <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.02" />
+                              <stop
+                                offset="0%"
+                                stopColor={isDark ? '#14b8a6' : '#0d9488'}
+                                stopOpacity={isDark ? '0.35' : '0.24'}
+                              />
+                              <stop
+                                offset="100%"
+                                stopColor={isDark ? '#14b8a6' : '#0d9488'}
+                                stopOpacity="0.02"
+                              />
                             </linearGradient>
                           </defs>
 
                           {/* Horizontal reference gridlines */}
-                          <line x1={padding} y1={height * 0.25} x2={width - padding} y2={height * 0.25} stroke="#1e293b" strokeDasharray="3 3" />
-                          <line x1={padding} y1={height * 0.5} x2={width - padding} y2={height * 0.5} stroke="#1e293b" strokeDasharray="3 3" />
-                          <line x1={padding} y1={height * 0.75} x2={width - padding} y2={height * 0.75} stroke="#1e293b" strokeDasharray="3 3" />
+                          <line x1={padding} y1={height * 0.25} x2={width - padding} y2={height * 0.25} stroke={isDark ? '#1e293b' : '#e2e8f0'} strokeDasharray="3 3" />
+                          <line x1={padding} y1={height * 0.5} x2={width - padding} y2={height * 0.5} stroke={isDark ? '#1e293b' : '#e2e8f0'} strokeDasharray="3 3" />
+                          <line x1={padding} y1={height * 0.75} x2={width - padding} y2={height * 0.75} stroke={isDark ? '#1e293b' : '#e2e8f0'} strokeDasharray="3 3" />
 
                           {/* Zero line if applicable */}
                           {minBal < 0 && zeroY >= padding && zeroY <= height - padding && (
@@ -573,7 +584,7 @@ export const CustomForecastScreen: React.FC = () => {
                               y1={zeroY}
                               x2={width - padding}
                               y2={zeroY}
-                              stroke="#f43f5e"
+                              stroke={isDark ? '#f43f5e' : '#e11d48'}
                               strokeWidth="1.5"
                               strokeDasharray="4 4"
                             />
@@ -581,7 +592,14 @@ export const CustomForecastScreen: React.FC = () => {
 
                           {/* Area and Line */}
                           <path d={areaD} fill="url(#cfGrad)" />
-                          <path d={pathD} fill="none" stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <path
+                            d={pathD}
+                            fill="none"
+                            stroke={isDark ? '#2dd4bf' : '#0d9488'}
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
 
                           {/* Milestone Marker Nodes */}
                           {points.map((p, idx) => {
@@ -600,7 +618,7 @@ export const CustomForecastScreen: React.FC = () => {
                                 cy={p.y}
                                 r={radius}
                                 fill={hasPayday ? '#10b981' : isLowest ? '#f43f5e' : '#f59e0b'}
-                                stroke="#0f172a"
+                                stroke={isDark ? '#0f172a' : '#ffffff'}
                                 strokeWidth={timeline.length > 180 ? 1 : 2}
                                 className="cursor-pointer transition hover:scale-125"
                                 onClick={() => setSelectedPointIndex(idx)}
@@ -616,7 +634,7 @@ export const CustomForecastScreen: React.FC = () => {
                                 y1={padding}
                                 x2={points[selectedPointIndex].x}
                                 y2={height - padding}
-                                stroke="#38bdf8"
+                                stroke={isDark ? '#38bdf8' : '#0284c7'}
                                 strokeWidth="1.5"
                                 strokeDasharray="2 2"
                               />
@@ -624,8 +642,8 @@ export const CustomForecastScreen: React.FC = () => {
                                 cx={points[selectedPointIndex].x}
                                 cy={points[selectedPointIndex].y}
                                 r="6"
-                                fill="#38bdf8"
-                                stroke="#0f172a"
+                                fill={isDark ? '#38bdf8' : '#0284c7'}
+                                stroke={isDark ? '#0f172a' : '#ffffff'}
                                 strokeWidth="2"
                               />
                             </>
@@ -665,19 +683,21 @@ export const CustomForecastScreen: React.FC = () => {
 
             {/* Selected Scrubber Details Card */}
             {activePoint && (
-              <div className="p-4 rounded-xl bg-slate-950/80 border border-teal-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-teal-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                 <div>
-                  <span className="text-slate-400 font-medium block">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium block">
                     {isFr ? 'Date sélectionnée :' : 'Inspected date:'}{' '}
-                    <strong className="text-white text-sm">{activePoint.dateStr}</strong>
+                    <strong className="text-slate-900 dark:text-white text-sm">{activePoint.dateStr}</strong>
                   </span>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-slate-400">
+                    <span className="text-slate-500 dark:text-slate-400">
                       {isFr ? 'Solde prévisionnel :' : 'Projected balance:'}
                     </span>
                     <span
                       className={`text-sm font-bold font-mono tabular-nums ${
-                        activePoint.balance >= 0 ? 'text-teal-300' : 'text-rose-400'
+                        activePoint.balance >= 0
+                          ? 'text-teal-700 dark:text-teal-300'
+                          : 'text-rose-600 dark:text-rose-400'
                       }`}
                     >
                       {activePoint.balance.toLocaleString()} {currency}
@@ -698,12 +718,14 @@ export const CustomForecastScreen: React.FC = () => {
                       {activePoint.events.map((ev, evIdx) => (
                         <div
                           key={evIdx}
-                          className="flex items-center justify-between py-1 px-2 rounded-lg bg-slate-900 border border-slate-800 text-[11px]"
+                          className="flex items-center justify-between py-1 px-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px]"
                         >
-                          <span className="text-slate-200 font-semibold">{ev.title}</span>
+                          <span className="text-slate-800 dark:text-slate-200 font-semibold">{ev.title}</span>
                           <span
                             className={`font-bold font-mono tabular-nums ${
-                              ev.isExpense ? 'text-rose-400' : 'text-emerald-400'
+                              ev.isExpense
+                                ? 'text-rose-600 dark:text-rose-400'
+                                : 'text-emerald-600 dark:text-emerald-400'
                             }`}
                           >
                             {ev.isExpense ? '' : '+'}
@@ -719,32 +741,32 @@ export const CustomForecastScreen: React.FC = () => {
           </div>
 
           {/* Day by Day Event Agenda Table */}
-          <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
-            <div className="p-4 border-b border-slate-800 font-bold text-sm text-white">
+          <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-xl">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 font-bold text-sm text-slate-900 dark:text-white">
               {isFr ? 'Calendrier des Échéances Futures' : 'Scheduled Movement Calendar'}
             </div>
 
-            <div className="divide-y divide-slate-800/60 max-h-96 overflow-y-auto">
+            <div className="divide-y divide-slate-200 dark:divide-slate-800/60 max-h-96 overflow-y-auto">
               {timeline
                 .filter(pt => pt.events.length > 0 || pt.isLowestPoint)
                 .map((pt, idx) => (
                   <div
                     key={idx}
-                    className="p-3.5 hover:bg-slate-800/40 transition flex items-center justify-between text-xs"
+                    className="p-3.5 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition flex items-center justify-between text-xs"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold text-slate-200 w-24 shrink-0">{pt.dateStr}</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200 w-24 shrink-0">{pt.dateStr}</span>
                       <div className="space-y-0.5">
                         {pt.events.map((e, eIdx) => (
                           <div key={eIdx} className="flex items-center gap-2">
-                            <span className="text-white font-medium">{e.title}</span>
+                            <span className="text-slate-900 dark:text-white font-medium">{e.title}</span>
                             {e.categoryName && (
-                              <span className="text-slate-400 text-[11px]">({e.categoryName})</span>
+                              <span className="text-slate-500 dark:text-slate-400 text-[11px]">({e.categoryName})</span>
                             )}
                           </div>
                         ))}
                         {pt.isLowestPoint && (
-                          <span className="text-[11px] font-semibold text-rose-400 flex items-center gap-1">
+                          <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
                             ★ {isFr ? 'Point le plus bas estimé sur la période' : 'Lowest projected point in range'}
                           </span>
                         )}
@@ -754,7 +776,9 @@ export const CustomForecastScreen: React.FC = () => {
                     <div className="text-right">
                       <div
                         className={`font-bold font-mono tabular-nums ${
-                          pt.balance >= 0 ? 'text-teal-400' : 'text-rose-400'
+                          pt.balance >= 0
+                            ? 'text-teal-700 dark:text-teal-400'
+                            : 'text-rose-600 dark:text-rose-400'
                         }`}
                       >
                         {pt.balance.toLocaleString()} {currency}

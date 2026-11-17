@@ -49,14 +49,14 @@ const AppContent: React.FC = () => {
   }, [toastMessage, dismissToast]);
 
   const toastNode = toastMessage ? (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900 border border-teal-500/40 text-slate-100 shadow-2xl text-xs font-semibold">
-      <div className="w-5 h-5 rounded-full bg-teal-500/20 text-teal-300 flex items-center justify-center shrink-0">
+    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-teal-500/40 text-slate-900 dark:text-slate-100 shadow-2xl text-xs font-semibold">
+      <div className="w-5 h-5 rounded-full bg-teal-500/15 dark:bg-teal-500/20 text-teal-600 dark:text-teal-300 flex items-center justify-center shrink-0">
         <Check className="w-3.5 h-3.5" />
       </div>
       <span>{toastMessage}</span>
       <button
         onClick={dismissToast}
-        className="text-slate-400 hover:text-slate-200 transition ml-2 cursor-pointer"
+        className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition ml-2 cursor-pointer"
         aria-label="Dismiss notification"
       >
         <X className="w-4 h-4" />
@@ -76,7 +76,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       <Navbar
         onOpenAddTx={() => {
           setAddTxPrefill(null);

@@ -92,8 +92,8 @@ Firebase Authentication blocks OAuth popups and redirects from unrecognized doma
 
 ---
 
-## 📱 Part B: Native Android Companion Build Notes (Repository Maintainers)
+## 📱 Part B: PWA Architecture Notes (No Environment Variables Required)
 
-This repository also contains legacy/companion Android Gradle files (`build.gradle.kts`, `settings.gradle.kts`). If maintaining the native Android **Managed Cloud** vs. **BYOB** build:
-- **Managed Cloud (`DEV` / `PROD`)**: Uses `.env` keys (`MANAGED_DEV_*` / `MANAGED_PROD_*`) with SHA-1/SHA-256 certificate pinning per environment.
-- **Native Android BYOB**: Uses Firebase Web-based OAuth via Chrome Custom Tabs (`https://<projectId>.firebaseapp.com/__/auth/handler`) so no per-user Android SHA-1 registration is required.
+In this PWA architecture, **no `.env` file or build-time environment variables are required**:
+- **BYOB Firestore & Google OAuth**: Users configure their Firebase Project ID, Web API Key, and optional Application ID directly in the app (or via QR code vault sharing) at runtime.
+- **Native Android Companion Files**: Legacy Gradle wrapper files (`build.gradle.kts`, `settings.gradle.kts`) simply delegate `assembleDebug`/`build`/`lint` to `npm run build` and `npm run lint`.

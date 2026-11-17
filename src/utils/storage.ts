@@ -7,8 +7,10 @@ import {
   FamilyMemberEntity,
   FirebaseConfigEntity,
   OpenBankingConfig,
+  ResolvedTheme,
   SyncOutboxEntity,
-  SyncStateEntity
+  SyncStateEntity,
+  ThemePreference
 } from '../types';
 import {
   EncryptedEnvelope,
@@ -39,6 +41,7 @@ export const CACHE_STORAGE_KEYS = {
   OPEN_BANKING: 'fbv_open_banking',
   CURRENCY: 'fbv_currency',
   LANGUAGE: 'fbv_language',
+  THEME: 'fbv_theme',
   FAMILY_NAME: 'fbv_family_name'
 } as const;
 
@@ -207,6 +210,54 @@ export function saveLanguagePreference(lang: 'fr' | 'en'): void {
   }
 }
 
+export function loadThemePreference(): ThemePreference {
+  try {
+    const raw = localStorage.getItem(CACHE_STORAGE_KEYS.THEME);
+    if (raw === 'light' || raw === 'dark' || raw === 'system') {
+      return raw;
+    }
+    return 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+export function saveThemePreference(theme: ThemePreference): void {
+  try {
+    localStorage.setItem(CACHE_STORAGE_KEYS.THEME, theme);
+  } catch {
+    // Ignore
+  }
+}
+
+export function resolveTheme(pref: ThemePreference): ResolvedTheme {
+  if (pref === 'light' || pref === 'dark') {
+    return pref;
+  }
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'dark';
+}
+
+export function applyThemeToDocument(pref: ThemePreference): ResolvedTheme {
+  const resolved = resolveTheme(pref);
+  if (typeof document !== 'undefined') {
+    const root = document.documentElement;
+    if (resolved === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    root.style.colorScheme = resolved;
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', resolved === 'dark' ? '#0f172a' : '#f8fafc');
+    }
+  }
+  return resolved;
+}
+
 export async function saveEncryptedCachedData<T>(
   key: string,
   data: T,
@@ -348,7 +399,8 @@ export function purgeLocalData(options: { preserveByob?: boolean } = { preserveB
       BYOB_CONFIG_STORAGE_KEY,
       VAULT_LOCK_META_KEY,
       BIOMETRIC_CRED_STORAGE_KEY,
-      CACHE_STORAGE_KEYS.LANGUAGE
+      CACHE_STORAGE_KEYS.LANGUAGE,
+      CACHE_STORAGE_KEYS.THEME
     ]);
 
     const keysToRemove: string[] = [];

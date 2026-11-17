@@ -237,3 +237,7 @@ export interface TransactionFilters {
   creditCardPeriod?: string; // 'ALL' or 'YYYY-MM'
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+export type ResolvedTheme = 'light' | 'dark';
+
+

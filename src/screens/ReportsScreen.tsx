@@ -26,9 +26,11 @@ export const ReportsScreen: React.FC = () => {
     members,
     currency,
     language,
-    drillDownToTransactions
+    drillDownToTransactions,
+    resolvedTheme
   } = useBudget();
   const isFr = language === 'fr';
+  const isDark = resolvedTheme === 'dark';
 
   const [activeTab, setActiveTab] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -76,10 +78,10 @@ export const ReportsScreen: React.FC = () => {
       {/* Top Controls Header */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
             {isFr ? 'Rapports & Analyses Financières' : 'Financial Reports & Analytics'}
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {isFr
               ? 'Suivi budgétaire, taux d’épargne, ventilation par catégorie et par membre'
               : 'Budget tracking, savings rate, category and member breakdown'}
@@ -88,13 +90,13 @@ export const ReportsScreen: React.FC = () => {
 
         {/* Tab Switcher & Period Picker */}
         <div className="flex items-center gap-2">
-          <div className="grid grid-cols-2 p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-semibold">
+          <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold">
             <button
               onClick={() => setActiveTab('MONTHLY')}
               className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 activeTab === 'MONTHLY'
-                  ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               {isFr ? 'Mensuel' : 'Monthly'}
@@ -103,8 +105,8 @@ export const ReportsScreen: React.FC = () => {
               onClick={() => setActiveTab('YEARLY')}
               className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                 activeTab === 'YEARLY'
-                  ? 'bg-teal-500 text-slate-950 font-bold shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               {isFr ? 'Annuel' : 'Annual'}
@@ -112,7 +114,7 @@ export const ReportsScreen: React.FC = () => {
           </div>
 
           {activeTab === 'MONTHLY' && (
-            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+            <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 text-xs shadow-sm dark:shadow-none">
               <button
                 onClick={() => {
                   setSelectedBurnDay(null);
@@ -123,11 +125,11 @@ export const ReportsScreen: React.FC = () => {
                     setSelectedMonth(m => m - 1);
                   }
                 }}
-                className="px-2 py-1 text-slate-400 hover:text-slate-200"
+                className="px-2 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
               >
                 ←
               </button>
-              <span className="px-2 font-semibold text-slate-200 capitalize whitespace-nowrap">
+              <span className="px-2 font-semibold text-slate-800 dark:text-slate-200 capitalize whitespace-nowrap">
                 {monthlyReport.monthName}
               </span>
               <button
@@ -140,7 +142,7 @@ export const ReportsScreen: React.FC = () => {
                     setSelectedMonth(m => m + 1);
                   }
                 }}
-                className="px-2 py-1 text-slate-400 hover:text-slate-200"
+                className="px-2 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
               >
                 →
               </button>
@@ -148,17 +150,17 @@ export const ReportsScreen: React.FC = () => {
           )}
 
           {activeTab === 'YEARLY' && (
-            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs">
+            <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 text-xs shadow-sm dark:shadow-none">
               <button
                 onClick={() => setSelectedYear(y => y - 1)}
-                className="px-2 py-1 text-slate-400 hover:text-slate-200"
+                className="px-2 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
               >
                 ←
               </button>
-              <span className="px-2 font-semibold text-slate-200">{selectedYear}</span>
+              <span className="px-2 font-semibold text-slate-800 dark:text-slate-200">{selectedYear}</span>
               <button
                 onClick={() => setSelectedYear(y => y + 1)}
-                className="px-2 py-1 text-slate-400 hover:text-slate-200"
+                className="px-2 py-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
               >
                 →
               </button>
@@ -173,61 +175,63 @@ export const ReportsScreen: React.FC = () => {
           {/* Key Metrics Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Total Spent */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 {isFr ? 'Dépenses Réelles' : 'Total Spent'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-white font-mono tabular-nums">
+              <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-white font-mono tabular-nums">
                 {monthlyReport.totalActualExpenses.toLocaleString()} {currency}
               </div>
-              <span className="text-xs text-slate-400 mt-1 block font-mono tabular-nums">
+              <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block font-mono tabular-nums">
                 {isFr ? 'Budget :' : 'Budget:'}{' '}
                 {monthlyReport.totalExpenseBudget.toLocaleString()} {currency}
               </span>
             </div>
 
             {/* Total Income */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 {isFr ? 'Revenus Réels' : 'Total Income'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-emerald-400 font-mono tabular-nums">
+              <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
                 {monthlyReport.totalActualIncome.toLocaleString()} {currency}
               </div>
-              <span className="text-xs text-slate-400 mt-1 block font-mono tabular-nums">
+              <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block font-mono tabular-nums">
                 {isFr ? 'Objectif :' : 'Target:'}{' '}
                 {monthlyReport.totalIncomeBudget.toLocaleString()} {currency}
               </span>
             </div>
 
             {/* Net Savings */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 {isFr ? 'Épargne Nette' : 'Net Savings'}
               </span>
               <div
                 className={`mt-2 text-2xl font-bold font-mono tabular-nums ${
-                  monthlyReport.netSavings >= 0 ? 'text-teal-400' : 'text-rose-400'
+                  monthlyReport.netSavings >= 0
+                    ? 'text-teal-700 dark:text-teal-400'
+                    : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
                 {monthlyReport.netSavings >= 0 ? '+' : ''}
                 {monthlyReport.netSavings.toLocaleString()} {currency}
               </div>
-              <span className="text-xs text-slate-400 mt-1 block font-mono tabular-nums">
+              <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block font-mono tabular-nums">
                 {isFr ? 'Écart budget :' : 'Budget diff:'}{' '}
                 {monthlyReport.netBudgetDifference.toLocaleString()} {currency}
               </span>
             </div>
 
             {/* Savings Rate */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-md">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-md">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                 {isFr ? 'Taux d’Épargne' : 'Savings Rate'}
               </span>
-              <div className="mt-2 text-2xl font-bold text-indigo-400 font-mono tabular-nums">
+              <div className="mt-2 text-2xl font-bold text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">
                 {monthlyReport.savingsRate}%
               </div>
-              <span className="text-xs text-slate-400 mt-1 block">
+              <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block">
                 {monthlyReport.savingsRate >= 20
                   ? isFr
                     ? 'Excellent objectif atteint'
@@ -240,12 +244,12 @@ export const ReportsScreen: React.FC = () => {
           </div>
 
           {/* Burn Down Curve Card */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
-                  <Flame className="w-4 h-4 text-amber-400 shrink-0" />
-                  <h3 className="font-bold text-white text-sm">
+                  <Flame className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+                  <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                     {burnDownMode === 'EXPENSE'
                       ? isFr
                         ? 'Courbe d’Épuisement Budgétaire (Burn-Down)'
@@ -255,7 +259,7 @@ export const ReportsScreen: React.FC = () => {
                       : 'Net Budget Trajectory (Income vs. Spending)'}
                   </h3>
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {burnDownMode === 'EXPENSE'
                     ? isFr
                       ? 'Reste budgétaire de 100 % vers 0 selon les échéances datées et allocations réparties du mois'
@@ -268,14 +272,14 @@ export const ReportsScreen: React.FC = () => {
 
               <div className="flex flex-wrap items-center gap-3">
                 {/* Mode Toggle: Expense Burn-Down vs Net (Income vs Spending) */}
-                <div className="grid grid-cols-2 p-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold">
+                <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold">
                   <button
                     type="button"
                     onClick={() => setBurnDownMode('EXPENSE')}
                     className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                       burnDownMode === 'EXPENSE'
-                        ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200'
+                        ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
                     {isFr ? 'Dépenses' : 'Expenses'}
@@ -285,8 +289,8 @@ export const ReportsScreen: React.FC = () => {
                     onClick={() => setBurnDownMode('NET')}
                     className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
                       burnDownMode === 'NET'
-                        ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200'
+                        ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
                     {isFr ? 'Net (Rev. − Dép.)' : 'Net (Inc. − Exp.)'}
@@ -294,12 +298,12 @@ export const ReportsScreen: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-4 text-xs font-medium">
-                  <span className="flex items-center gap-1.5 text-slate-400">
-                    <span className="w-4 border-t-2 border-dashed border-slate-400" />
+                  <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                    <span className="w-4 border-t-2 border-dashed border-slate-500 dark:border-slate-400" />
                     {isFr ? 'Idéal planifié' : 'Planned Ideal'}
                   </span>
-                  <span className="flex items-center gap-1.5 text-teal-400">
-                    <span className="w-4 h-0.5 bg-teal-400" />
+                  <span className="flex items-center gap-1.5 text-teal-700 dark:text-teal-400">
+                    <span className="w-4 h-0.5 bg-teal-600 dark:bg-teal-400" />
                     {isFr ? 'Réalisé' : 'Actual'}
                   </span>
                 </div>
@@ -430,8 +434,16 @@ export const ReportsScreen: React.FC = () => {
                       >
                         <defs>
                           <linearGradient id="actualBurnGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#2dd4bf" stopOpacity="0.28" />
-                            <stop offset="100%" stopColor="#2dd4bf" stopOpacity="0.0" />
+                            <stop
+                              offset="0%"
+                              stopColor={isDark ? '#2dd4bf' : '#0d9488'}
+                              stopOpacity={isDark ? '0.28' : '0.22'}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor={isDark ? '#2dd4bf' : '#0d9488'}
+                              stopOpacity="0.0"
+                            />
                           </linearGradient>
                         </defs>
 
@@ -441,7 +453,7 @@ export const ReportsScreen: React.FC = () => {
                           y1={height * 0.25}
                           x2={width - padX}
                           y2={height * 0.25}
-                          stroke="#1e293b"
+                          stroke={isDark ? '#1e293b' : '#e2e8f0'}
                           strokeDasharray="3 3"
                         />
                         <line
@@ -449,7 +461,7 @@ export const ReportsScreen: React.FC = () => {
                           y1={height * 0.5}
                           x2={width - padX}
                           y2={height * 0.5}
-                          stroke="#1e293b"
+                          stroke={isDark ? '#1e293b' : '#e2e8f0'}
                           strokeDasharray="3 3"
                         />
                         <line
@@ -457,7 +469,7 @@ export const ReportsScreen: React.FC = () => {
                           y1={height * 0.75}
                           x2={width - padX}
                           y2={height * 0.75}
-                          stroke="#1e293b"
+                          stroke={isDark ? '#1e293b' : '#e2e8f0'}
                           strokeDasharray="3 3"
                         />
 
@@ -468,7 +480,15 @@ export const ReportsScreen: React.FC = () => {
                             y1={zeroY}
                             x2={width - padX}
                             y2={zeroY}
-                            stroke={minVal < 0 ? '#f43f5e' : '#334155'}
+                            stroke={
+                              minVal < 0
+                                ? isDark
+                                  ? '#f43f5e'
+                                  : '#e11d48'
+                                : isDark
+                                ? '#334155'
+                                : '#94a3b8'
+                            }
                             strokeWidth="1.2"
                             strokeDasharray="4 4"
                           />
@@ -479,7 +499,7 @@ export const ReportsScreen: React.FC = () => {
                         {/* Schedule-aware ideal line */}
                         <path
                           d={idealPath}
-                          stroke="#94a3b8"
+                          stroke={isDark ? '#94a3b8' : '#64748b'}
                           strokeWidth="1.75"
                           strokeDasharray="5 4"
                           fill="none"
@@ -487,7 +507,7 @@ export const ReportsScreen: React.FC = () => {
                         {actualPath && (
                           <path
                             d={actualPath}
-                            stroke="#2dd4bf"
+                            stroke={isDark ? '#2dd4bf' : '#0d9488'}
                             strokeWidth="2.5"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -508,7 +528,7 @@ export const ReportsScreen: React.FC = () => {
                               cy={c.y}
                               r="3.2"
                               fill={hasIncome && burnDownMode === 'NET' ? '#10b981' : '#f59e0b'}
-                              stroke="#0f172a"
+                              stroke={isDark ? '#0f172a' : '#ffffff'}
                               strokeWidth="1.5"
                             />
                           );
@@ -520,8 +540,8 @@ export const ReportsScreen: React.FC = () => {
                             cx={lastActual.x}
                             cy={lastActual.y}
                             r="4.2"
-                            fill="#2dd4bf"
-                            stroke="#0f172a"
+                            fill={isDark ? '#2dd4bf' : '#0d9488'}
+                            stroke={isDark ? '#0f172a' : '#ffffff'}
                             strokeWidth="1.5"
                           />
                         )}
@@ -533,7 +553,7 @@ export const ReportsScreen: React.FC = () => {
                             y1={padY}
                             x2={idealCoords[activeDayIdx].x}
                             y2={height - padY}
-                            stroke="#38bdf8"
+                            stroke={isDark ? '#38bdf8' : '#0284c7'}
                             strokeWidth="1.2"
                             strokeDasharray="2 2"
                           />
@@ -568,9 +588,9 @@ export const ReportsScreen: React.FC = () => {
                   </div>
 
                   {/* Inspected Day Readout Bar */}
-                  <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono tabular-nums">
-                      <span className="font-sans font-semibold text-white">
+                      <span className="font-sans font-semibold text-slate-900 dark:text-white">
                         {activePt.day === 0
                           ? isFr
                             ? 'Début du mois'
@@ -579,18 +599,20 @@ export const ReportsScreen: React.FC = () => {
                           ? `Jour ${activePt.day}`
                           : `Day ${activePt.day}`}
                       </span>
-                      <span className="text-slate-400">
+                      <span className="text-slate-500 dark:text-slate-400">
                         {isFr ? 'Idéal :' : 'Ideal:'}{' '}
-                        <strong className="text-slate-200">
+                        <strong className="text-slate-800 dark:text-slate-200">
                           {activeIdealVal.toLocaleString()} {currency}
                         </strong>
                       </span>
                       {activeActualVal !== null && (
-                        <span className="text-slate-400">
+                        <span className="text-slate-500 dark:text-slate-400">
                           {isFr ? 'Réel :' : 'Actual:'}{' '}
                           <strong
                             className={
-                              activeActualVal >= 0 ? 'text-teal-300' : 'text-rose-400'
+                              activeActualVal >= 0
+                                ? 'text-teal-700 dark:text-teal-300'
+                                : 'text-rose-600 dark:text-rose-400'
                             }
                           >
                             {activeActualVal.toLocaleString()} {currency}
@@ -600,7 +622,9 @@ export const ReportsScreen: React.FC = () => {
                       {activeVariance !== null && (
                         <span
                           className={`font-semibold ${
-                            activeVariance >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            activeVariance >= 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
                           }`}
                         >
                           ({activeVariance >= 0 ? '+' : ''}
@@ -610,13 +634,19 @@ export const ReportsScreen: React.FC = () => {
                     </div>
 
                     {activePt.scheduledEvents.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-700 dark:text-slate-300">
                         {activePt.scheduledEvents
                           .filter(ev => (burnDownMode === 'EXPENSE' ? ev.isExpense : true))
                           .map((ev, eIdx) => (
                             <span key={eIdx} className="font-mono tabular-nums">
-                              <span className="font-sans text-slate-400">{ev.title}:</span>{' '}
-                              <span className={ev.isExpense ? 'text-amber-300' : 'text-emerald-400'}>
+                              <span className="font-sans text-slate-500 dark:text-slate-400">{ev.title}:</span>{' '}
+                              <span
+                                className={
+                                  ev.isExpense
+                                    ? 'text-amber-600 dark:text-amber-300'
+                                    : 'text-emerald-600 dark:text-emerald-400'
+                                }
+                              >
                                 {ev.amount > 0 ? '+' : ''}
                                 {ev.amount.toLocaleString()} {currency}
                               </span>
@@ -633,9 +663,9 @@ export const ReportsScreen: React.FC = () => {
           {/* Category Breakdown & Member Share Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* Category & Sub-Category Spend Distribution (2 cols) */}
-            <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+            <div className="lg:col-span-2 p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-bold text-white text-sm">
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                   {isFr ? 'Répartition par Catégorie & Sous-catégorie' : 'Category & Sub-Category Breakdown'}
                 </h3>
                 <span className="text-[11px] text-slate-500">
@@ -657,7 +687,7 @@ export const ReportsScreen: React.FC = () => {
                   return (
                     <div
                       key={cat.categoryId}
-                      className="rounded-xl bg-slate-950/50 border border-slate-800/70 p-3 space-y-2"
+                      className="rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/70 p-3 space-y-2"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <button
@@ -676,18 +706,18 @@ export const ReportsScreen: React.FC = () => {
                               ) : (
                                 <span className="w-3.5 shrink-0" />
                               )}
-                              <CategoryIcon name={cat.categoryIcon} className="w-4 h-4 text-slate-300 shrink-0" />
-                              <span className="font-semibold text-slate-100 truncate">
+                              <CategoryIcon name={cat.categoryIcon} className="w-4 h-4 text-slate-600 dark:text-slate-300 shrink-0" />
+                              <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
                                 {cat.categoryName}
                               </span>
                               {cat.actualIncome > 0 && (
-                                <span className="text-[10px] font-mono tabular-nums text-emerald-400">
+                                <span className="text-[10px] font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
                                   +{cat.actualIncome.toLocaleString()} {currency}
                                 </span>
                               )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
-                              <span className="font-bold text-white">
+                              <span className="font-bold text-slate-900 dark:text-white">
                                 {cat.actualSpent.toLocaleString()} {currency}
                               </span>
                               <span className="text-slate-500">
@@ -695,7 +725,9 @@ export const ReportsScreen: React.FC = () => {
                               </span>
                               <span
                                 className={`font-semibold text-[11px] ${
-                                  cat.isOverBudget ? 'text-rose-400' : 'text-teal-400'
+                                  cat.isOverBudget
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-teal-700 dark:text-teal-400'
                                 }`}
                               >
                                 ({cat.percentageUsed}%)
@@ -703,10 +735,10 @@ export const ReportsScreen: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                          <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-900 overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all duration-500 ${
-                                cat.isOverBudget ? 'bg-rose-500' : 'bg-teal-500'
+                                cat.isOverBudget ? 'bg-rose-500' : 'bg-teal-600 dark:bg-teal-500'
                               }`}
                               style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
                             />
@@ -728,14 +760,14 @@ export const ReportsScreen: React.FC = () => {
                               ? 'Voir les opérations de cette catégorie'
                               : 'View transactions for this category'
                           }
-                          className="p-1 rounded-lg text-slate-400 hover:text-teal-300 hover:bg-slate-800/80 transition shrink-0 cursor-pointer"
+                          className="p-1 rounded-lg text-slate-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-slate-200/70 dark:hover:bg-slate-800/80 transition shrink-0 cursor-pointer"
                         >
                           <ArrowUpRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
                       {isExpanded && visibleSubs.length > 0 && (
-                        <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-800/60">
+                        <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-200 dark:border-slate-800/60">
                           {visibleSubs.map(sub => (
                             <button
                               key={sub.budgetId}
@@ -753,16 +785,16 @@ export const ReportsScreen: React.FC = () => {
                                   ? 'Voir les opérations de cette sous-catégorie'
                                   : 'View transactions for this sub-category'
                               }
-                              className="w-full text-left space-y-1 rounded-lg px-2 py-1 -mx-2 hover:bg-slate-800/60 transition cursor-pointer group/sub"
+                              className="w-full text-left space-y-1 rounded-lg px-2 py-1 -mx-2 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 transition cursor-pointer group/sub"
                             >
                               <div className="flex items-center justify-between text-[11px] gap-2">
                                 <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="text-slate-300 group-hover/sub:text-teal-300 transition truncate">
+                                  <span className="text-slate-700 dark:text-slate-300 group-hover/sub:text-teal-700 dark:group-hover/sub:text-teal-300 transition truncate">
                                     {sub.title}
                                   </span>
-                                  <ArrowUpRight className="w-3 h-3 text-slate-600 group-hover/sub:text-teal-300 transition shrink-0" />
+                                  <ArrowUpRight className="w-3 h-3 text-slate-400 dark:text-slate-600 group-hover/sub:text-teal-600 dark:group-hover/sub:text-teal-300 transition shrink-0" />
                                   {!sub.isExpense && (
-                                    <span className="text-[10px] font-semibold text-emerald-400 uppercase">
+                                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase">
                                       {isFr ? 'Revenu' : 'Income'}
                                     </span>
                                   )}
@@ -772,9 +804,9 @@ export const ReportsScreen: React.FC = () => {
                                       className={
                                         sub.isExpense
                                           ? sub.actualAmount < 0
-                                            ? 'font-semibold text-emerald-400'
-                                            : 'font-semibold text-slate-200'
-                                          : 'font-semibold text-emerald-400'
+                                            ? 'font-semibold text-emerald-600 dark:text-emerald-400'
+                                            : 'font-semibold text-slate-800 dark:text-slate-200'
+                                          : 'font-semibold text-emerald-600 dark:text-emerald-400'
                                       }
                                     >
                                       {sub.actualAmount.toLocaleString()} {currency}
@@ -786,9 +818,9 @@ export const ReportsScreen: React.FC = () => {
                                       className={
                                         sub.isExpense
                                           ? sub.isOverBudget
-                                            ? 'text-rose-400'
-                                            : 'text-teal-400'
-                                          : 'text-emerald-400'
+                                            ? 'text-rose-600 dark:text-rose-400'
+                                            : 'text-teal-700 dark:text-teal-400'
+                                          : 'text-emerald-600 dark:text-emerald-400'
                                       }
                                     >
                                       {sub.percentageUsed}%
@@ -796,7 +828,7 @@ export const ReportsScreen: React.FC = () => {
                                   </div>
                                 </div>
                                 {sub.offsetAmount > 0 && (
-                                  <div className="text-[10px] font-mono tabular-nums text-teal-300/80">
+                                  <div className="text-[10px] font-mono tabular-nums text-teal-700 dark:text-teal-300/80">
                                     {sub.isExpense
                                       ? isFr
                                         ? `Dép. ${sub.grossExpense.toLocaleString()} − Crédits ${sub.grossIncome.toLocaleString()} ${currency}`
@@ -806,14 +838,14 @@ export const ReportsScreen: React.FC = () => {
                                       : `Income ${sub.grossIncome.toLocaleString()} − Debits ${sub.grossExpense.toLocaleString()} ${currency}`}
                                   </div>
                                 )}
-                              <div className="w-full h-1 rounded-full bg-slate-900 overflow-hidden">
+                              <div className="w-full h-1 rounded-full bg-slate-200 dark:bg-slate-900 overflow-hidden">
                                 <div
                                   className={`h-full rounded-full ${
                                     !sub.isExpense
                                       ? 'bg-emerald-500'
                                       : sub.isOverBudget
                                       ? 'bg-rose-500'
-                                      : 'bg-teal-500/80'
+                                      : 'bg-teal-600/80 dark:bg-teal-500/80'
                                   }`}
                                   style={{ width: `${Math.min(100, sub.percentageUsed)}%` }}
                                 />
@@ -838,7 +870,7 @@ export const ReportsScreen: React.FC = () => {
                       budgetId: 'ALL'
                     })
                   }
-                  className="w-full pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300 hover:text-amber-200 transition cursor-pointer"
+                  className="w-full pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-700 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200 transition cursor-pointer"
                 >
                   <span className="flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -861,17 +893,17 @@ export const ReportsScreen: React.FC = () => {
             </div>
 
             {/* Member Spending Share (1 col) */}
-            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+            <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-teal-400" />
-                <h3 className="font-bold text-white text-sm">
+                <Users className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                   {isFr ? 'Dépenses par Membre' : 'By Family Member'}
                 </h3>
               </div>
 
               <div className="space-y-3">
                 {monthlyReport.members.map(m => (
-                  <div key={m.memberId} className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                  <div key={m.memberId} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80">
                     <div className="flex items-center justify-between text-xs font-semibold">
                       <div className="flex items-center gap-2">
                         <div
@@ -880,21 +912,21 @@ export const ReportsScreen: React.FC = () => {
                         >
                           {m.memberName.charAt(0)}
                         </div>
-                        <span className="text-slate-200">{m.memberName}</span>
+                        <span className="text-slate-800 dark:text-slate-200">{m.memberName}</span>
                       </div>
-                      <span className="text-white font-bold">
+                      <span className="text-slate-900 dark:text-white font-bold font-mono tabular-nums">
                         {m.amount.toLocaleString()} {currency}
                       </span>
                     </div>
 
                     <div className="mt-2 flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-200 dark:bg-slate-900 overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-teal-500"
+                          className="h-full rounded-full bg-teal-600 dark:bg-teal-500"
                           style={{ width: `${m.percentage}%` }}
                         />
                       </div>
-                      <span className="text-[10px] text-slate-400 font-medium">{m.percentage}%</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{m.percentage}%</span>
                     </div>
                   </div>
                 ))}
@@ -907,37 +939,39 @@ export const ReportsScreen: React.FC = () => {
         <div className="space-y-6">
           {/* Annual Key Metrics */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-xs text-slate-400 block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
+              <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {isFr ? 'Budget Annuel Total' : 'Total Annual Budget'}
               </span>
-              <div className="mt-1 text-2xl font-bold text-white font-mono tabular-nums">
+              <div className="mt-1 text-2xl font-bold text-slate-900 dark:text-white font-mono tabular-nums">
                 {yearlyReport.totalAnnualBudget.toLocaleString()} {currency}
               </div>
             </div>
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-xs text-slate-400 block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
+              <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {isFr ? 'Dépensé sur l’Année (YTD)' : 'Year-to-Date Spent'}
               </span>
-              <div className="mt-1 text-2xl font-bold text-slate-100 font-mono tabular-nums">
+              <div className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono tabular-nums">
                 {yearlyReport.totalAnnualSpent.toLocaleString()} {currency}
               </div>
             </div>
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-xs text-slate-400 block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
+              <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {isFr ? 'Revenus Annuels Réalisés' : 'Annual Income Received'}
               </span>
-              <div className="mt-1 text-2xl font-bold text-emerald-400 font-mono tabular-nums">
+              <div className="mt-1 text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
                 {yearlyReport.totalAnnualIncome.toLocaleString()} {currency}
               </div>
             </div>
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-xs text-slate-400 block">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none">
+              <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {isFr ? 'Solde Budgétaire Annuel' : 'Remaining Annual Allowance'}
               </span>
               <div
                 className={`mt-1 text-2xl font-bold font-mono tabular-nums ${
-                  yearlyReport.remainingAnnualBudget >= 0 ? 'text-teal-400' : 'text-rose-400'
+                  yearlyReport.remainingAnnualBudget >= 0
+                    ? 'text-teal-700 dark:text-teal-400'
+                    : 'text-rose-600 dark:text-rose-400'
                 }`}
               >
                 {yearlyReport.remainingAnnualBudget.toLocaleString()} {currency}
@@ -946,13 +980,13 @@ export const ReportsScreen: React.FC = () => {
           </div>
 
           {/* 12 Months Matrix Table */}
-          <div className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
-            <div className="p-4 border-b border-slate-800 font-bold text-sm text-white">
+          <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm dark:shadow-xl">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 font-bold text-sm text-slate-900 dark:text-white">
               {isFr ? 'Historique & Budget Prévu Mois par Mois' : 'Month-by-Month Actual vs. Planned Matrix'}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold">
+                <thead className="bg-slate-50 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 uppercase font-semibold">
                   <tr>
                     <th className="py-3 px-4">{isFr ? 'Mois' : 'Month'}</th>
                     <th className="py-3 px-4 text-right">{isFr ? 'Revenus' : 'Income'}</th>
@@ -961,28 +995,30 @@ export const ReportsScreen: React.FC = () => {
                     <th className="py-3 px-4 text-right">{isFr ? 'Solde / Épargne' : 'Net Savings'}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-medium">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
                   {yearlyReport.monthlyBreakdown.map(m => (
-                    <tr key={m.monthIndex} className="hover:bg-slate-800/30 transition">
-                      <td className="py-3 px-4 text-slate-200 capitalize">{m.monthName}</td>
-                      <td className="py-3 px-4 text-right text-emerald-400 font-mono tabular-nums">
+                    <tr key={m.monthIndex} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                      <td className="py-3 px-4 text-slate-800 dark:text-slate-200 capitalize">{m.monthName}</td>
+                      <td className="py-3 px-4 text-right text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
                         {m.income > 0 ? `+${m.income.toLocaleString()}` : '0'} {currency}
                       </td>
                       <td
                         className={`py-3 px-4 text-right font-mono tabular-nums ${
                           m.plannedExpenses > 0 && m.expenses > m.plannedExpenses
-                            ? 'text-rose-400 font-semibold'
-                            : 'text-slate-100'
+                            ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                            : 'text-slate-900 dark:text-slate-100'
                         }`}
                       >
                         {m.expenses.toLocaleString()} {currency}
                       </td>
-                      <td className="py-3 px-4 text-right text-slate-400 font-mono tabular-nums">
+                      <td className="py-3 px-4 text-right text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                         {m.plannedExpenses.toLocaleString()} {currency}
                       </td>
                       <td
                         className={`py-3 px-4 text-right font-bold font-mono tabular-nums ${
-                          m.savings >= 0 ? 'text-teal-400' : 'text-rose-400'
+                          m.savings >= 0
+                            ? 'text-teal-700 dark:text-teal-400'
+                            : 'text-rose-600 dark:text-rose-400'
                         }`}
                       >
                         {m.savings >= 0 ? '+' : ''}
@@ -996,9 +1032,9 @@ export const ReportsScreen: React.FC = () => {
           </div>
 
           {/* Annual Category & Sub-Category Breakdown */}
-          <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-bold text-white text-sm">
+              <h3 className="font-bold text-slate-900 dark:text-white text-sm">
                 {isFr
                   ? `Détail Annuel par Catégorie & Sous-catégorie (${selectedYear})`
                   : `Annual Category & Sub-Category Breakdown (${selectedYear})`}
@@ -1015,7 +1051,7 @@ export const ReportsScreen: React.FC = () => {
                 return (
                   <div
                     key={cat.categoryId}
-                    className="rounded-xl bg-slate-950/50 border border-slate-800/70 p-3 space-y-2"
+                    className="rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/70 p-3 space-y-2"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <button
@@ -1038,7 +1074,7 @@ export const ReportsScreen: React.FC = () => {
                               className="w-2.5 h-2.5 rounded-full shrink-0"
                               style={{ backgroundColor: `#${cat.categoryColor.toString(16).slice(-6)}` }}
                             />
-                            <span className="font-semibold text-slate-100 truncate">
+                            <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
                               {cat.categoryName}
                             </span>
                             <span className="text-[11px] text-slate-500 shrink-0">
@@ -1047,7 +1083,7 @@ export const ReportsScreen: React.FC = () => {
                             </span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
-                            <span className="font-bold text-white">
+                            <span className="font-bold text-slate-900 dark:text-white">
                               {cat.annualSpent.toLocaleString()} {currency}
                             </span>
                             <span className="text-slate-500">
@@ -1055,7 +1091,9 @@ export const ReportsScreen: React.FC = () => {
                             </span>
                             <span
                               className={`font-semibold text-[11px] ${
-                                isOver ? 'text-rose-400' : 'text-teal-400'
+                                isOver
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : 'text-teal-700 dark:text-teal-400'
                               }`}
                             >
                               ({cat.percentageUsed}%)
@@ -1063,9 +1101,9 @@ export const ReportsScreen: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="w-full h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                        <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-900 overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${isOver ? 'bg-rose-500' : 'bg-teal-500'}`}
+                            className={`h-full rounded-full ${isOver ? 'bg-rose-500' : 'bg-teal-600 dark:bg-teal-500'}`}
                             style={{ width: `${Math.min(100, cat.percentageUsed)}%` }}
                           />
                         </div>
@@ -1086,14 +1124,14 @@ export const ReportsScreen: React.FC = () => {
                             ? 'Voir les opérations annuelles de cette catégorie'
                             : 'View annual transactions for this category'
                         }
-                        className="p-1 rounded-lg text-slate-400 hover:text-teal-300 hover:bg-slate-800/80 transition shrink-0 cursor-pointer"
+                        className="p-1 rounded-lg text-slate-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-slate-200/70 dark:hover:bg-slate-800/80 transition shrink-0 cursor-pointer"
                       >
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
                     {isExpanded && cat.subCategories.length > 0 && (
-                      <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-800/60">
+                      <div className="pl-6 pt-1 space-y-1.5 border-t border-slate-200 dark:border-slate-800/60">
                         {cat.subCategories.map(sub => {
                           const subOver = sub.annualActual > sub.annualBudget && sub.annualBudget > 0;
                           return (
@@ -1113,23 +1151,25 @@ export const ReportsScreen: React.FC = () => {
                                   ? 'Voir les opérations annuelles de cette sous-catégorie'
                                   : 'View annual transactions for this sub-category'
                               }
-                              className="w-full flex items-center justify-between text-[11px] gap-2 rounded-lg px-2 py-1 -mx-2 hover:bg-slate-800/60 transition cursor-pointer group/sub"
+                              className="w-full flex items-center justify-between text-[11px] gap-2 rounded-lg px-2 py-1 -mx-2 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 transition cursor-pointer group/sub"
                             >
                               <span className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-slate-300 group-hover/sub:text-teal-300 transition truncate">
+                                <span className="text-slate-700 dark:text-slate-300 group-hover/sub:text-teal-700 dark:group-hover/sub:text-teal-300 transition truncate">
                                   {sub.title}
                                 </span>
                                 {sub.offsetAmount > 0 && (
-                                  <span className="text-[10px] font-mono tabular-nums text-teal-300/80 truncate">
+                                  <span className="text-[10px] font-mono tabular-nums text-teal-700 dark:text-teal-300/80 truncate">
                                     ({sub.grossExpense.toLocaleString()} − {sub.grossIncome.toLocaleString()})
                                   </span>
                                 )}
-                                <ArrowUpRight className="w-3 h-3 text-slate-600 group-hover/sub:text-teal-300 transition shrink-0" />
+                                <ArrowUpRight className="w-3 h-3 text-slate-400 dark:text-slate-600 group-hover/sub:text-teal-600 dark:group-hover/sub:text-teal-300 transition shrink-0" />
                               </span>
                               <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
                                 <span
                                   className={`font-semibold ${
-                                    sub.annualActual < 0 ? 'text-emerald-400' : 'text-slate-200'
+                                    sub.annualActual < 0
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-slate-800 dark:text-slate-200'
                                   }`}
                                 >
                                   {sub.annualActual.toLocaleString()} {currency}
@@ -1137,7 +1177,13 @@ export const ReportsScreen: React.FC = () => {
                                 <span className="text-slate-500">
                                   / {sub.annualBudget.toLocaleString()} {currency}
                                 </span>
-                                <span className={subOver ? 'text-rose-400' : 'text-teal-400'}>
+                                <span
+                                  className={
+                                    subOver
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : 'text-teal-700 dark:text-teal-400'
+                                  }
+                                >
                                   {sub.percentageUsed}%
                                 </span>
                               </div>
@@ -1162,7 +1208,7 @@ export const ReportsScreen: React.FC = () => {
                     budgetId: 'ALL'
                   })
                 }
-                className="w-full pt-2 border-t border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-300 hover:text-amber-200 transition cursor-pointer"
+                className="w-full pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-xs text-amber-700 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-200 transition cursor-pointer"
               >
                 <span className="flex items-center gap-1.5">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
