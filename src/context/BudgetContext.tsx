@@ -498,6 +498,20 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               ? 'Connexion Google validée. Déverrouillez le coffre avec votre empreinte ou code PIN.'
               : 'Google Sign-In completed. Unlock your vault with your fingerprint or PIN.'
           );
+          return;
+        }
+        const auth = getOrInitAuth(tempCfg);
+        if (!auth?.currentUser) {
+          const redirectEmptyErr =
+            language === 'fr'
+              ? 'La redirection Google OAuth est revenue sans session active (cookies tiers / stockage partitionné bloqué). Autorisez les popups ou ouvrez l’application dans un onglet dédié.'
+              : 'Google OAuth redirect returned without an active session (blocked third-party storage). Allow browser popups or open the app in a dedicated tab.';
+          setSyncState(prev => ({
+            ...prev,
+            lastSyncStatus: 'ERROR',
+            lastSyncMessage: redirectEmptyErr
+          }));
+          showToast(redirectEmptyErr);
         }
       });
     }
@@ -2046,7 +2060,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const auth = getOrInitAuth(decryptedByob);
       if (auth) {
         try {
-          await auth.authStateReady();
+          await Promise.race([
+            auth.authStateReady(),
+            new Promise<void>(resolve => setTimeout(resolve, 5000))
+          ]);
         } catch {
           // Ignore authStateReady failure and fall back to currentUser check
         }
@@ -2225,7 +2242,21 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } finally {
         rawDek.fill(0);
       }
-    } catch {
+    } catch (err: any) {
+      const isWrongTag =
+        err?.name === 'OperationError' ||
+        String(err?.message || '').toLowerCase().includes('decrypt');
+      if (!isWrongTag) {
+        const unexpectedErr =
+          (language === 'fr'
+            ? 'Erreur cryptographique lors du déchiffrement local : '
+            : 'Cryptographic error decrypting local vault: ') + (err?.message || String(err));
+        console.error('unlockVaultWithPin error:', err);
+        return {
+          success: false,
+          error: unexpectedErr
+        };
+      }
       const attempts = ++failedPinAttemptsRef.current;
       if (attempts >= 3) {
         const penaltySec = Math.min(300, Math.pow(2, attempts - 2) * 5);
@@ -2422,7 +2453,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const auth = getOrInitAuth(targetByob);
       if (auth) {
         try {
-          await auth.authStateReady();
+          await Promise.race([
+            auth.authStateReady(),
+            new Promise<void>(resolve => setTimeout(resolve, 5000))
+          ]);
         } catch {
           // Ignore
         }

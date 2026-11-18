@@ -1,6 +1,7 @@
 import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
 import {
   getFirestore,
+  initializeFirestore,
   Firestore,
   writeBatch,
   doc,
@@ -127,7 +128,14 @@ export function getOrInitFirestore(config?: Partial<FirebaseConfigEntity>): {
       firebaseAppInstance = initializeApp(firebaseConfig, appName);
     }
 
-    firestoreInstance = getFirestore(firebaseAppInstance);
+    try {
+      firestoreInstance = initializeFirestore(firebaseAppInstance, {
+        experimentalAutoDetectLongPolling: true
+      });
+    } catch {
+      // Already initialized on this FirebaseApp instance
+      firestoreInstance = getFirestore(firebaseAppInstance);
+    }
     activeConfigSignature = nextSig;
     return { app: firebaseAppInstance, db: firestoreInstance };
   } catch (err: any) {
@@ -187,6 +195,26 @@ function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, a
     if (v !== undefined) out[k] = v;
   }
   return out;
+}
+
+const FIRESTORE_OP_TIMEOUT_MS = 20_000;
+
+function withFirestoreTimeout<T>(promise: Promise<T>, stage: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise.finally(() => {
+      if (timer) clearTimeout(timer);
+    }),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const timeoutErr: any = new Error(
+          `Délai dépassé (${FIRESTORE_OP_TIMEOUT_MS / 1000}s) sans réponse de Cloud Firestore à l’étape « ${stage} ».`
+        );
+        timeoutErr.code = 'deadline-exceeded';
+        reject(timeoutErr);
+      }, FIRESTORE_OP_TIMEOUT_MS);
+    })
+  ]);
 }
 
 /**
@@ -271,7 +299,10 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     let readDenied = false;
 
     try {
-      const [rolesSnap, vaultSnap] = await Promise.all([getDoc(rolesRef), getDoc(vaultRef)]);
+      const [rolesSnap, vaultSnap] = await withFirestoreTimeout(
+        Promise.all([getDoc(rolesRef), getDoc(vaultRef)]),
+        currentStage
+      );
       rolesExists = rolesSnap.exists();
       vaultExists = vaultSnap.exists();
       existingRolesData = rolesExists
@@ -327,7 +358,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
         adminEmail: currentUser.email,
         updatedAt: syncStartTime
       });
-      await bootstrapBatch.commit();
+      await withFirestoreTimeout(bootstrapBatch.commit(), currentStage);
       serverRole = 'ADMIN';
       isCallerAdmin = true;
     } else if (isCallerAdmin) {
@@ -340,19 +371,25 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
           }
         }
         userRolesMap[userEmailLower] = 'ADMIN';
-        await setDoc(rolesRef, { userRoles: userRolesMap, updatedAt: syncStartTime });
+        await withFirestoreTimeout(
+          setDoc(rolesRef, { userRoles: userRolesMap, updatedAt: syncStartTime }),
+          currentStage
+        );
       }
 
       const desiredName = (payload.config.familyName || '').trim().slice(0, 120);
       if (desiredName && existingVaultData && desiredName !== existingVaultData.familyName) {
         currentStage = 'Mise à jour du nom du coffre (family_meta/vault)';
-        await setDoc(
-          vaultRef,
-          {
-            familyName: desiredName,
-            updatedAt: syncStartTime
-          },
-          { merge: true }
+        await withFirestoreTimeout(
+          setDoc(
+            vaultRef,
+            {
+              familyName: desiredName,
+              updatedAt: syncStartTime
+            },
+            { merge: true }
+          ),
+          currentStage
         );
       }
     }
@@ -470,7 +507,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
 
       if (chunkOps > 0) {
         currentStage = `Envoi des modifications locales (Outbox : ${chunk.map(c => c.entityType).slice(0, 3).join(', ')})`;
-        await batch.commit();
+        await withFirestoreTimeout(batch.commit(), currentStage);
         pushedCount += chunkOps;
       }
     }
@@ -494,7 +531,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     currentStage = 'Lecture de la collection Firestore (categories)';
     const catCol = collection(db, 'categories');
     const catQuery = lastPull > 0 ? query(catCol, where('updatedAt', '>', lastPull)) : query(catCol);
-    const catSnap = await getDocs(catQuery);
+    const catSnap = await withFirestoreTimeout(getDocs(catQuery), currentStage);
     let catIdx = 1;
     catSnap.forEach(docSnap => {
       if (!dirtyIds.has(docSnap.id)) {
@@ -515,7 +552,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     currentStage = 'Lecture de la collection Firestore (category_budgets)';
     const budgetCol = collection(db, 'category_budgets');
     const budgetQuery = lastPull > 0 ? query(budgetCol, where('updatedAt', '>', lastPull)) : query(budgetCol);
-    const budgetSnap = await getDocs(budgetQuery);
+    const budgetSnap = await withFirestoreTimeout(getDocs(budgetQuery), currentStage);
     let bgtIdx = 1;
     budgetSnap.forEach(docSnap => {
       if (!dirtyIds.has(docSnap.id)) {
@@ -548,7 +585,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     currentStage = 'Lecture de la collection Firestore (rules)';
     const ruleCol = collection(db, 'rules');
     const ruleQuery = lastPull > 0 ? query(ruleCol, where('updatedAt', '>', lastPull)) : query(ruleCol);
-    const ruleSnap = await getDocs(ruleQuery);
+    const ruleSnap = await withFirestoreTimeout(getDocs(ruleQuery), currentStage);
     let ruleIdx = 1;
     ruleSnap.forEach(docSnap => {
       if (!dirtyIds.has(docSnap.id)) {
@@ -574,7 +611,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     currentStage = 'Lecture de la collection Firestore (accounts)';
     const accCol = collection(db, 'accounts');
     const accQuery = lastPull > 0 ? query(accCol, where('updatedAt', '>', lastPull)) : query(accCol);
-    const accSnap = await getDocs(accQuery);
+    const accSnap = await withFirestoreTimeout(getDocs(accQuery), currentStage);
     accSnap.forEach(docSnap => {
       if (!dirtyIds.has(docSnap.id)) {
         const raw = docSnap.data();
@@ -607,7 +644,10 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
 
     if (lastPull === 0 && incomingAccs.length === 0) {
       currentStage = 'Lecture de la collection héritée Firestore (account_balance)';
-      const legacyBalSnap = await getDocs(query(collection(db, 'account_balance')));
+      const legacyBalSnap = await withFirestoreTimeout(
+        getDocs(query(collection(db, 'account_balance'))),
+        currentStage
+      );
       legacyBalSnap.forEach(docSnap => {
         const raw = docSnap.data();
         if (!raw.isDeleted) {
@@ -634,7 +674,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     currentStage = 'Lecture de la collection Firestore (transactions)';
     const txCol = collection(db, 'transactions');
     const txQuery = lastPull > 0 ? query(txCol, where('updatedAt', '>', lastPull)) : query(txCol);
-    const txSnap = await getDocs(txQuery);
+    const txSnap = await withFirestoreTimeout(getDocs(txQuery), currentStage);
     let txIdx = 1;
     txSnap.forEach(docSnap => {
       if (!dirtyIds.has(docSnap.id)) {
@@ -693,7 +733,10 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
 
     // 4f. Pull Family Members
     currentStage = 'Lecture de la collection Firestore (family_members)';
-    const memberSnap = await getDocs(query(collection(db, 'family_members')));
+    const memberSnap = await withFirestoreTimeout(
+      getDocs(query(collection(db, 'family_members'))),
+      currentStage
+    );
     memberSnap.forEach(docSnap => {
       const raw = docSnap.data();
       if (!raw.isDeleted) {
@@ -730,7 +773,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     const settlementCol = collection(db, 'shared_settlements');
     const settlementQuery =
       lastPull > 0 ? query(settlementCol, where('updatedAt', '>', lastPull)) : query(settlementCol);
-    const settlementSnap = await getDocs(settlementQuery);
+    const settlementSnap = await withFirestoreTimeout(getDocs(settlementQuery), currentStage);
     settlementSnap.forEach(docSnap => {
       if (!dirtyIds.has(docSnap.id)) {
         const raw = docSnap.data();
@@ -803,6 +846,11 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
       helpfulMsg =
         `Session Google expirée ou invalide [unauthenticated] à l’étape « ${currentStage} ».\n` +
         `Reconnectez-vous avec Google (${msg}).`;
+    } else if (code === 'deadline-exceeded') {
+      helpfulMsg =
+        `Délai d’attente Firestore dépassé [deadline-exceeded] pour le projet « ${payload.config.projectId} ».\n` +
+        `Étape : ${currentStage}\n` +
+        `Vérifications : (1) Le Project ID « ${payload.config.projectId} » est-il exact ? (2) Cloud Firestore est-il bien créé/activé dans Firebase Console → Build → Firestore Database ? (3) Un bloqueur réseau ou VPN bloque-t-il firestore.googleapis.com ?`;
     } else if (code === 'unavailable' || msg.toLowerCase().includes('offline')) {
       helpfulMsg =
         `Firestore injoignable [${code}] à l’étape « ${currentStage} ».\n` +

@@ -196,6 +196,14 @@ export async function signInWithGoogle(
     console.warn('Google Popup sign-in error:', err);
 
     if (err?.code === 'auth/popup-blocked') {
+      const inIframe = typeof window !== 'undefined' && window.self !== window.top;
+      if (inIframe) {
+        return {
+          success: false,
+          error:
+            'La fenêtre Google OAuth a été bloquée par le navigateur (auth/popup-blocked). Autorisez les popups pour ce site ou ouvrez l’application dans un nouvel onglet (en dehors de l’aperçu intégré).'
+        };
+      }
       try {
         if (pendingByob) {
           savePendingByobConfig(pendingByob);

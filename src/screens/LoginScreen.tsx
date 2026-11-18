@@ -97,6 +97,7 @@ export const LoginScreen: React.FC = () => {
   const [showRulesPanel, setShowRulesPanel] = useState(false);
 
   const autoPromptAttemptedRef = useRef(false);
+  const setupErrorRef = useRef<HTMLDivElement | null>(null);
 
   // Keep form fields synced only after vault unlock or for legacy migration
   useEffect(() => {
@@ -181,6 +182,12 @@ export const LoginScreen: React.FC = () => {
       setErrorMsg(syncState.lastSyncMessage);
     }
   }, [syncState.lastSyncStatus, syncState.lastSyncMessage]);
+
+  useEffect(() => {
+    if (errorMsg && setupErrorRef.current) {
+      setupErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [errorMsg]);
 
   const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
 
@@ -985,7 +992,7 @@ export const LoginScreen: React.FC = () => {
 
             {/* TAB 1: PRIVATE FIRESTORE BYOB */}
             {setupTab === 'BYOB' && (
-              <form onSubmit={handleConnectByob} className="space-y-4">
+              <form onSubmit={handleConnectByob} noValidate className="space-y-4">
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                   {isFr
                     ? 'Connectez votre propre projet Firebase / Firestore. Vos identifiants et le cache delta local sont chiffrés en AES-256-GCM via votre empreinte matérielle (WebAuthn PRF) ou code PIN, et effacés à la déconnexion.'
@@ -1305,9 +1312,36 @@ export const LoginScreen: React.FC = () => {
                   </div>
                 )}
 
+                {errorMsg && (
+                  <div
+                    ref={setupErrorRef}
+                    className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2 leading-relaxed"
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                      <span className="whitespace-pre-line break-words flex-1">{errorMsg}</span>
+                    </div>
+                  </div>
+                )}
+
+                {isLoading && loadingStage && (
+                  <div className="p-3 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/30 text-teal-800 dark:text-teal-200 text-xs flex items-center gap-2.5">
+                    <RefreshCw className="w-4 h-4 animate-spin text-teal-600 dark:text-teal-400 shrink-0" />
+                    <span className="font-medium">{loadingStage}</span>
+                  </div>
+                )}
+
+                {!isVaultUnlocked && !setupProtectionReady && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300/90 leading-snug">
+                    {isFr
+                      ? `Pour activer la connexion, enregistrez une empreinte PRF ou saisissez deux mots de passe identiques d’au moins ${MIN_VAULT_PASSPHRASE_LENGTH} caractères.`
+                      : `To continue, enroll a PRF fingerprint or enter matching Vault Passphrases of at least ${MIN_VAULT_PASSPHRASE_LENGTH} characters.`}
+                  </p>
+                )}
+
                 <button
                   type="submit"
-                  disabled={isLoading || !setupProtectionReady}
+                  disabled={isLoading}
                   className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-50 dark:hover:bg-slate-100 border border-slate-300 dark:border-transparent text-slate-900 font-bold text-sm transition flex items-center justify-center gap-3 disabled:opacity-50 whitespace-nowrap cursor-pointer shadow-sm"
                 >
                   {isLoading ? (
