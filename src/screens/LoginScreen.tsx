@@ -28,6 +28,11 @@ import {
 import { generateRandomBytes, MIN_VAULT_PASSPHRASE_LENGTH, evaluatePassphraseStrength } from '../utils/crypto';
 import { validateFirebaseConfigFields } from '../services/firebaseSyncService';
 import { BYOB_FIRESTORE_RULES } from './FirebaseSyncScreen';
+import {
+  formatDiagnosticsSummary,
+  getAuthDiagnosticsSnapshot,
+  subscribeAuthDiagnostics
+} from '../utils/authDiagnostics';
 
 export const LoginScreen: React.FC = () => {
   const {
@@ -95,6 +100,7 @@ export const LoginScreen: React.FC = () => {
   const [copiedRules, setCopiedRules] = useState(false);
   const [copiedError, setCopiedError] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
+  const [diagSnapshot, setDiagSnapshot] = useState(() => getAuthDiagnosticsSnapshot());
 
   const autoPromptAttemptedRef = useRef(false);
   const setupErrorRef = useRef<HTMLDivElement | null>(null);
@@ -178,6 +184,29 @@ export const LoginScreen: React.FC = () => {
   }, [hasSavedVault, isVaultUnlocked, viewMode, vaultLockMeta?.credentialId]);
 
   useEffect(() => {
+    const syncDiag = () => {
+      const snap = getAuthDiagnosticsSnapshot();
+      setDiagSnapshot(snap);
+      if (snap.cspViolations.length > 0) {
+        const latest = snap.cspViolations[snap.cspViolations.length - 1];
+        setErrorMsg(prev => {
+          const cspLine = `Blocage CSP [${latest.directive}] : ${latest.blockedURI}`;
+          if (prev && prev.includes(latest.blockedURI)) return prev;
+          return prev ? `${prev}\n${cspLine}` : cspLine;
+        });
+      } else if (snap.runtimeErrors.length > 0) {
+        const latestErr = snap.runtimeErrors[snap.runtimeErrors.length - 1];
+        setErrorMsg(prev => prev || latestErr);
+      }
+      if (isLoading && snap.trace.length > 0) {
+        setLoadingStage(snap.trace[snap.trace.length - 1].stage);
+      }
+    };
+    syncDiag();
+    return subscribeAuthDiagnostics(syncDiag);
+  }, [isLoading]);
+
+  useEffect(() => {
     if (syncState.lastSyncStatus === 'ERROR' && syncState.lastSyncMessage) {
       setErrorMsg(syncState.lastSyncMessage);
     }
@@ -203,7 +232,9 @@ export const LoginScreen: React.FC = () => {
   };
 
   const handleCopyError = (msg: string) => {
-    navigator.clipboard.writeText(msg);
+    const diagText = formatDiagnosticsSummary();
+    const payload = diagText ? `${msg}\n\n${diagText}` : msg;
+    navigator.clipboard.writeText(payload);
     setCopiedError(true);
     showToast(isFr ? 'Détail de l’erreur copié' : 'Error details copied');
     setTimeout(() => setCopiedError(false), 2000);
@@ -331,6 +362,10 @@ export const LoginScreen: React.FC = () => {
             : `Fingerprint enrolled as access gate. This browser does not support WebAuthn PRF: set a Vault Passphrase (min. ${MIN_VAULT_PASSPHRASE_LENGTH} characters) to encrypt local storage.`
         );
       }
+    } catch (err: any) {
+      setErrorMsg(
+        err?.message || (isFr ? 'Erreur inattendue lors de l’enregistrement biométrique.' : 'Unexpected biometric enrollment error.')
+      );
     } finally {
       setIsEnrollingBio(false);
     }
@@ -646,6 +681,15 @@ export const LoginScreen: React.FC = () => {
                     <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                     <span className="whitespace-pre-line break-words flex-1">{errorMsg}</span>
                   </div>
+                  {diagSnapshot.trace.length > 0 && (
+                    <div className="pl-6 pt-1 border-t border-rose-200/70 dark:border-rose-500/25 space-y-0.5 text-[11px] font-mono text-rose-700/85 dark:text-rose-200/80">
+                      {diagSnapshot.trace.slice(-5).map((entry, idx) => (
+                        <div key={`${entry.timestamp}-${idx}`} className="truncate">
+                          • {entry.stage}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-3 pl-6">
                     <button
                       type="button"
@@ -1315,11 +1359,42 @@ export const LoginScreen: React.FC = () => {
                 {errorMsg && (
                   <div
                     ref={setupErrorRef}
-                    className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2 leading-relaxed"
+                    className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2.5 leading-relaxed"
                   >
                     <div className="flex items-start gap-2">
                       <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                       <span className="whitespace-pre-line break-words flex-1">{errorMsg}</span>
+                    </div>
+                    {diagSnapshot.trace.length > 0 && (
+                      <div className="pl-6 text-[11px] font-mono text-rose-600/90 dark:text-rose-300/90 space-y-0.5 border-l-2 border-rose-200 dark:border-rose-500/30 ml-2">
+                        {diagSnapshot.trace.slice(-5).map((t, idx) => (
+                          <div key={`${t.timestamp}-${idx}`} className="truncate">
+                            → {t.stage}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-3 pl-6">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyError(errorMsg)}
+                        className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-200 hover:underline font-semibold cursor-pointer"
+                      >
+                        {copiedError ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedError ? (isFr ? 'Erreur copiée' : 'Error copied') : (isFr ? 'Copier le détail' : 'Copy error')}</span>
+                      </button>
+                      {isRulesRelatedError(errorMsg) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRulesPanel(v => !v)}
+                          className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 font-semibold underline cursor-pointer"
+                        >
+                          {showRulesPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          <span>
+                            {isFr ? 'Voir & copier firestore.rules' : 'View & copy firestore.rules'}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1327,7 +1402,7 @@ export const LoginScreen: React.FC = () => {
                 {isLoading && loadingStage && (
                   <div className="p-3 rounded-xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/30 text-teal-800 dark:text-teal-200 text-xs flex items-center gap-2.5">
                     <RefreshCw className="w-4 h-4 animate-spin text-teal-600 dark:text-teal-400 shrink-0" />
-                    <span className="font-medium">{loadingStage}</span>
+                    <span className="font-medium break-words">{loadingStage}</span>
                   </div>
                 )}
 

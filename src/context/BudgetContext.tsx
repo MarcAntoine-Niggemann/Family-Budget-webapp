@@ -79,6 +79,12 @@ import {
   subscribeToAuth,
   checkRedirectAuthResult
 } from '../services/firebaseAuthService';
+import {
+  clearAuthTrace,
+  formatCspSummary,
+  initAuthDiagnostics,
+  recordAuthTrace
+} from '../utils/authDiagnostics';
 
 export type SessionMode = 'DEMO' | 'FIRESTORE' | null;
 
@@ -252,6 +258,7 @@ interface BudgetContextType {
 const BudgetContext = createContext<BudgetContextType | undefined>(undefined);
 
 export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  initAuthDiagnostics();
   const [vaultLockMeta, setVaultLockMeta] = useState<VaultLockMeta | null>(() => loadVaultLockMeta());
   const [hasSavedVault, setHasSavedVault] = useState<boolean>(() => hasEncryptedByobConfig());
   const [legacyPlaintextConfig, setLegacyPlaintextConfig] = useState<SavedByobConfig | null>(() =>
@@ -1963,6 +1970,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setConfig(nextConfig);
       setSyncState(baseSyncState);
 
+      recordAuthTrace(`4/4 · Synchronisation Cloud Firestore (${cleanByob.projectId})...`);
       const result = await executeBidirectionalSync({
         accounts: syncAccounts,
         transactions: syncTxs,
@@ -2031,8 +2039,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    */
   const finalizeLocalUnlock = async (dek: CryptoKey): Promise<VaultActionResult> => {
     try {
+      recordAuthTrace('Déchiffrement de la configuration BYOB locale...');
       const decryptedByob = await loadEncryptedByobConfig(dek);
       if (!decryptedByob) {
+        recordAuthTrace('Échec du déchiffrement de la configuration locale');
         return {
           success: false,
           error:
@@ -2057,6 +2067,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         isBiometricLockEnabled: true
       }));
 
+      recordAuthTrace(`Vérification de session Firebase existante (${decryptedByob.projectId})...`);
       const auth = getOrInitAuth(decryptedByob);
       if (auth) {
         try {
@@ -2071,6 +2082,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       const activeFbUser = auth?.currentUser;
       if (activeFbUser && activeFbUser.email && activeFbUser.emailVerified) {
+        recordAuthTrace(`Session Firebase active trouvée (${activeFbUser.email}) — synchronisation Firestore...`);
         const userInfo: AuthUserInfo = {
           uid: activeFbUser.uid,
           email: activeFbUser.email,
@@ -2087,6 +2099,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         };
       }
 
+      recordAuthTrace('Coffre déverrouillé — authentification Google requise');
       return {
         success: false,
         vaultUnlocked: true,
@@ -2102,12 +2115,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         (language === 'fr'
           ? 'Erreur lors du déverrouillage local du coffre : '
           : 'Error while finalizing local vault unlock: ') + (err?.message || String(err));
+      recordAuthTrace(`Erreur finalizeLocalUnlock: ${err?.message || String(err)}`);
       console.error('finalizeLocalUnlock error:', err);
       return { success: false, error: errMsg };
     }
   };
 
   const unlockVaultWithBiometrics = async (): Promise<VaultActionResult> => {
+    clearAuthTrace('Déverrouillage biométrique WebAuthn...');
     const meta = vaultLockMeta || loadVaultLockMeta();
     if (!meta || !hasEncryptedByobConfig()) {
       return {
@@ -2133,6 +2148,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const authRes = await authenticateWithBiometricPrf(meta.credentialId, prfSalt);
 
     if (!authRes.success) {
+      recordAuthTrace(`Échec biométrie: ${authRes.error || 'cancelled'}`);
       return { success: false, error: authRes.error };
     }
 
@@ -2196,6 +2212,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const unlockVaultWithPin = async (pin: string): Promise<VaultActionResult> => {
+    clearAuthTrace('Déchiffrement PBKDF2-SHA256 du coffre local...');
     const cleanPin = pin.trim();
     if (!cleanPin) {
       return {
@@ -2286,6 +2303,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     protection: VaultProtectionInput,
     options?: { resetLocalData?: boolean }
   ): Promise<VaultActionResult> => {
+    clearAuthTrace('1/4 · Dérivation des clés AES-256-GCM locales...');
     try {
       const hasPrf = Boolean(protection.biometricCredId && protection.prfSecret && protection.prfSalt);
       const cleanPin = protection.pin?.trim() || '';
@@ -2320,6 +2338,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       try {
         if (hasPrf && protection.prfSecret && protection.prfSalt) {
+          recordAuthTrace('1/4 · Dérivation HKDF depuis WebAuthn PRF...');
           const hkdfSalt = generateRandomBytes(16);
           const kekPrf = await deriveKekFromPrfSecret(protection.prfSecret, hkdfSalt);
           meta.prfSaltBase64 = uint8ToBase64(protection.prfSalt);
@@ -2328,6 +2347,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
 
         if (hasPin) {
+          recordAuthTrace(`1/4 · Dérivation PBKDF2 (${PBKDF2_ITERATIONS.toLocaleString()} itérations)...`);
           const pinSalt = generateRandomBytes(16);
           const kekPin = await deriveKekFromPin(cleanPin, pinSalt, PBKDF2_ITERATIONS);
           meta.pinSaltBase64 = uint8ToBase64(pinSalt);
@@ -2339,6 +2359,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         rawDek.fill(0);
       }
 
+      recordAuthTrace('2/4 · Sauvegarde chiffrée du coffre dans localStorage...');
       saveVaultLockMeta(meta);
       setVaultLockMeta(meta);
       await saveEncryptedByobConfig(cleanByob, dek);
@@ -2354,6 +2375,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const isSameProject = savedByobConfig?.projectId?.trim() === cleanByob.projectId;
       const shouldReset = options?.resetLocalData !== undefined ? options.resetLocalData : !isSameProject;
 
+      recordAuthTrace('3/4 · Demande d’authentification Google OAuth...');
       const googleRes = await signInWithGoogle(cleanByob, {
         projectId: cleanByob.projectId,
         apiKey: cleanByob.apiKey,
@@ -2391,11 +2413,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
     } catch (err: any) {
       const code = err?.code ? ` [${err.code}]` : '';
+      const csp = formatCspSummary();
       const errMsg =
         (language === 'fr'
           ? `Erreur lors de la création du coffre ou de la connexion Google${code} : `
           : `Error while setting up vault or connecting to Google${code}: `) +
-        (err?.message || String(err));
+        (err?.message || String(err)) +
+        (csp ? `\n\n${csp}` : '');
+      recordAuthTrace(`Échec setupProtectedVaultAndConnect: ${err?.message || String(err)}`);
       console.error('setupProtectedVaultAndConnect error:', err);
       return {
         success: false,
@@ -2413,6 +2438,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     applicationId?: string;
     familyName?: string;
   }): Promise<VaultActionResult> => {
+    clearAuthTrace('1/3 · Préparation de la session Google OAuth...');
     try {
       const dek = activeDekRef.current;
       if (!isVaultUnlocked || !dek) {
@@ -2446,10 +2472,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       const isSameProject = savedByobConfig?.projectId?.trim() === targetByob.projectId;
       if (overrideByob) {
+        recordAuthTrace('1/3 · Mise à jour de la config BYOB chiffrée...');
         await saveEncryptedByobConfig(targetByob, dek);
         setSavedByobConfig(targetByob);
       }
 
+      recordAuthTrace(`2/3 · Vérification de l’état Firebase Auth (${targetByob.projectId})...`);
       const auth = getOrInitAuth(targetByob);
       if (auth) {
         try {
@@ -2464,6 +2492,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       const existingUser = auth?.currentUser;
       if (existingUser && existingUser.email && existingUser.emailVerified && isSameProject) {
+        recordAuthTrace(`Session Google active détectée (${existingUser.email}) — synchronisation Firestore...`);
         const userInfo: AuthUserInfo = {
           uid: existingUser.uid,
           email: existingUser.email,
@@ -2479,6 +2508,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         };
       }
 
+      recordAuthTrace('2/3 · Ouverture de la connexion Google OAuth...');
       const googleRes = await signInWithGoogle(targetByob, {
         projectId: targetByob.projectId,
         apiKey: targetByob.apiKey,
@@ -2515,11 +2545,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
     } catch (err: any) {
       const code = err?.code ? ` [${err.code}]` : '';
+      const csp = formatCspSummary();
       const errMsg =
         (language === 'fr'
           ? `Erreur lors de la connexion Google / Firestore${code} : `
           : `Error connecting to Google / Firestore${code}: `) +
-        (err?.message || String(err));
+        (err?.message || String(err)) +
+        (csp ? `\n\n${csp}` : '');
+      recordAuthTrace(`Échec continueUnlockedByobWithGoogle: ${err?.message || String(err)}`);
       console.error('continueUnlockedByobWithGoogle error:', err);
       return {
         success: false,

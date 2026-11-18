@@ -36,6 +36,12 @@ import {
   checkBiometricSupport
 } from '../utils/biometricKeyvault';
 import { MIN_VAULT_PASSPHRASE_LENGTH, evaluatePassphraseStrength } from '../utils/crypto';
+import {
+  AuthDiagnosticsSnapshot,
+  formatDiagnosticsSummary,
+  getAuthDiagnosticsSnapshot,
+  subscribeAuthDiagnostics
+} from '../utils/authDiagnostics';
 
 export const BYOB_FIRESTORE_RULES = `rules_version = '2';
 service cloud.firestore {
@@ -481,6 +487,7 @@ export const FirebaseSyncScreen: React.FC = () => {
   }>({ isOpen: false, member: null });
   const [copiedRules, setCopiedRules] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [diagSnapshot, setDiagSnapshot] = useState<AuthDiagnosticsSnapshot>(() => getAuthDiagnosticsSnapshot());
   const [biometricStatus, setBiometricStatus] = useState<BiometricStatus>({
     isSupported: false,
     isPlatformAvailable: false,
@@ -495,6 +502,26 @@ export const FirebaseSyncScreen: React.FC = () => {
 
   useEffect(() => {
     checkBiometricSupport().then(setBiometricStatus);
+  }, []);
+
+  useEffect(() => {
+    const syncDiag = () => {
+      const snap = getAuthDiagnosticsSnapshot();
+      setDiagSnapshot(snap);
+      if (snap.cspViolations.length > 0) {
+        const latest = snap.cspViolations[snap.cspViolations.length - 1];
+        setAuthError(prev => {
+          const cspLine = `Blocage CSP [${latest.directive}] : ${latest.blockedURI}`;
+          if (prev && prev.includes(latest.blockedURI)) return prev;
+          return prev ? `${prev}\n${cspLine}` : cspLine;
+        });
+      } else if (snap.runtimeErrors.length > 0) {
+        const latestErr = snap.runtimeErrors[snap.runtimeErrors.length - 1];
+        setAuthError(prev => prev || latestErr);
+      }
+    };
+    syncDiag();
+    return subscribeAuthDiagnostics(syncDiag);
   }, []);
 
   const getAccountTypeLabel = (type: AccountType) => {
@@ -853,7 +880,9 @@ export const FirebaseSyncScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(syncState.lastSyncMessage || '');
+                  const diagText = formatDiagnosticsSummary();
+                  const base = syncState.lastSyncMessage || '';
+                  navigator.clipboard.writeText(diagText ? `${base}\n\n${diagText}` : base);
                   showToast(isFr ? 'Erreur de synchronisation copiée' : 'Sync error copied');
                 }}
                 className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-200 hover:underline font-semibold cursor-pointer"
@@ -967,11 +996,21 @@ export const FirebaseSyncScreen: React.FC = () => {
               <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
               <span className="whitespace-pre-line break-words flex-1">{authError}</span>
             </div>
+            {diagSnapshot.trace.length > 0 && (
+              <div className="pl-6 pt-1 border-t border-rose-200/70 dark:border-rose-500/25 space-y-0.5 text-[11px] font-mono text-rose-700/85 dark:text-rose-200/80">
+                {diagSnapshot.trace.slice(-5).map((entry, idx) => (
+                  <div key={`${entry.timestamp}-${idx}`} className="truncate">
+                    • {entry.stage}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="pl-6">
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(authError);
+                  const diagText = formatDiagnosticsSummary();
+                  navigator.clipboard.writeText(diagText ? `${authError}\n\n${diagText}` : authError);
                   showToast(isFr ? 'Erreur copiée' : 'Error copied');
                 }}
                 className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-200 hover:underline font-semibold cursor-pointer"

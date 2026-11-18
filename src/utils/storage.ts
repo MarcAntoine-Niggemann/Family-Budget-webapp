@@ -108,8 +108,11 @@ export function saveVaultLockMeta(meta: VaultLockMeta): void {
     } else {
       localStorage.removeItem(BIOMETRIC_CRED_STORAGE_KEY);
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error('Failed to save vault lock metadata:', e);
+    throw new Error(
+      `Impossible d’enregistrer le coffre dans le stockage local du navigateur (${e?.message || 'storage blocked'}).`
+    );
   }
 }
 
