@@ -7,25 +7,35 @@ import {
   isValidCardPeriod,
   shiftCardPeriod
 } from '../utils/creditCardPeriod';
+import {
+  SharedSplitEditor,
+  SharedSplitDraftState,
+  createInitialSharedDraft,
+  resolveSharedSplitFromDraft
+} from './SharedSplitEditor';
+import { MemberManagementModal } from './MemberManagementModal';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialAccountId?: string | null;
   initialCreditCardPeriod?: string | null;
+  initialShared?: boolean;
 }
 
 export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   isOpen,
   onClose,
   initialAccountId,
-  initialCreditCardPeriod
+  initialCreditCardPeriod,
+  initialShared = false
 }) => {
   const {
     accounts,
     categories,
     budgets,
     members,
+    sharedPreset,
     addTransaction,
     navigateTo,
     language,
@@ -37,6 +47,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
   const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
   const activeBudgets = useMemo(() => budgets.filter(b => !b.isDeleted && b.isActive), [budgets]);
+  const activeMembers = useMemo(() => members.filter(m => !m.isDeleted), [members]);
 
   const [isExpense, setIsExpense] = useState(true);
   const [amountStr, setAmountStr] = useState('');
@@ -44,12 +55,22 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState(activeAccounts[0]?.id || '');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number>(activeCategories[0]?.id || 0);
   const [selectedBudgetId, setSelectedBudgetId] = useState<number>(0);
-  const [selectedMemberId, setSelectedMemberId] = useState(members[0]?.id || 'primary');
+  const [selectedMemberId, setSelectedMemberId] = useState(activeMembers[0]?.id || 'primary');
   const [dateStr, setDateStr] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState(isFr ? 'Carte Bancaire' : 'Card');
   const [creditCardPeriod, setCreditCardPeriod] = useState('');
   const [isPeriodManuallyEdited, setIsPeriodManuallyEdited] = useState(false);
   const [notes, setNotes] = useState('');
+  const [isQuickMemberOpen, setIsQuickMemberOpen] = useState(false);
+  const [sharedDraft, setSharedDraft] = useState<SharedSplitDraftState>(() =>
+    createInitialSharedDraft(
+      null,
+      activeMembers[0]?.id || 'primary',
+      activeMembers,
+      sharedPreset.defaultMode,
+      sharedPreset.defaultParticipantIds
+    )
+  );
 
   const filteredBudgets = useMemo(() => {
     const list = activeBudgets.filter(b => b.categoryId === selectedCategoryId);
@@ -88,14 +109,26 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     const targetAcc = activeAccounts.find(a => a.id === targetAccId);
     const todayStr = new Date().toISOString().split('T')[0];
 
+    const defaultMemberId = activeMembers[0]?.id || 'primary';
     setSelectedAccountId(targetAccId);
     setSelectedCategoryId(catId);
     setSelectedBudgetId(firstBudget?.id || 0);
-    setSelectedMemberId(members[0]?.id || 'primary');
+    setSelectedMemberId(defaultMemberId);
     setDateStr(todayStr);
     setAmountStr('');
     setTitle('');
     setNotes('');
+    setIsQuickMemberOpen(false);
+    setSharedDraft({
+      ...createInitialSharedDraft(
+        null,
+        defaultMemberId,
+        activeMembers,
+        sharedPreset.defaultMode,
+        sharedPreset.defaultParticipantIds
+      ),
+      isShared: Boolean(initialShared)
+    });
 
     if (targetAcc?.type === 'DEFERRED_CARD') {
       if (initialCreditCardPeriod && isValidCardPeriod(initialCreditCardPeriod)) {
@@ -110,7 +143,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setCreditCardPeriod('');
       setIsPeriodManuallyEdited(false);
     }
-  }, [isOpen, initialAccountId, initialCreditCardPeriod]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, initialAccountId, initialCreditCardPeriod, initialShared]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-update default period when date or deferred card account changes (unless manually overridden)
   useEffect(() => {
@@ -132,11 +165,23 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     }
   }, [filteredBudgets, selectedBudgetId]);
 
+  const parsedAbsAmount = useMemo(() => {
+    const val = parseFloat(amountStr.replace(',', '.'));
+    return Number.isFinite(val) && val > 0 ? Math.abs(val) : 0;
+  }, [amountStr]);
+
+  const sharedResolution = useMemo(
+    () => resolveSharedSplitFromDraft(sharedDraft, parsedAbsAmount, activeMembers),
+    [sharedDraft, parsedAbsAmount, activeMembers]
+  );
+
   if (!isOpen) return null;
 
   const selectedCategory = activeCategories.find(c => c.id === selectedCategoryId);
   const selectedBudget = filteredBudgets.find(b => b.id === selectedBudgetId);
-  const canSubmit = Boolean(selectedCategory && selectedBudget && amountStr.trim() && title.trim());
+  const canSubmit = Boolean(
+    selectedCategory && selectedBudget && amountStr.trim() && title.trim() && sharedResolution.valid
+  );
 
   const handleDirectionChange = (nextIsExpense: boolean) => {
     setIsExpense(nextIsExpense);
@@ -159,10 +204,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(amountStr.replace(',', '.'));
-    if (isNaN(val) || val <= 0 || !selectedCategory || !selectedBudget) return;
+    if (isNaN(val) || val <= 0 || !selectedCategory || !selectedBudget || !sharedResolution.valid) return;
 
     const account = activeAccounts.find(a => a.id === selectedAccountId);
-    const member = members.find(m => m.id === selectedMemberId);
+    const member = activeMembers.find(m => m.id === selectedMemberId);
     const signedAmount = isExpense ? -Math.abs(val) : Math.abs(val);
     const txDate = new Date(dateStr + 'T12:00:00').getTime() || Date.now();
     const resolvedPeriod =
@@ -194,14 +239,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       accountName: account?.name || 'Compte Courant',
       settlementCardName: account?.type === 'DEFERRED_CARD' ? account.name : undefined,
       billingCycleClosingDay: account?.billingCycleClosingDay,
-      creditCardPeriod: resolvedPeriod
+      creditCardPeriod: resolvedPeriod,
+      sharedSplit: sharedResolution.splitInfo
     });
 
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm">
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/70 backdrop-blur-sm">
       <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">
@@ -307,10 +354,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               </label>
               <select
                 value={selectedMemberId}
-                onChange={e => setSelectedMemberId(e.target.value)}
+                onChange={e => {
+                  const nextMemberId = e.target.value;
+                  setSelectedMemberId(nextMemberId);
+                  if (!sharedDraft.isShared) {
+                    setSharedDraft(prev => ({ ...prev, paidByMemberId: nextMemberId }));
+                  }
+                }}
                 className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
-                {members.map(m => (
+                {activeMembers.map(m => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
@@ -517,6 +570,18 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </div>
           )}
 
+          {/* Couple / Family Shared Split Tagging */}
+          <SharedSplitEditor
+            totalAmountAbs={parsedAbsAmount}
+            isExpense={isExpense}
+            members={activeMembers}
+            currency={currency}
+            language={language}
+            draft={sharedDraft}
+            onChange={setSharedDraft}
+            onQuickAddPartner={() => setIsQuickMemberOpen(true)}
+          />
+
           {/* Notes */}
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -551,5 +616,12 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         </form>
       </div>
     </div>
+
+    <MemberManagementModal
+      isOpen={isQuickMemberOpen}
+      member={null}
+      onClose={() => setIsQuickMemberOpen(false)}
+    />
+  </>
   );
 };

@@ -28,6 +28,42 @@ export type TransactionSource = 'MANUAL' | 'BANK_IMPORT' | 'OPEN_BANKING';
 export type TransactionStatus = 'PENDING' | 'RECONCILED' | 'VERIFIED';
 export type TransferType = 'TO_SAVINGS' | 'FROM_SAVINGS' | 'CARD_SETTLEMENT' | 'GENERAL_TRANSFER';
 
+export type SharedSplitMode = 'EQUAL' | 'PERCENTAGE' | 'EXACT' | 'INCOME_RATIO';
+
+export interface SharedSplitParticipant {
+  memberId: string;
+  memberName: string;
+  percentage: number;
+  shareAmount: number;
+}
+
+export interface SharedSplitInfo {
+  isShared: boolean;
+  mode: SharedSplitMode;
+  paidByMemberId: string;
+  paidByMemberName: string;
+  participants: SharedSplitParticipant[];
+}
+
+export interface SharedSettlementEntity {
+  id: string;
+  fromMemberId: string;
+  fromMemberName: string;
+  toMemberId: string;
+  toMemberName: string;
+  amount: number;
+  date: number;
+  notes: string;
+  linkedTransactionId?: number | null;
+  updatedAt: number;
+  isDeleted: boolean;
+}
+
+export interface SharedExpensePreset {
+  defaultMode: SharedSplitMode;
+  defaultParticipantIds: string[];
+}
+
 export interface TransactionEntity {
   id: number;
   remoteId?: string | null;
@@ -65,6 +101,7 @@ export interface TransactionEntity {
   isInternalTransfer?: boolean;
   transferType?: TransferType | null;
   creditCardPeriod?: string | null; // e.g. "2026-10"
+  sharedSplit?: SharedSplitInfo | null;
   updatedAt: number;
   isDeleted: boolean;
 }
@@ -127,6 +164,9 @@ export interface FamilyMemberEntity {
   avatarColor: number;
   firestoreSynced: boolean;
   customPermissions?: string | null;
+  monthlyIncome?: number | null;
+  updatedAt?: number;
+  isDeleted?: boolean;
 }
 
 export interface FirebaseConfigEntity {
@@ -183,6 +223,7 @@ export interface ReconciliationCandidate {
 export type AppScreen =
   | 'DASHBOARD'
   | 'TRANSACTIONS'
+  | 'SHARED_EXPENSES'
   | 'BUDGET_PLANNER'
   | 'ADD_EXPENSE'
   | 'CSV_IMPORT'
@@ -235,6 +276,7 @@ export interface TransactionFilters {
   searchTerm: string;
   filterType: 'ALL' | 'EXPENSE' | 'INCOME' | 'TRANSFER';
   filterStatus: 'ALL' | 'PENDING' | 'RECONCILED' | 'VERIFIED';
+  filterShared?: 'ALL' | 'SHARED' | 'PERSONAL';
   creditCardPeriod?: string; // 'ALL' or 'YYYY-MM'
 }
 

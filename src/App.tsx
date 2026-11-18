@@ -10,6 +10,7 @@ import { CsvImportScreen } from './screens/CsvImportScreen';
 import { ReconciliationScreen } from './screens/ReconciliationScreen';
 import { RulesScreen } from './screens/RulesScreen';
 import { FirebaseSyncScreen } from './screens/FirebaseSyncScreen';
+import { SharedExpensesScreen } from './screens/SharedExpensesScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { AddTransactionModal } from './components/AddTransactionModal';
 import { EditTransactionModal } from './components/EditTransactionModal';
@@ -31,7 +32,11 @@ const AppContent: React.FC = () => {
 
   // Modal controls
   const [isAddTxOpen, setIsAddTxOpen] = useState(false);
-  const [addTxPrefill, setAddTxPrefill] = useState<{ accountId?: string; creditCardPeriod?: string } | null>(null);
+  const [addTxPrefill, setAddTxPrefill] = useState<{
+    accountId?: string;
+    creditCardPeriod?: string;
+    initialShared?: boolean;
+  } | null>(null);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [isShareQrOpen, setIsShareQrOpen] = useState(false);
   const [selectedTxForEdit, setSelectedTxForEdit] = useState<TransactionEntity | null>(null);
@@ -110,6 +115,16 @@ const AppContent: React.FC = () => {
           />
         )}
 
+        {currentScreen === 'SHARED_EXPENSES' && (
+          <SharedExpensesScreen
+            onOpenAddSharedTx={() => {
+              setAddTxPrefill({ initialShared: true });
+              setIsAddTxOpen(true);
+            }}
+            onSelectTransaction={tx => setSelectedTxForEdit(tx)}
+          />
+        )}
+
         {currentScreen === 'BUDGET_PLANNER' && <BudgetPlannerScreen />}
 
         {currentScreen === 'REPORTS' && <ReportsScreen />}
@@ -130,6 +145,7 @@ const AppContent: React.FC = () => {
         isOpen={isAddTxOpen}
         initialAccountId={addTxPrefill?.accountId ?? null}
         initialCreditCardPeriod={addTxPrefill?.creditCardPeriod ?? null}
+        initialShared={Boolean(addTxPrefill?.initialShared)}
         onClose={() => {
           setIsAddTxOpen(false);
           setAddTxPrefill(null);

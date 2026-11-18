@@ -10,6 +10,8 @@ import {
   OpenBankingConfig,
   OpenBankingAccountDto,
   ResolvedTheme,
+  SharedExpensePreset,
+  SharedSettlementEntity,
   SyncOutboxEntity,
   SyncStateEntity,
   ThemePreference,
@@ -85,6 +87,7 @@ export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
   searchTerm: '',
   filterType: 'ALL',
   filterStatus: 'ALL',
+  filterShared: 'ALL',
   creditCardPeriod: 'ALL'
 };
 
@@ -132,6 +135,8 @@ interface BudgetContextType {
   budgets: CategoryBudgetEntity[];
   rules: CategorizationRuleEntity[];
   members: FamilyMemberEntity[];
+  sharedSettlements: SharedSettlementEntity[];
+  sharedPreset: SharedExpensePreset;
   config: FirebaseConfigEntity;
   syncState: SyncStateEntity;
   openBankingConfig: OpenBankingConfig;
@@ -209,6 +214,17 @@ interface BudgetContextType {
   updateRule: (r: CategorizationRuleEntity) => void;
   deleteRule: (id: number) => void;
 
+  addSharedSettlement: (
+    s: Omit<SharedSettlementEntity, 'id' | 'updatedAt' | 'isDeleted'>,
+    options?: { linkedAccountId?: string | null }
+  ) => void;
+  deleteSharedSettlement: (id: string) => void;
+  updateSharedPreset: (preset: SharedExpensePreset) => void;
+
+  addMember: (m: Omit<FamilyMemberEntity, 'id' | 'firestoreSynced' | 'updatedAt' | 'isDeleted'>) => string;
+  updateMember: (m: FamilyMemberEntity) => void;
+  deleteMember: (id: string) => void;
+
   importCsvTransactions: (
     records: ParsedBankRow[],
     targetAccountId: string,
@@ -256,6 +272,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [budgets, setBudgets] = useState<CategoryBudgetEntity[]>([]);
   const [rules, setRules] = useState<CategorizationRuleEntity[]>([]);
   const [members, setMembers] = useState<FamilyMemberEntity[]>([]);
+  const [sharedSettlements, setSharedSettlements] = useState<SharedSettlementEntity[]>([]);
+  const [sharedPreset, setSharedPreset] = useState<SharedExpensePreset>({
+    defaultMode: 'EQUAL',
+    defaultParticipantIds: []
+  });
   const [outbox, setOutbox] = useState<SyncOutboxEntity[]>([]);
   const [config, setConfig] = useState<FirebaseConfigEntity>(() => getEmptyConfig(null));
   const [syncState, setSyncState] = useState<SyncStateEntity>(() => getEmptySyncState());
@@ -292,6 +313,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.BUDGETS, budgets, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.RULES, rules, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.MEMBERS, members, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.SHARED_SETTLEMENTS, sharedSettlements, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.SHARED_PRESET, sharedPreset, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.SYNC_STATE, syncState, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.OUTBOX, outbox, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.OPEN_BANKING, openBankingConfig, dek),
@@ -312,6 +335,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     budgets,
     rules,
     members,
+    sharedSettlements,
+    sharedPreset,
     syncState,
     outbox,
     openBankingConfig,
@@ -328,6 +353,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       budgets: CategoryBudgetEntity[];
       rules: CategorizationRuleEntity[];
       members: FamilyMemberEntity[];
+      sharedSettlements?: SharedSettlementEntity[];
     }
   ) => {
     if (result.incomingTransactions && result.incomingTransactions.length > 0) {
@@ -372,6 +398,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (result.incomingMembers && result.incomingMembers.length > 0) {
       setMembers(result.incomingMembers);
+    }
+
+    if (result.incomingSharedSettlements && result.incomingSharedSettlements.length > 0) {
+      const map = new Map((base.sharedSettlements || []).map(s => [s.id, s]));
+      for (const inc of result.incomingSharedSettlements) {
+        map.set(inc.id, inc);
+      }
+      setSharedSettlements(Array.from(map.values()).sort((a, b) => b.date - a.date));
     }
 
     if (result.incomingFamilyName) {
@@ -572,6 +606,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setBudgets(data.budgets);
     setRules(data.rules);
     setMembers(data.members);
+    setSharedSettlements(data.sharedSettlements || []);
+    setSharedPreset(data.sharedPreset || { defaultMode: 'EQUAL', defaultParticipantIds: data.members.slice(0, 2).map(m => m.id) });
     setConfig(data.config);
     setSyncState(data.syncState);
     setOutbox([]);
@@ -594,6 +630,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setBudgets(data.budgets);
       setRules(data.rules);
       setMembers(data.members);
+      setSharedSettlements(data.sharedSettlements || []);
+      setSharedPreset(data.sharedPreset || { defaultMode: 'EQUAL', defaultParticipantIds: data.members.slice(0, 2).map(m => m.id) });
       setOutbox([]);
       setActiveAccountId(null);
       showToast(lang === 'fr' ? 'Données de démonstration chargées' : 'Demo data loaded');
@@ -607,6 +645,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setBudgets([]);
     setRules([]);
     setMembers([]);
+    setSharedSettlements([]);
+    setSharedPreset({ defaultMode: 'EQUAL', defaultParticipantIds: [] });
     setOutbox([]);
     setActiveAccountId(null);
     setTransactionFilters(DEFAULT_TRANSACTION_FILTERS);
@@ -1382,6 +1422,141 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showToast(language === 'fr' ? 'Règle supprimée' : 'Rule deleted');
   };
 
+  // Shared Settlements & Couple/Family Member CRUD
+  const addSharedSettlement = (
+    s: Omit<SharedSettlementEntity, 'id' | 'updatedAt' | 'isDeleted'>,
+    options?: { linkedAccountId?: string | null }
+  ) => {
+    const now = Date.now();
+    const id = `settle_${now}_${Math.floor(Math.random() * 1000)}`;
+    const absAmount = Math.round(Math.abs(s.amount) * 100) / 100;
+    if (absAmount <= 0) return;
+
+    let linkedTxId: number | null = s.linkedTransactionId ?? null;
+    const linkedAccId = options?.linkedAccountId;
+
+    if (linkedAccId) {
+      const acc = accounts.find(a => a.id === linkedAccId && !a.isDeleted);
+      if (acc) {
+        const nextTxId = Math.max(0, ...transactions.map(t => t.id)) + 1;
+        const settlementTx: TransactionEntity = {
+          id: nextTxId,
+          title:
+            language === 'fr'
+              ? `Remboursement partagé : ${s.fromMemberName} → ${s.toMemberName}`
+              : `Shared settlement: ${s.fromMemberName} → ${s.toMemberName}`,
+          originalBankLabel: null,
+          amount: -absAmount,
+          isExpense: true,
+          categoryId: 0,
+          categoryName: language === 'fr' ? 'Remboursement partagé' : 'Shared Settlement',
+          categoryColor: 0xff0d9488,
+          categoryIcon: 'ArrowRightLeft',
+          budgetId: 0,
+          budgetTitle: '',
+          date: s.date || now,
+          familyMemberId: s.fromMemberId,
+          familyMemberName: s.fromMemberName,
+          source: 'MANUAL',
+          status: 'VERIFIED',
+          paymentMethod: language === 'fr' ? 'Virement' : 'Transfer',
+          notes: s.notes || '',
+          accountId: acc.id,
+          accountName: acc.name,
+          isExcluded: true,
+          isExcludedFromTotals: true,
+          updatedAt: now,
+          isDeleted: false
+        };
+        setTransactions(prev => [settlementTx, ...prev]);
+        enqueueOutbox('TRANSACTION', `tx_${nextTxId}`, 'UPSERT');
+        setAccounts(prev =>
+          prev.map(a =>
+            a.id === acc.id
+              ? { ...a, currentBalance: Math.round((a.currentBalance - absAmount) * 100) / 100, updatedAt: now }
+              : a
+          )
+        );
+        enqueueOutbox('ACCOUNT', acc.id, 'UPSERT');
+        linkedTxId = nextTxId;
+      }
+    }
+
+    const newSettlement: SharedSettlementEntity = {
+      ...s,
+      id,
+      amount: absAmount,
+      linkedTransactionId: linkedTxId,
+      updatedAt: now,
+      isDeleted: false
+    };
+
+    setSharedSettlements(prev => [newSettlement, ...prev]);
+    enqueueOutbox('SHARED_SETTLEMENT', id, 'UPSERT');
+    showToast(language === 'fr' ? 'Remboursement enregistré' : 'Settlement recorded');
+  };
+
+  const deleteSharedSettlement = (id: string) => {
+    const now = Date.now();
+    const target = sharedSettlements.find(s => s.id === id && !s.isDeleted);
+    if (!target) return;
+
+    setSharedSettlements(prev => prev.map(s => (s.id === id ? { ...s, isDeleted: true, updatedAt: now } : s)));
+    enqueueOutbox('SHARED_SETTLEMENT', id, 'DELETE');
+
+    if (target.linkedTransactionId) {
+      deleteTransaction(target.linkedTransactionId);
+    }
+
+    showToast(language === 'fr' ? 'Remboursement supprimé' : 'Settlement removed');
+  };
+
+  const updateSharedPreset = (preset: SharedExpensePreset) => {
+    setSharedPreset(preset);
+    showToast(language === 'fr' ? 'Préférence de partage enregistrée' : 'Shared split preset updated');
+  };
+
+  const addMember = (
+    m: Omit<FamilyMemberEntity, 'id' | 'firestoreSynced' | 'updatedAt' | 'isDeleted'>
+  ): string => {
+    const now = Date.now();
+    const slug = m.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'member';
+    const id = `${slug}_${now % 10000}`;
+    const newMember: FamilyMemberEntity = {
+      ...m,
+      id,
+      firestoreSynced: sessionMode === 'FIRESTORE',
+      updatedAt: now,
+      isDeleted: false
+    };
+    setMembers(prev => [...prev, newMember]);
+    enqueueOutbox('MEMBER', id, 'UPSERT');
+    showToast(language === 'fr' ? 'Membre ajouté' : 'Member added');
+    return id;
+  };
+
+  const updateMember = (updated: FamilyMemberEntity) => {
+    const now = Date.now();
+    setMembers(prev => prev.map(m => (m.id === updated.id ? { ...updated, updatedAt: now } : m)));
+    enqueueOutbox('MEMBER', updated.id, 'UPSERT');
+    showToast(language === 'fr' ? 'Membre mis à jour' : 'Member updated');
+  };
+
+  const deleteMember = (id: string) => {
+    const activeCount = members.filter(m => !m.isDeleted).length;
+    if (activeCount <= 1) {
+      showToast(language === 'fr' ? 'Au moins un membre doit rester actif.' : 'At least one member must remain active.');
+      return;
+    }
+    const now = Date.now();
+    setMembers(prev => prev.map(m => (m.id === id ? { ...m, isDeleted: true, updatedAt: now } : m)));
+    enqueueOutbox('MEMBER', id, 'DELETE');
+    showToast(language === 'fr' ? 'Membre retiré' : 'Member removed');
+  };
+
   // Import CSV
   const importCsvTransactions = (
     records: ParsedBankRow[],
@@ -1524,7 +1699,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           categories: [],
           budgets: [],
           rules: [],
-          members
+          members,
+          sharedSettlements: []
         }
       : {
           accounts,
@@ -1532,7 +1708,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           categories,
           budgets,
           rules,
-          members
+          members,
+          sharedSettlements
         };
 
     if (resetCacheBeforePull) {
@@ -1541,6 +1718,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setCategories([]);
       setBudgets([]);
       setRules([]);
+      setSharedSettlements([]);
       setOutbox([]);
       setActiveAccountId(null);
     }
@@ -1553,6 +1731,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         budgets: baseData.budgets,
         rules: baseData.rules,
         members: baseData.members,
+        sharedSettlements: baseData.sharedSettlements,
         outbox: resetCacheBeforePull ? [] : outbox,
         syncState: baseSyncState,
         config
@@ -1622,6 +1801,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let syncBudgets: CategoryBudgetEntity[] = [];
     let syncRules: CategorizationRuleEntity[] = [];
     let syncMembers: FamilyMemberEntity[] = [adminMember];
+    let syncSettlements: SharedSettlementEntity[] = [];
     let syncOutbox: SyncOutboxEntity[] = [];
     let baseSyncState: SyncStateEntity;
 
@@ -1632,6 +1812,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       syncBudgets = localCache.budgets;
       syncRules = localCache.rules;
       syncMembers = localCache.members.length > 0 ? localCache.members : [adminMember];
+      syncSettlements = localCache.sharedSettlements || [];
       syncOutbox = localCache.outbox || [];
       baseSyncState = {
         ...localCache.syncState,
@@ -1660,6 +1841,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setBudgets(syncBudgets);
       setRules(syncRules);
       setMembers(syncMembers);
+      setSharedSettlements(syncSettlements);
+      if (localCache.sharedPreset) {
+        setSharedPreset(localCache.sharedPreset);
+      }
       setOutbox(syncOutbox);
       setActiveAccountId(null);
     } else {
@@ -1682,6 +1867,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setBudgets([]);
       setRules([]);
       setMembers([adminMember]);
+      setSharedSettlements([]);
       setOutbox([]);
       setActiveAccountId(null);
       setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
@@ -1715,6 +1901,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       budgets: syncBudgets,
       rules: syncRules,
       members: syncMembers,
+      sharedSettlements: syncSettlements,
       outbox: syncOutbox,
       syncState: baseSyncState,
       config: nextConfig
@@ -1726,7 +1913,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       categories: syncCats,
       budgets: syncBudgets,
       rules: syncRules,
-      members: syncMembers
+      members: syncMembers,
+      sharedSettlements: syncSettlements
     });
 
     const isOfflineWithCache =
@@ -2335,11 +2523,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         budgets,
         rules,
         members,
+        sharedSettlements,
         outbox,
         syncState,
         config: updatedCfg
       });
-      applySyncResult(result, { accounts, transactions, categories, budgets, rules, members });
+      applySyncResult(result, { accounts, transactions, categories, budgets, rules, members, sharedSettlements });
       if (result.success) {
         setSessionMode('FIRESTORE');
       }
@@ -2415,7 +2604,9 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         categories: categories.filter(c => !c.isDeleted),
         budgets: budgets.filter(b => !b.isDeleted),
         rules: rules.filter(r => !r.isDeleted),
-        members,
+        members: members.filter(m => !m.isDeleted),
+        sharedSettlements: sharedSettlements.filter(s => !s.isDeleted),
+        sharedPreset,
         config,
         syncState,
         openBankingConfig,
@@ -2476,6 +2667,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addRule,
         updateRule,
         deleteRule,
+
+        addSharedSettlement,
+        deleteSharedSettlement,
+        updateSharedPreset,
+
+        addMember,
+        updateMember,
+        deleteMember,
 
         importCsvTransactions,
         updateConfig,

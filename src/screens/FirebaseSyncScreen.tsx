@@ -28,8 +28,9 @@ import {
 import { useBudget } from '../context/BudgetContext';
 import { ShareVaultQrModal } from '../components/ShareVaultQrModal';
 import { AccountModal } from '../components/AccountModal';
+import { MemberManagementModal } from '../components/MemberManagementModal';
 import { CategoryIcon } from '../components/CategoryIcon';
-import { AccountEntity, AccountType, ThemePreference } from '../types';
+import { AccountEntity, AccountType, FamilyMemberEntity, ThemePreference } from '../types';
 import {
   BiometricStatus,
   checkBiometricSupport
@@ -75,6 +76,7 @@ service cloud.firestore {
     match /transactions/{id} { allow read: if isMember(); allow write: if canEdit(); }
     match /rules/{id} { allow read: if isMember(); allow write: if canEdit(); }
     match /expected_spends/{id} { allow read: if isMember(); allow write: if canEdit(); }
+    match /shared_settlements/{id} { allow read: if isMember(); allow write: if canEdit(); }
   }
 }`;
 
@@ -116,6 +118,10 @@ export const FirebaseSyncScreen: React.FC = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<AccountEntity | null>(null);
+  const [memberModalState, setMemberModalState] = useState<{
+    isOpen: boolean;
+    member: FamilyMemberEntity | null;
+  }>({ isOpen: false, member: null });
   const [copiedRules, setCopiedRules] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [biometricStatus, setBiometricStatus] = useState<BiometricStatus>({
@@ -886,40 +892,68 @@ export const FirebaseSyncScreen: React.FC = () => {
 
       {/* Family Members & RBAC Roles */}
       <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Users className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-            <h2 className="font-bold text-slate-900 dark:text-white text-base">
-              {isFr ? 'Membres de la Famille & Rôles RBAC' : 'Family Members & RBAC Roles'}
-            </h2>
+            <div>
+              <h2 className="font-bold text-slate-900 dark:text-white text-base">
+                {isFr ? 'Membres de la Famille & Rôles RBAC' : 'Family Members & RBAC Roles'}
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {isFr
+                  ? 'Configurez les membres, rôles et revenus mensuels pour le partage de frais'
+                  : 'Configure members, roles, and monthly incomes for shared expense splitting'}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-            {members.length} {isFr ? 'membres' : 'members'}
-          </span>
+
+          <button
+            type="button"
+            onClick={() => setMemberModalState({ isOpen: true, member: null })}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs shadow-sm transition active:scale-95 self-start sm:self-auto cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{isFr ? 'Ajouter un membre' : 'Add Member'}</span>
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {members.map(m => (
+          {members.filter(m => !m.isDeleted).map(m => (
             <div
               key={m.id}
-              className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs"
+              onClick={() => setMemberModalState({ isOpen: true, member: m })}
+              className="p-3.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 dark:bg-slate-950/70 dark:hover:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-500/40 cursor-pointer transition flex items-center justify-between text-xs group"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0"
                   style={{ backgroundColor: `#${m.avatarColor.toString(16).slice(-6)}` }}
                 >
                   {m.name.charAt(0)}
                 </div>
-                <div>
-                  <span className="font-bold text-slate-900 dark:text-white block">{m.name}</span>
-                  <span className="text-[11px] text-slate-500">{m.email}</span>
+                <div className="min-w-0">
+                  <span className="font-bold text-slate-900 dark:text-white block truncate group-hover:text-teal-700 dark:group-hover:text-teal-300 transition">
+                    {m.name}
+                  </span>
+                  <span className="text-[11px] text-slate-500 block truncate">
+                    {m.email || (isFr ? 'Membre local' : 'Local member')}
+                    {(Number(m.monthlyIncome) || 0) > 0 && (
+                      <span className="font-mono tabular-nums text-slate-600 dark:text-slate-400">
+                        {' '}· {(Number(m.monthlyIncome) || 0).toLocaleString()} {currency}/{isFr ? 'mois' : 'mo'}
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
 
-              <span className="font-mono text-[11px] font-bold text-teal-600 dark:text-teal-300">
-                {m.role}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="font-mono text-[11px] font-bold text-teal-600 dark:text-teal-300">
+                  {m.role}
+                </span>
+                <div className="p-1.5 rounded-lg bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-transparent group-hover:bg-teal-50 dark:group-hover:bg-teal-500/20 text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-300 transition">
+                  <Pencil className="w-3.5 h-3.5" />
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -980,6 +1014,13 @@ export const FirebaseSyncScreen: React.FC = () => {
           setIsAccountModalOpen(false);
           setSelectedAccount(null);
         }}
+      />
+
+      {/* Add / Edit Member Modal */}
+      <MemberManagementModal
+        isOpen={memberModalState.isOpen}
+        member={memberModalState.member}
+        onClose={() => setMemberModalState({ isOpen: false, member: null })}
       />
     </div>
   );

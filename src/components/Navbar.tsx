@@ -16,7 +16,8 @@ import {
   Shield,
   QrCode,
   LogOut,
-  Lock
+  Lock,
+  Users
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { AppScreen } from '../types';
@@ -56,6 +57,11 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
       screen: 'TRANSACTIONS',
       label: isFr ? 'Opérations' : 'Transactions',
       icon: <Receipt className="w-4 h-4" />
+    },
+    {
+      screen: 'SHARED_EXPENSES',
+      label: isFr ? 'Partages' : 'Shared',
+      icon: <Users className="w-4 h-4" />
     },
     {
       screen: 'BUDGET_PLANNER',

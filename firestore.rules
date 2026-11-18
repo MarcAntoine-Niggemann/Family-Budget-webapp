@@ -244,6 +244,11 @@ service cloud.firestore {
       allow write: if canEdit();
     }
 
+    match /shared_settlements/{settlementId} {
+      allow read: if isFamilyMember();
+      allow write: if canEdit();
+    }
+
     // -------------------------------------------------------------------------
     // TURNKEY MANAGED CLOUD MULTI-TENANT VAULTS (/vaults/{vaultId}/...)
     // -------------------------------------------------------------------------
@@ -308,6 +313,11 @@ service cloud.firestore {
       }
 
       match /payment_methods/{pmId} {
+        allow read: if isVaultMember(vaultId);
+        allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
+      }
+
+      match /shared_settlements/{settlementId} {
         allow read: if isVaultMember(vaultId);
         allow write: if canWriteVaultData(vaultId) && isVaultSubscriptionActive(vaultId);
       }

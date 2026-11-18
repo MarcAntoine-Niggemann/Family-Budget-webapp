@@ -17,6 +17,7 @@ import { CategoryIcon } from '../components/CategoryIcon';
 import { TransactionEntity } from '../types';
 import { isSplitChildTransaction, isTransactionExcludedFromTotals } from '../utils/budgetEngine';
 import { findDefaultCardForCheckingTx, summarizeCardPeriod } from '../utils/creditCardPeriod';
+import { formatSplitModeLabel } from '../utils/sharedExpenseEngine';
 
 interface TransactionsScreenProps {
   onOpenAddTx: () => void;
@@ -69,6 +70,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
     searchTerm,
     filterType,
     filterStatus,
+    filterShared = 'ALL',
     creditCardPeriod: selectedPeriod = 'ALL'
   } = transactionFilters;
 
@@ -118,6 +120,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       searchTerm.trim() ||
       filterType !== 'ALL' ||
       filterStatus !== 'ALL' ||
+      filterShared !== 'ALL' ||
       selectedPeriod !== 'ALL' ||
       activeAccountId
   );
@@ -163,6 +166,10 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       if (filterType === 'TRANSFER' && !tx.isInternalTransfer) return false;
 
       if (filterStatus !== 'ALL' && tx.status !== filterStatus) return false;
+
+      const isTxShared = Boolean(tx.sharedSplit?.isShared && tx.sharedSplit.participants.length > 0);
+      if (filterShared === 'SHARED' && !isTxShared) return false;
+      if (filterShared === 'PERSONAL' && isTxShared) return false;
 
       if (selectedPeriod !== 'ALL' && tx.creditCardPeriod !== selectedPeriod) return false;
 
@@ -260,6 +267,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
     selectedBudgetId,
     filterType,
     filterStatus,
+    filterShared,
     selectedPeriod,
     searchTerm,
     hasChildTargetedFilter
@@ -489,8 +497,8 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           </div>
         </div>
 
-        {/* Account, Flow Direction, Status, Card Period Controls Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+        {/* Account, Flow Direction, Status, Shared, Card Period Controls Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
           {/* Account Filter */}
           <div>
             <select
@@ -539,6 +547,22 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
               <option value="PENDING">{isFr ? 'En attente (Manuel)' : 'Pending (Manual)'}</option>
               <option value="RECONCILED">{isFr ? 'Rapprochés ✓' : 'Reconciled ✓'}</option>
               <option value="VERIFIED">{isFr ? 'Vérifiés (Banque)' : 'Verified (Bank)'}</option>
+            </select>
+          </div>
+
+          {/* Shared / Personal Filter */}
+          <div>
+            <select
+              aria-label={isFr ? 'Filtrer par partage couple/famille' : 'Filter by shared status'}
+              value={filterShared}
+              onChange={e =>
+                setTransactionFilters(prev => ({ ...prev, filterShared: e.target.value as any }))
+              }
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:border-teal-500"
+            >
+              <option value="ALL">{isFr ? 'Partagés & Perso' : 'All (Shared & Personal)'}</option>
+              <option value="SHARED">{isFr ? 'Partagés uniquement' : 'Shared only'}</option>
+              <option value="PERSONAL">{isFr ? 'Personnels uniquement' : 'Personal only'}</option>
             </select>
           </div>
 
@@ -708,6 +732,15 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                               {isFr ? 'Exclu des totaux' : 'Excluded'}
                             </span>
                           )
+                        )}
+
+                        {tx.sharedSplit?.isShared && tx.sharedSplit.participants.length > 0 && (
+                          <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400">
+                            · {isFr ? 'Partagé' : 'Shared'} {formatSplitModeLabel(tx.sharedSplit.mode, language)} ·{' '}
+                            {isFr
+                              ? `Payé par ${tx.sharedSplit.paidByMemberName}`
+                              : `Paid by ${tx.sharedSplit.paidByMemberName}`}
+                          </span>
                         )}
                       </div>
 

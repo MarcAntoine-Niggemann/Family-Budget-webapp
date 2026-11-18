@@ -19,6 +19,7 @@ import {
   CategoryEntity,
   FamilyMemberEntity,
   FirebaseConfigEntity,
+  SharedSettlementEntity,
   SyncOutboxEntity,
   SyncStateEntity,
   TransactionEntity
@@ -103,6 +104,7 @@ export interface SyncPayload {
   budgets: CategoryBudgetEntity[];
   rules: CategorizationRuleEntity[];
   members: FamilyMemberEntity[];
+  sharedSettlements?: SharedSettlementEntity[];
   outbox: SyncOutboxEntity[];
   syncState: SyncStateEntity;
   config: FirebaseConfigEntity;
@@ -120,6 +122,7 @@ export interface SyncResult {
   incomingBudgets?: CategoryBudgetEntity[];
   incomingRules?: CategorizationRuleEntity[];
   incomingMembers?: FamilyMemberEntity[];
+  incomingSharedSettlements?: SharedSettlementEntity[];
   incomingFamilyName?: string;
 }
 
@@ -303,6 +306,19 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
               chunkOps++;
             }
           }
+        } else if (item.entityType === 'SHARED_SETTLEMENT') {
+          const settlementId = item.entityId;
+          const docRef = doc(db, 'shared_settlements', settlementId);
+          if (item.operation === 'DELETE') {
+            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
+            chunkOps++;
+          } else {
+            const st = (payload.sharedSettlements || []).find(s => s.id === settlementId);
+            if (st) {
+              batch.set(docRef, stripUndefined({ ...st, updatedAt: item.createdAt }), { merge: true });
+              chunkOps++;
+            }
+          }
         }
       }
 
@@ -391,6 +407,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     const incomingBgts: CategoryBudgetEntity[] = [];
     const incomingRules: CategorizationRuleEntity[] = [];
     const incomingMembers: FamilyMemberEntity[] = [];
+    const incomingSharedSettlements: SharedSettlementEntity[] = [];
 
     // 4a. Pull Categories
     const catCol = collection(db, 'categories');
@@ -579,6 +596,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
           isInternalTransfer: Boolean(raw.isInternalTransfer),
           transferType: raw.transferType ?? null,
           creditCardPeriod: raw.creditCardPeriod ?? null,
+          sharedSplit: raw.sharedSplit ?? null,
           updatedAt: toMillis(raw.updatedAt, syncStartTime),
           isDeleted: Boolean(raw.isDeleted)
         });
@@ -598,7 +616,10 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
           role: raw.role || 'MEMBER',
           avatarColor: typeof raw.avatarColor === 'number' ? raw.avatarColor : 0xff0f766e,
           firestoreSynced: true,
-          customPermissions: raw.customPermissions ?? null
+          customPermissions: raw.customPermissions ?? null,
+          monthlyIncome: typeof raw.monthlyIncome === 'number' ? raw.monthlyIncome : null,
+          updatedAt: toMillis(raw.updatedAt, syncStartTime),
+          isDeleted: Boolean(raw.isDeleted)
         });
       }
     });
@@ -615,6 +636,31 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
         });
       }
     }
+
+    // 4g. Pull Shared Settlements
+    const settlementCol = collection(db, 'shared_settlements');
+    const settlementQuery =
+      lastPull > 0 ? query(settlementCol, where('updatedAt', '>', lastPull)) : query(settlementCol);
+    const settlementSnap = await getDocs(settlementQuery);
+    settlementSnap.forEach(docSnap => {
+      if (!dirtyIds.has(docSnap.id)) {
+        const raw = docSnap.data();
+        incomingSharedSettlements.push({
+          id: raw.id || docSnap.id,
+          fromMemberId: raw.fromMemberId || '',
+          fromMemberName: raw.fromMemberName || '',
+          toMemberId: raw.toMemberId || '',
+          toMemberName: raw.toMemberName || '',
+          amount: Number(raw.amount) || 0,
+          date: toMillis(raw.date, syncStartTime),
+          notes: raw.notes || '',
+          linkedTransactionId: raw.linkedTransactionId ?? null,
+          updatedAt: toMillis(raw.updatedAt, syncStartTime),
+          isDeleted: Boolean(raw.isDeleted)
+        });
+        pulledCount++;
+      }
+    });
 
     // -------------------------------------------------------------
     // PHASE 5: ADVANCE WATERMARK
@@ -640,6 +686,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
       incomingBudgets: incomingBgts,
       incomingRules: incomingRules,
       incomingMembers: incomingMembers.length > 0 ? incomingMembers : undefined,
+      incomingSharedSettlements: incomingSharedSettlements.length > 0 ? incomingSharedSettlements : undefined,
       incomingFamilyName
     };
   } catch (err: any) {

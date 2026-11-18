@@ -8,6 +8,8 @@ import {
   FirebaseConfigEntity,
   OpenBankingConfig,
   ResolvedTheme,
+  SharedExpensePreset,
+  SharedSettlementEntity,
   SyncOutboxEntity,
   SyncStateEntity,
   ThemePreference
@@ -42,7 +44,9 @@ export const CACHE_STORAGE_KEYS = {
   CURRENCY: 'fbv_currency',
   LANGUAGE: 'fbv_language',
   THEME: 'fbv_theme',
-  FAMILY_NAME: 'fbv_family_name'
+  FAMILY_NAME: 'fbv_family_name',
+  SHARED_SETTLEMENTS: 'fbv_shared_settlements',
+  SHARED_PRESET: 'fbv_shared_preset'
 } as const;
 
 export interface SavedByobConfig {
@@ -297,6 +301,8 @@ export interface ByobLocalCacheSnapshot {
   budgets: CategoryBudgetEntity[];
   rules: CategorizationRuleEntity[];
   members: FamilyMemberEntity[];
+  sharedSettlements: SharedSettlementEntity[];
+  sharedPreset?: SharedExpensePreset;
   syncState: SyncStateEntity;
   outbox: SyncOutboxEntity[];
   openBankingConfig?: OpenBankingConfig;
@@ -338,6 +344,8 @@ export async function loadEncryptedByobLocalCache(
       budgets,
       rules,
       members,
+      sharedSettlements,
+      sharedPreset,
       outbox,
       openBankingConfig,
       currency,
@@ -349,6 +357,8 @@ export async function loadEncryptedByobLocalCache(
       loadEncryptedCachedData<CategoryBudgetEntity[]>(CACHE_STORAGE_KEYS.BUDGETS, [], dek),
       loadEncryptedCachedData<CategorizationRuleEntity[]>(CACHE_STORAGE_KEYS.RULES, [], dek),
       loadEncryptedCachedData<FamilyMemberEntity[]>(CACHE_STORAGE_KEYS.MEMBERS, [], dek),
+      loadEncryptedCachedData<SharedSettlementEntity[]>(CACHE_STORAGE_KEYS.SHARED_SETTLEMENTS, [], dek),
+      loadEncryptedCachedData<SharedExpensePreset | undefined>(CACHE_STORAGE_KEYS.SHARED_PRESET, undefined, dek),
       loadEncryptedCachedData<SyncOutboxEntity[]>(CACHE_STORAGE_KEYS.OUTBOX, [], dek),
       loadEncryptedCachedData<OpenBankingConfig | undefined>(
         CACHE_STORAGE_KEYS.OPEN_BANKING,
@@ -366,6 +376,8 @@ export async function loadEncryptedByobLocalCache(
       budgets,
       rules,
       members,
+      sharedSettlements,
+      sharedPreset,
       syncState,
       outbox,
       openBankingConfig,
@@ -487,16 +499,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
 
   const members: FamilyMemberEntity[] = isEn
     ? [
-        { id: 'john_smith', name: 'John Smith', email: 'john.smith@demo.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: false },
-        { id: 'sophie_smith', name: 'Sophie Smith', email: 'sophie.smith@demo.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: false },
-        { id: 'lucas_smith', name: 'Lucas Smith', email: 'lucas.smith@demo.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: false },
-        { id: 'emma_smith', name: 'Emma Smith', email: 'emma.smith@demo.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: false }
+        { id: 'john_smith', name: 'John Smith', email: 'john.smith@demo.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: false, monthlyIncome: 3400, updatedAt: now, isDeleted: false },
+        { id: 'sophie_smith', name: 'Sophie Smith', email: 'sophie.smith@demo.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: false, monthlyIncome: 2250, updatedAt: now, isDeleted: false },
+        { id: 'lucas_smith', name: 'Lucas Smith', email: 'lucas.smith@demo.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: false, monthlyIncome: 0, updatedAt: now, isDeleted: false },
+        { id: 'emma_smith', name: 'Emma Smith', email: 'emma.smith@demo.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: false, monthlyIncome: 0, updatedAt: now, isDeleted: false }
       ]
     : [
-        { id: 'jean_martin', name: 'Jean Martin', email: 'jean.martin@demo.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: false },
-        { id: 'sophie_martin', name: 'Sophie Martin', email: 'sophie.martin@demo.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: false },
-        { id: 'lucas_martin', name: 'Lucas Martin', email: 'lucas.martin@demo.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: false },
-        { id: 'emma_martin', name: 'Emma Martin', email: 'emma.martin@demo.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: false }
+        { id: 'jean_martin', name: 'Jean Martin', email: 'jean.martin@demo.local', role: 'ADMIN', avatarColor: 0xff0f766e, firestoreSynced: false, monthlyIncome: 3400, updatedAt: now, isDeleted: false },
+        { id: 'sophie_martin', name: 'Sophie Martin', email: 'sophie.martin@demo.local', role: 'EDITOR', avatarColor: 0xff2563eb, firestoreSynced: false, monthlyIncome: 2250, updatedAt: now, isDeleted: false },
+        { id: 'lucas_martin', name: 'Lucas Martin', email: 'lucas.martin@demo.local', role: 'MEMBER', avatarColor: 0xff7c3aed, firestoreSynced: false, monthlyIncome: 0, updatedAt: now, isDeleted: false },
+        { id: 'emma_martin', name: 'Emma Martin', email: 'emma.martin@demo.local', role: 'MEMBER', avatarColor: 0xffd97706, firestoreSynced: false, monthlyIncome: 0, updatedAt: now, isDeleted: false }
       ];
 
   const accounts: AccountEntity[] = isEn
@@ -798,6 +810,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
           creditCardPeriod: computeDefaultCardPeriod(now - 1 * dayMs, 25),
+          sharedSplit: {
+            isShared: true,
+            mode: 'EQUAL',
+            paidByMemberId: primaryUser.id,
+            paidByMemberName: primaryUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 50, shareAmount: 71.25 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 50, shareAmount: 71.25 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -825,6 +847,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
           creditCardPeriod: computeDefaultCardPeriod(now - 2 * dayMs, 25),
+          sharedSplit: {
+            isShared: true,
+            mode: 'EQUAL',
+            paidByMemberId: secondUser.id,
+            paidByMemberName: secondUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 50, shareAmount: 34.95 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 50, shareAmount: 34.95 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -924,6 +956,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           notes: 'Monthly regularisation',
           accountId: checkingAcc.id,
           accountName: checkingAcc.name,
+          sharedSplit: {
+            isShared: true,
+            mode: 'INCOME_RATIO',
+            paidByMemberId: primaryUser.id,
+            paidByMemberName: primaryUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 60.18, shareAmount: 84.25 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 39.82, shareAmount: 55.75 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -1044,6 +1086,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           notes: 'Monthly home mortgage',
           accountId: checkingAcc.id,
           accountName: checkingAcc.name,
+          sharedSplit: {
+            isShared: true,
+            mode: 'INCOME_RATIO',
+            paidByMemberId: primaryUser.id,
+            paidByMemberName: primaryUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 60.18, shareAmount: 722.16 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 39.82, shareAmount: 477.84 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -1188,6 +1240,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
           creditCardPeriod: computeDefaultCardPeriod(now - 1 * dayMs, 25),
+          sharedSplit: {
+            isShared: true,
+            mode: 'EQUAL',
+            paidByMemberId: primaryUser.id,
+            paidByMemberName: primaryUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 50, shareAmount: 71.25 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 50, shareAmount: 71.25 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -1215,6 +1277,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           settlementCardName: cardAcc.name,
           billingCycleClosingDay: 25,
           creditCardPeriod: computeDefaultCardPeriod(now - 2 * dayMs, 25),
+          sharedSplit: {
+            isShared: true,
+            mode: 'EQUAL',
+            paidByMemberId: secondUser.id,
+            paidByMemberName: secondUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 50, shareAmount: 34.95 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 50, shareAmount: 34.95 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -1314,6 +1386,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           notes: 'Mensualité électricité',
           accountId: checkingAcc.id,
           accountName: checkingAcc.name,
+          sharedSplit: {
+            isShared: true,
+            mode: 'INCOME_RATIO',
+            paidByMemberId: primaryUser.id,
+            paidByMemberName: primaryUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 60.18, shareAmount: 84.25 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 39.82, shareAmount: 55.75 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -1434,6 +1516,16 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
           notes: 'Échéance crédit résidence principale',
           accountId: checkingAcc.id,
           accountName: checkingAcc.name,
+          sharedSplit: {
+            isShared: true,
+            mode: 'INCOME_RATIO',
+            paidByMemberId: primaryUser.id,
+            paidByMemberName: primaryUser.name,
+            participants: [
+              { memberId: primaryUser.id, memberName: primaryUser.name, percentage: 60.18, shareAmount: 722.16 },
+              { memberId: secondUser.id, memberName: secondUser.name, percentage: 39.82, shareAmount: 477.84 }
+            ]
+          },
           updatedAt: now,
           isDeleted: false
         },
@@ -1526,6 +1618,27 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
         }
       ];
 
+  const sharedSettlements: SharedSettlementEntity[] = [
+    {
+      id: 'settle_demo_1',
+      fromMemberId: secondUser.id,
+      fromMemberName: secondUser.name,
+      toMemberId: primaryUser.id,
+      toMemberName: primaryUser.name,
+      amount: 400.0,
+      date: now - 6 * dayMs,
+      notes: isEn ? 'Monthly housing & utilities advance' : 'Virement mensuel part logement & charges',
+      linkedTransactionId: null,
+      updatedAt: now,
+      isDeleted: false
+    }
+  ];
+
+  const sharedPreset: SharedExpensePreset = {
+    defaultMode: 'EQUAL',
+    defaultParticipantIds: [primaryUser.id, secondUser.id]
+  };
+
   const syncState: SyncStateEntity = {
     syncKey: 'primary_sync',
     lastPullTimestamp: now,
@@ -1542,6 +1655,8 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
     budgets,
     rules,
     members,
+    sharedSettlements,
+    sharedPreset,
     config,
     syncState
   };

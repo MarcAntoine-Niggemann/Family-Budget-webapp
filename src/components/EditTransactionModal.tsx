@@ -10,6 +10,13 @@ import {
   isValidCardPeriod,
   shiftCardPeriod
 } from '../utils/creditCardPeriod';
+import {
+  SharedSplitEditor,
+  SharedSplitDraftState,
+  createInitialSharedDraft,
+  resolveSharedSplitFromDraft
+} from './SharedSplitEditor';
+import { MemberManagementModal } from './MemberManagementModal';
 
 interface EditTransactionModalProps {
   transaction: TransactionEntity | null;
@@ -34,6 +41,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     categories,
     budgets,
     members,
+    sharedPreset,
     updateTransaction,
     deleteTransaction,
     unsplitTransaction,
@@ -47,6 +55,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
   const activeCategories = useMemo(() => categories.filter(c => !c.isDeleted), [categories]);
   const activeBudgets = useMemo(() => budgets.filter(b => !b.isDeleted && b.isActive), [budgets]);
+  const activeMembers = useMemo(() => members.filter(m => !m.isDeleted), [members]);
 
   const [title, setTitle] = useState('');
   const [amountStr, setAmountStr] = useState('');
@@ -64,6 +73,16 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [settlementCardId, setSettlementCardId] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmUnsplit, setConfirmUnsplit] = useState(false);
+  const [isQuickMemberOpen, setIsQuickMemberOpen] = useState(false);
+  const [sharedDraft, setSharedDraft] = useState<SharedSplitDraftState>(() =>
+    createInitialSharedDraft(
+      null,
+      activeMembers[0]?.id || 'primary',
+      activeMembers,
+      sharedPreset.defaultMode,
+      sharedPreset.defaultParticipantIds
+    )
+  );
 
   const deferredCards = useMemo(
     () => activeAccounts.filter(a => a.type === 'DEFERRED_CARD'),
@@ -123,12 +142,34 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
     setConfirmDelete(false);
     setConfirmUnsplit(false);
+    setIsQuickMemberOpen(false);
+    setSharedDraft(
+      createInitialSharedDraft(
+        transaction.sharedSplit,
+        transaction.familyMemberId || activeMembers[0]?.id || '',
+        activeMembers,
+        sharedPreset.defaultMode,
+        sharedPreset.defaultParticipantIds
+      )
+    );
   }, [isOpen, transaction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredBudgets = useMemo(() => {
     const list = activeBudgets.filter(b => b.categoryId === selectedCategoryId);
     return [...list].sort((a, b) => Number(b.isExpense === isExpense) - Number(a.isExpense === isExpense));
   }, [activeBudgets, selectedCategoryId, isExpense]);
+
+  const parsedAmountNumForShared = parseFloat(amountStr.replace(',', '.'));
+  const absAmountForShared = Number.isFinite(parsedAmountNumForShared)
+    ? Math.abs(parsedAmountNumForShared)
+    : transaction
+    ? Math.abs(transaction.amount)
+    : 0;
+
+  const sharedResolution = useMemo(() => {
+    if (isSplitChild) return { splitInfo: transaction?.sharedSplit ?? null, valid: true };
+    return resolveSharedSplitFromDraft(sharedDraft, absAmountForShared, activeMembers);
+  }, [isSplitChild, transaction?.sharedSplit, sharedDraft, absAmountForShared, activeMembers]);
 
   if (!isOpen || !transaction) return null;
 
@@ -143,15 +184,17 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
   const selectedCategory = activeCategories.find(c => c.id === selectedCategoryId);
   const selectedBudget = filteredBudgets.find(b => b.id === selectedBudgetId);
-  const canSave = isSplitParent || isLumpSumSettlement
+  const canSave = (isSplitParent || isLumpSumSettlement
     ? Boolean(title.trim() && amountStr.trim())
-    : Boolean(selectedCategory && selectedBudget && title.trim() && amountStr.trim());
+    : Boolean(selectedCategory && selectedBudget && title.trim() && amountStr.trim())) &&
+    sharedResolution.valid;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(amountStr.replace(',', '.'));
     if (isNaN(val) || val <= 0) return;
     if (!isSplitParent && !isLumpSumSettlement && (!selectedCategory || !selectedBudget)) return;
+    if (!sharedResolution.valid) return;
 
     const account = activeAccounts.find(a => a.id === selectedAccountId);
     const member = members.find(m => m.id === selectedMemberId);
@@ -238,7 +281,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       billingCycleClosingDay: isCardAccount
         ? account?.billingCycleClosingDay
         : linkedCard?.billingCycleClosingDay ?? transaction.billingCycleClosingDay,
-      creditCardPeriod: resolvedPeriod
+      creditCardPeriod: resolvedPeriod,
+      sharedSplit: isSplitChild ? transaction.sharedSplit ?? null : sharedResolution.splitInfo
     });
 
     onClose();
@@ -263,7 +307,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/75 backdrop-blur-sm">
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/75 backdrop-blur-sm">
       <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
@@ -614,7 +659,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 onChange={e => setSelectedMemberId(e.target.value)}
                 className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 transition"
               >
-                {members.map(m => (
+                {activeMembers.map(m => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
@@ -797,6 +842,20 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             </div>
           )}
 
+          {/* Couple / Family Shared Split Tagging (top-level / split-parent only) */}
+          {!isSplitChild && (
+            <SharedSplitEditor
+              totalAmountAbs={numericAbsAmount}
+              isExpense={isExpense}
+              members={activeMembers}
+              currency={currency}
+              language={language}
+              draft={sharedDraft}
+              onChange={setSharedDraft}
+              onQuickAddPartner={() => setIsQuickMemberOpen(true)}
+            />
+          )}
+
           {/* Notes */}
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -873,5 +932,12 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
         </form>
       </div>
     </div>
+
+    <MemberManagementModal
+      isOpen={isQuickMemberOpen}
+      member={null}
+      onClose={() => setIsQuickMemberOpen(false)}
+    />
+  </>
   );
 };
