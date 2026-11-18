@@ -96,6 +96,7 @@ export function getOrInitAuth(config?: Partial<FirebaseConfigEntity>): Auth | nu
 
 function mapFirebaseAuthError(err: any): string {
   const code = err?.code || '';
+  const rawMsg = err?.message ? ` (${err.message})` : '';
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
 
   switch (code) {
@@ -111,6 +112,17 @@ function mapFirebaseAuthError(err: any): string {
       return `Connexion Google annulée (fenêtre fermée avant la fin).`;
     case 'auth/cancelled-popup-request':
       return `Demande de connexion Google interrompue. Veuillez réessayer.`;
+    case 'auth/popup-blocked':
+      return `Popup Google bloquée par le navigateur. Autorisez les popups pour ce site puis réessayez.`;
+    case 'auth/internal-error':
+      return `Erreur interne Firebase Auth (auth/internal-error)${rawMsg}. Vérifiez que le domaine « ${hostname} » est autorisé, que la Web API Key correspond au Project ID et que les scripts/popups Google ne sont pas bloqués.`;
+    case 'auth/user-disabled':
+      return `Ce compte Google a été désactivé dans Firebase Authentication (auth/user-disabled).`;
+    case 'auth/invalid-credential':
+    case 'auth/account-exists-with-different-credential':
+      return `Identifiants OAuth invalides ou en conflit (${code})${rawMsg}.`;
+    case 'auth/web-storage-unsupported':
+      return `Le stockage navigateur requis par Firebase Auth est bloqué (cookies tiers ou mode privé strict).`;
     default:
       return err?.message || `Erreur Google OAuth (${code || 'inconnue'}).`;
   }
@@ -128,11 +140,21 @@ export async function signInWithGoogle(
   redirecting?: boolean;
   error?: string;
 }> {
+  const initResult = getOrInitFirestore(config);
+  if (!initResult.app) {
+    return {
+      success: false,
+      error:
+        initResult.error ||
+        'Configuration Firebase incomplète : veuillez saisir votre Project ID et votre Web API Key (BYOB).'
+    };
+  }
+
   const auth = getOrInitAuth(config);
   if (!auth) {
     return {
       success: false,
-      error: 'Configuration Firebase incomplète : veuillez saisir votre Project ID et votre Web API Key (BYOB).'
+      error: 'Impossible d’initialiser Firebase Authentication pour ce projet.'
     };
   }
 
@@ -146,6 +168,20 @@ export async function signInWithGoogle(
   try {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
+
+    if (!user.email) {
+      return {
+        success: false,
+        error: 'Le compte Google authentifié n’a pas fourni d’adresse e-mail.'
+      };
+    }
+
+    if (!user.emailVerified) {
+      return {
+        success: false,
+        error: `L’adresse e-mail ${user.email} n’est pas vérifiée par Google (email_verified = false). Veuillez utiliser un compte Google vérifié.`
+      };
+    }
 
     const userInfo: AuthUserInfo = {
       uid: user.uid,
@@ -191,25 +227,28 @@ export async function signInWithGoogle(
  */
 export async function checkRedirectAuthResult(
   config?: Partial<FirebaseConfigEntity>
-): Promise<AuthUserInfo | null> {
+): Promise<{ user: AuthUserInfo | null; error?: string }> {
   const auth = getOrInitAuth(config);
-  if (!auth) return null;
+  if (!auth) return { user: null };
 
   try {
     const result = await getRedirectResult(auth);
     if (result && result.user) {
       return {
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName,
-        photoURL: result.user.photoURL,
-        emailVerified: result.user.emailVerified
+        user: {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName,
+          photoURL: result.user.photoURL,
+          emailVerified: result.user.emailVerified
+        }
       };
     }
-  } catch (err) {
+  } catch (err: any) {
     console.warn('Error checking redirect auth result:', err);
+    return { user: null, error: mapFirebaseAuthError(err) };
   }
-  return null;
+  return { user: null };
 }
 
 /**

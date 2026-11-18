@@ -39,6 +39,7 @@ export const LoginScreen: React.FC = () => {
     legacyPlaintextConfig,
     legacyV2VaultDetected,
     pinLockoutSecondsRemaining,
+    syncState,
     startDemoMode,
     lockVault,
     unlockVaultWithBiometrics,
@@ -81,6 +82,7 @@ export const LoginScreen: React.FC = () => {
 
   // Status / Feedback states
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<string | null>(null);
   const [isEnrollingBio, setIsEnrollingBio] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [noticeMsg, setNoticeMsg] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export const LoginScreen: React.FC = () => {
   });
   const [copiedDomain, setCopiedDomain] = useState(false);
   const [copiedRules, setCopiedRules] = useState(false);
+  const [copiedError, setCopiedError] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
 
   const autoPromptAttemptedRef = useRef(false);
@@ -138,6 +141,7 @@ export const LoginScreen: React.FC = () => {
       ) {
         autoPromptAttemptedRef.current = true;
         setIsLoading(true);
+        setLoadingStage(isFr ? 'Vérification biométrique & connexion Firestore...' : 'Verifying biometrics & Firestore...');
         setErrorMsg(null);
         try {
           const res = await unlockVaultWithBiometrics();
@@ -152,8 +156,15 @@ export const LoginScreen: React.FC = () => {
               setErrorMsg(res.error);
             }
           }
+        } catch (err: any) {
+          if (active) {
+            setErrorMsg(err?.message || String(err));
+          }
         } finally {
-          if (active) setIsLoading(false);
+          if (active) {
+            setIsLoading(false);
+            setLoadingStage(null);
+          }
         }
       }
     };
@@ -165,7 +176,31 @@ export const LoginScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasSavedVault, isVaultUnlocked, viewMode, vaultLockMeta?.credentialId]);
 
+  useEffect(() => {
+    if (syncState.lastSyncStatus === 'ERROR' && syncState.lastSyncMessage) {
+      setErrorMsg(syncState.lastSyncMessage);
+    }
+  }, [syncState.lastSyncStatus, syncState.lastSyncMessage]);
+
   const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  const isRulesRelatedError = (msg: string | null) => {
+    if (!msg) return false;
+    const lower = msg.toLowerCase();
+    return (
+      lower.includes('permission') ||
+      lower.includes('firestore.rules') ||
+      lower.includes('security_config') ||
+      lower.includes('insufficient')
+    );
+  };
+
+  const handleCopyError = (msg: string) => {
+    navigator.clipboard.writeText(msg);
+    setCopiedError(true);
+    showToast(isFr ? 'Détail de l’erreur copié' : 'Error details copied');
+    setTimeout(() => setCopiedError(false), 2000);
+  };
 
   const handleCopyHostname = () => {
     if (!currentHostname) return;
@@ -185,6 +220,7 @@ export const LoginScreen: React.FC = () => {
     setErrorMsg(null);
     setNoticeMsg(null);
     setIsLoading(true);
+    setLoadingStage(isFr ? 'Vérification biométrique & ouverture Firestore...' : 'Verifying biometrics & opening Firestore...');
     try {
       const res = await unlockVaultWithBiometrics();
       if (res.needsPinForDecrypt) {
@@ -199,8 +235,11 @@ export const LoginScreen: React.FC = () => {
           setErrorMsg(res.error);
         }
       }
+    } catch (err: any) {
+      setErrorMsg(err?.message || (isFr ? 'Échec du déverrouillage biométrique.' : 'Biometric unlock failed.'));
     } finally {
       setIsLoading(false);
+      setLoadingStage(null);
     }
   };
 
@@ -209,6 +248,7 @@ export const LoginScreen: React.FC = () => {
     setErrorMsg(null);
     setNoticeMsg(null);
     setIsLoading(true);
+    setLoadingStage(isFr ? 'Déchiffrement local (PBKDF2) & Firestore...' : 'Decrypting local vault (PBKDF2) & Firestore...');
     try {
       const res = await unlockVaultWithPin(unlockPin);
       setUnlockPin('');
@@ -219,8 +259,11 @@ export const LoginScreen: React.FC = () => {
           setErrorMsg(res.error);
         }
       }
+    } catch (err: any) {
+      setErrorMsg(err?.message || (isFr ? 'Échec du déchiffrement du coffre.' : 'Failed to decrypt vault.'));
     } finally {
       setIsLoading(false);
+      setLoadingStage(null);
     }
   };
 
@@ -228,6 +271,7 @@ export const LoginScreen: React.FC = () => {
     setErrorMsg(null);
     setNoticeMsg(null);
     setIsLoading(true);
+    setLoadingStage(isFr ? 'Connexion Google OAuth & synchronisation Firestore...' : 'Google OAuth & Firestore sync...');
     try {
       const res = await continueUnlockedByobWithGoogle();
       if (res.redirecting) {
@@ -237,8 +281,11 @@ export const LoginScreen: React.FC = () => {
       if (!res.success && res.error) {
         setErrorMsg(res.error);
       }
+    } catch (err: any) {
+      setErrorMsg(err?.message || (isFr ? 'Erreur lors de la connexion Google / Firestore.' : 'Error connecting to Google / Firestore.'));
     } finally {
       setIsLoading(false);
+      setLoadingStage(null);
     }
   };
 
@@ -305,6 +352,7 @@ export const LoginScreen: React.FC = () => {
     // If vault is already unlocked (editing config), skip re-enrollment and connect directly
     if (isVaultUnlocked && hasSavedVault) {
       setIsLoading(true);
+      setLoadingStage(isFr ? 'Connexion Google & synchronisation Firestore...' : 'Connecting Google & Firestore...');
       try {
         const res = await continueUnlockedByobWithGoogle({
           projectId: projectId.trim(),
@@ -319,8 +367,13 @@ export const LoginScreen: React.FC = () => {
         if (!res.success && res.error) {
           setErrorMsg(res.error);
         }
+      } catch (err: any) {
+        setErrorMsg(
+          err?.message || (isFr ? 'Échec de la connexion à Firebase / Firestore.' : 'Failed to connect to Firebase / Firestore.')
+        );
       } finally {
         setIsLoading(false);
+        setLoadingStage(null);
       }
       return;
     }
@@ -348,6 +401,11 @@ export const LoginScreen: React.FC = () => {
     }
 
     setIsLoading(true);
+    setLoadingStage(
+      isFr
+        ? 'Chiffrement local AES-256-GCM, Auth Google & Firestore...'
+        : 'AES-256-GCM encryption, Google Auth & Firestore...'
+    );
     try {
       const res = await setupProtectedVaultAndConnect(
         {
@@ -376,8 +434,13 @@ export const LoginScreen: React.FC = () => {
             (isFr ? 'Échec de la connexion à Firebase / Firestore.' : 'Failed to connect to Firebase / Firestore.')
         );
       }
+    } catch (err: any) {
+      setErrorMsg(
+        err?.message || (isFr ? 'Échec inattendu lors de la connexion à Firestore.' : 'Unexpected error connecting to Firestore.')
+      );
     } finally {
       setIsLoading(false);
+      setLoadingStage(null);
     }
   };
 
@@ -571,20 +634,30 @@ export const LoginScreen: React.FC = () => {
               )}
 
               {errorMsg && (
-                <div className="p-3.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs text-left space-y-2 leading-relaxed">
+                <div className="p-3.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs text-left space-y-2.5 leading-relaxed">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                    <span>{errorMsg}</span>
+                    <span className="whitespace-pre-line break-words flex-1">{errorMsg}</span>
                   </div>
-                  {errorMsg.toLowerCase().includes('permission') && (
+                  <div className="flex flex-wrap items-center gap-3 pl-6">
                     <button
                       type="button"
-                      onClick={() => setShowRulesPanel(v => !v)}
-                      className="inline-flex items-center gap-1.5 text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 font-semibold underline cursor-pointer"
+                      onClick={() => handleCopyError(errorMsg)}
+                      className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-200 hover:underline font-semibold cursor-pointer"
                     >
-                      <span>{isFr ? 'Afficher & copier firestore.rules' : 'View & copy firestore.rules'}</span>
+                      {copiedError ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedError ? (isFr ? 'Erreur copiée' : 'Error copied') : (isFr ? 'Copier le détail' : 'Copy error')}</span>
                     </button>
-                  )}
+                    {isRulesRelatedError(errorMsg) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRulesPanel(v => !v)}
+                        className="inline-flex items-center gap-1.5 text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 font-semibold underline cursor-pointer"
+                      >
+                        <span>{isFr ? 'Afficher & copier firestore.rules' : 'View & copy firestore.rules'}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -601,7 +674,7 @@ export const LoginScreen: React.FC = () => {
                       {isLoading ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>{isFr ? 'Vérification biométrique...' : 'Verifying Biometrics...'}</span>
+                          <span className="truncate">{loadingStage || (isFr ? 'Vérification biométrique...' : 'Verifying Biometrics...')}</span>
                         </>
                       ) : (
                         <>
@@ -681,19 +754,19 @@ export const LoginScreen: React.FC = () => {
                   onClick={handleUnlockedGoogleContinue}
                   className="w-full py-3.5 px-4 rounded-xl bg-white hover:bg-slate-50 dark:hover:bg-slate-100 border border-slate-300 dark:border-transparent text-slate-900 font-bold text-sm transition flex items-center justify-center gap-2.5 disabled:opacity-60 whitespace-nowrap cursor-pointer shadow-sm"
                 >
-                  {isLoading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-teal-600" />
-                      <span>{isFr ? 'Connexion à Firestore...' : 'Connecting to Firestore...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <GoogleLogo />
-                      <span>
-                        {isFr ? 'Continuer avec Google & Firestore' : 'Continue with Google & Firestore'}
-                      </span>
-                    </>
-                  )}
+                    {isLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin text-teal-600 shrink-0" />
+                        <span className="truncate">{loadingStage || (isFr ? 'Connexion à Firestore...' : 'Connecting to Firestore...')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <GoogleLogo />
+                        <span>
+                          {isFr ? 'Continuer avec Google & Firestore' : 'Continue with Google & Firestore'}
+                        </span>
+                      </>
+                    )}
                 </button>
               )}
             </div>
@@ -949,23 +1022,33 @@ export const LoginScreen: React.FC = () => {
                 )}
 
                 {errorMsg && (
-                  <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2 leading-relaxed">
+                  <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2.5 leading-relaxed">
                     <div className="flex items-start gap-2">
                       <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                      <span>{errorMsg}</span>
+                      <span className="whitespace-pre-line break-words flex-1">{errorMsg}</span>
                     </div>
-                    {errorMsg.toLowerCase().includes('permission') && (
+                    <div className="flex flex-wrap items-center gap-3 pl-6">
                       <button
                         type="button"
-                        onClick={() => setShowRulesPanel(v => !v)}
-                        className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 font-semibold underline cursor-pointer"
+                        onClick={() => handleCopyError(errorMsg)}
+                        className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-200 hover:underline font-semibold cursor-pointer"
                       >
-                        {showRulesPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                        <span>
-                          {isFr ? 'Voir & copier firestore.rules' : 'View & copy firestore.rules'}
-                        </span>
+                        {copiedError ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedError ? (isFr ? 'Erreur copiée' : 'Error copied') : (isFr ? 'Copier le détail' : 'Copy error')}</span>
                       </button>
-                    )}
+                      {isRulesRelatedError(errorMsg) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRulesPanel(v => !v)}
+                          className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 font-semibold underline cursor-pointer"
+                        >
+                          {showRulesPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          <span>
+                            {isFr ? 'Voir & copier firestore.rules' : 'View & copy firestore.rules'}
+                          </span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1229,11 +1312,12 @@ export const LoginScreen: React.FC = () => {
                 >
                   {isLoading ? (
                     <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-teal-600" />
-                      <span>
-                        {isFr
-                          ? 'Chiffrement & Connexion Google...'
-                          : 'Encrypting Vault & Signing in...'}
+                      <RefreshCw className="w-4 h-4 animate-spin text-teal-600 shrink-0" />
+                      <span className="truncate">
+                        {loadingStage ||
+                          (isFr
+                            ? 'Chiffrement & Connexion Google...'
+                            : 'Encrypting Vault & Signing in...')}
                       </span>
                     </>
                   ) : (

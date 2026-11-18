@@ -468,8 +468,30 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         apiKey: pendingByob.apiKey,
         applicationId: pendingByob.applicationId
       };
-      checkRedirectAuthResult(tempCfg).then(user => {
-        if (user && user.email) {
+      checkRedirectAuthResult(tempCfg).then(({ user, error }) => {
+        if (error) {
+          setSyncState(prev => ({
+            ...prev,
+            lastSyncStatus: 'ERROR',
+            lastSyncMessage: error
+          }));
+          showToast(error);
+          return;
+        }
+        if (user) {
+          if (!user.email || !user.emailVerified) {
+            const verifyErr =
+              language === 'fr'
+                ? 'Le compte Google doit disposer d’une adresse e-mail vérifiée.'
+                : 'Your Google account must have a verified email address.';
+            setSyncState(prev => ({
+              ...prev,
+              lastSyncStatus: 'ERROR',
+              lastSyncMessage: verifyErr
+            }));
+            showToast(verifyErr);
+            return;
+          }
           setFirebaseUser(user);
           showToast(
             language === 'fr'
@@ -1790,185 +1812,202 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     resetLocalData: boolean,
     dekOverride?: CryptoKey
   ): Promise<{ success: boolean; error?: string; message?: string }> => {
-    const dek = dekOverride || activeDekRef.current;
-    if (!dek) {
-      return {
-        success: false,
-        error:
-          language === 'fr'
-            ? 'Clé de chiffrement locale indisponible. Veuillez déverrouiller le coffre.'
-            : 'Local vault encryption key is unavailable. Please unlock your vault.'
-      };
-    }
-
-    const cleanByob: SavedByobConfig = {
-      projectId: byob.projectId.trim(),
-      apiKey: byob.apiKey.trim(),
-      applicationId: byob.applicationId?.trim() || '',
-      familyName: byob.familyName?.trim() || 'Private Family Vault'
-    };
-
-    await saveEncryptedByobConfig(cleanByob, dek);
-    setSavedByobConfig(cleanByob);
-    setHasSavedVault(true);
-    setLegacyPlaintextConfig(null);
-
-    const adminMember: FamilyMemberEntity = {
-      id: user.uid,
-      name: user.displayName || user.email?.split('@')[0] || 'Admin',
-      email: user.email || '',
-      role: 'ADMIN',
-      avatarColor: 0xff0f766e,
-      firestoreSynced: true
-    };
-
-    // Decrypt local delta cache if connecting to the same projectId and not resetting
-    const localCache = !resetLocalData
-      ? await loadEncryptedByobLocalCache(cleanByob.projectId, dek)
-      : null;
-
-    let syncAccounts: AccountEntity[] = [];
-    let syncTxs: TransactionEntity[] = [];
-    let syncCats: CategoryEntity[] = [];
-    let syncBudgets: CategoryBudgetEntity[] = [];
-    let syncRules: CategorizationRuleEntity[] = [];
-    let syncMembers: FamilyMemberEntity[] = [adminMember];
-    let syncSettlements: SharedSettlementEntity[] = [];
-    let syncOutbox: SyncOutboxEntity[] = [];
-    let baseSyncState: SyncStateEntity;
-
-    if (localCache) {
-      syncAccounts = localCache.accounts;
-      syncTxs = localCache.transactions;
-      syncCats = localCache.categories;
-      syncBudgets = localCache.budgets;
-      syncRules = localCache.rules;
-      syncMembers = localCache.members.length > 0 ? localCache.members : [adminMember];
-      syncSettlements = localCache.sharedSettlements || [];
-      syncOutbox = localCache.outbox || [];
-      baseSyncState = {
-        ...localCache.syncState,
-        lastSyncStatus: 'SYNCING',
-        lastSyncMessage:
-          language === 'fr'
-            ? 'Cache chiffré déverrouillé — Synchronisation delta Firestore...'
-            : 'Encrypted cache unlocked — Delta syncing Firestore...'
-      };
-
-      const cachedOb = localCache.openBankingConfig;
-      setOpenBankingConfig(
-        cachedOb
-          ? {
-              ...DEFAULT_OPEN_BANKING_CONFIG,
-              ...cachedOb,
-              discoveredAccounts: cachedOb.isConnected ? (cachedOb.discoveredAccounts || []) : [],
-              accountMappings: cachedOb.isConnected ? (cachedOb.accountMappings || {}) : {}
-            }
-          : DEFAULT_OPEN_BANKING_CONFIG
-      );
-      setCurrencyState(localCache.currency || '€');
-      setAccounts(syncAccounts);
-      setTransactions(syncTxs);
-      setCategories(syncCats);
-      setBudgets(syncBudgets);
-      setRules(syncRules);
-      setMembers(syncMembers);
-      setSharedSettlements(syncSettlements);
-      if (localCache.sharedPreset) {
-        setSharedPreset(localCache.sharedPreset);
+    try {
+      const dek = dekOverride || activeDekRef.current;
+      if (!dek) {
+        return {
+          success: false,
+          error:
+            language === 'fr'
+              ? 'Clé de chiffrement locale indisponible. Veuillez déverrouiller le coffre.'
+              : 'Local vault encryption key is unavailable. Please unlock your vault.'
+        };
       }
-      setOutbox(syncOutbox);
-      setActiveAccountId(null);
-    } else {
-      if (resetLocalData) {
-        purgeLocalData({ preserveByob: true });
-      }
-      baseSyncState = {
-        syncKey: 'primary_sync',
-        lastPullTimestamp: 0,
-        lastPushTimestamp: 0,
-        lastSyncStatus: 'SYNCING',
-        lastSyncMessage:
-          language === 'fr' ? 'Téléchargement initial depuis Firestore...' : 'Initial pull from Firestore...',
-        pendingOutboxCount: 0
+
+      const cleanByob: SavedByobConfig = {
+        projectId: byob.projectId.trim(),
+        apiKey: byob.apiKey.trim(),
+        applicationId: byob.applicationId?.trim() || '',
+        familyName: byob.familyName?.trim() || 'Private Family Vault'
       };
 
-      setAccounts([]);
-      setTransactions([]);
-      setCategories([]);
-      setBudgets([]);
-      setRules([]);
-      setMembers([adminMember]);
-      setSharedSettlements([]);
-      setOutbox([]);
-      setActiveAccountId(null);
-      setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
-    }
+      await saveEncryptedByobConfig(cleanByob, dek);
+      setSavedByobConfig(cleanByob);
+      setHasSavedVault(true);
+      setLegacyPlaintextConfig(null);
 
-    const nextConfig: FirebaseConfigEntity = {
-      ...config,
-      familyName: localCache?.familyName || cleanByob.familyName || 'Private Family Vault',
-      projectId: cleanByob.projectId,
-      apiKey: cleanByob.apiKey,
-      applicationId: cleanByob.applicationId || '',
-      currentUserEmail: user.email || '',
-      currentUserName: user.displayName || user.email?.split('@')[0] || 'Admin',
-      currentUserRole: 'ADMIN',
-      isConfigured: true,
-      isFamilyCreated: true,
-      isGoogleAuthenticated: true,
-      isBiometricLockEnabled: true,
-      isAnonymous: false,
-      syncStatusMessage: baseSyncState.lastSyncMessage || ''
-    };
+      const adminMember: FamilyMemberEntity = {
+        id: user.uid,
+        name: user.displayName || user.email?.split('@')[0] || 'Admin',
+        email: user.email || '',
+        role: 'ADMIN',
+        avatarColor: 0xff0f766e,
+        firestoreSynced: true
+      };
 
-    setFirebaseUser(user);
-    setConfig(nextConfig);
-    setSyncState(baseSyncState);
+      // Decrypt local delta cache if connecting to the same projectId and not resetting
+      const localCache = !resetLocalData
+        ? await loadEncryptedByobLocalCache(cleanByob.projectId, dek)
+        : null;
 
-    const result = await executeBidirectionalSync({
-      accounts: syncAccounts,
-      transactions: syncTxs,
-      categories: syncCats,
-      budgets: syncBudgets,
-      rules: syncRules,
-      members: syncMembers,
-      sharedSettlements: syncSettlements,
-      outbox: syncOutbox,
-      syncState: baseSyncState,
-      config: nextConfig
-    });
+      let syncAccounts: AccountEntity[] = [];
+      let syncTxs: TransactionEntity[] = [];
+      let syncCats: CategoryEntity[] = [];
+      let syncBudgets: CategoryBudgetEntity[] = [];
+      let syncRules: CategorizationRuleEntity[] = [];
+      let syncMembers: FamilyMemberEntity[] = [adminMember];
+      let syncSettlements: SharedSettlementEntity[] = [];
+      let syncOutbox: SyncOutboxEntity[] = [];
+      let baseSyncState: SyncStateEntity;
 
-    applySyncResult(result, {
-      accounts: syncAccounts,
-      transactions: syncTxs,
-      categories: syncCats,
-      budgets: syncBudgets,
-      rules: syncRules,
-      members: syncMembers,
-      sharedSettlements: syncSettlements
-    });
+      if (localCache) {
+        syncAccounts = localCache.accounts;
+        syncTxs = localCache.transactions;
+        syncCats = localCache.categories;
+        syncBudgets = localCache.budgets;
+        syncRules = localCache.rules;
+        syncMembers = localCache.members.length > 0 ? localCache.members : [adminMember];
+        syncSettlements = localCache.sharedSettlements || [];
+        syncOutbox = localCache.outbox || [];
+        baseSyncState = {
+          ...localCache.syncState,
+          lastSyncStatus: 'SYNCING',
+          lastSyncMessage:
+            language === 'fr'
+              ? 'Cache chiffré déverrouillé — Synchronisation delta Firestore...'
+              : 'Encrypted cache unlocked — Delta syncing Firestore...'
+        };
 
-    const isOfflineWithCache =
-      !result.success &&
-      typeof navigator !== 'undefined' &&
-      !navigator.onLine &&
-      localCache !== null;
+        const cachedOb = localCache.openBankingConfig;
+        setOpenBankingConfig(
+          cachedOb
+            ? {
+                ...DEFAULT_OPEN_BANKING_CONFIG,
+                ...cachedOb,
+                discoveredAccounts: cachedOb.isConnected ? (cachedOb.discoveredAccounts || []) : [],
+                accountMappings: cachedOb.isConnected ? (cachedOb.accountMappings || {}) : {}
+              }
+            : DEFAULT_OPEN_BANKING_CONFIG
+        );
+        setCurrencyState(localCache.currency || '€');
+        setAccounts(syncAccounts);
+        setTransactions(syncTxs);
+        setCategories(syncCats);
+        setBudgets(syncBudgets);
+        setRules(syncRules);
+        setMembers(syncMembers);
+        setSharedSettlements(syncSettlements);
+        if (localCache.sharedPreset) {
+          setSharedPreset(localCache.sharedPreset);
+        }
+        setOutbox(syncOutbox);
+        setActiveAccountId(null);
+      } else {
+        if (resetLocalData) {
+          purgeLocalData({ preserveByob: true });
+        }
+        baseSyncState = {
+          syncKey: 'primary_sync',
+          lastPullTimestamp: 0,
+          lastPushTimestamp: 0,
+          lastSyncStatus: 'SYNCING',
+          lastSyncMessage:
+            language === 'fr' ? 'Téléchargement initial depuis Firestore...' : 'Initial pull from Firestore...',
+          pendingOutboxCount: 0
+        };
 
-    if (result.success || isOfflineWithCache) {
-      setSessionMode('FIRESTORE');
-      setCurrentScreen('DASHBOARD');
-      showToast(
-        isOfflineWithCache
-          ? language === 'fr'
-            ? 'Mode hors-ligne : cache chiffré local chargé.'
-            : 'Offline mode: encrypted local cache loaded.'
-          : result.message
-      );
-      return { success: true, message: result.message };
-    } else {
-      showToast(result.message);
-      return { success: false, error: result.message };
+        setAccounts([]);
+        setTransactions([]);
+        setCategories([]);
+        setBudgets([]);
+        setRules([]);
+        setMembers([adminMember]);
+        setSharedSettlements([]);
+        setOutbox([]);
+        setActiveAccountId(null);
+        setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
+      }
+
+      const nextConfig: FirebaseConfigEntity = {
+        ...config,
+        familyName: localCache?.familyName || cleanByob.familyName || 'Private Family Vault',
+        projectId: cleanByob.projectId,
+        apiKey: cleanByob.apiKey,
+        applicationId: cleanByob.applicationId || '',
+        currentUserEmail: user.email || '',
+        currentUserName: user.displayName || user.email?.split('@')[0] || 'Admin',
+        currentUserRole: 'ADMIN',
+        isConfigured: true,
+        isFamilyCreated: true,
+        isGoogleAuthenticated: true,
+        isBiometricLockEnabled: true,
+        isAnonymous: false,
+        syncStatusMessage: baseSyncState.lastSyncMessage || ''
+      };
+
+      setFirebaseUser(user);
+      setConfig(nextConfig);
+      setSyncState(baseSyncState);
+
+      const result = await executeBidirectionalSync({
+        accounts: syncAccounts,
+        transactions: syncTxs,
+        categories: syncCats,
+        budgets: syncBudgets,
+        rules: syncRules,
+        members: syncMembers,
+        sharedSettlements: syncSettlements,
+        outbox: syncOutbox,
+        syncState: baseSyncState,
+        config: nextConfig
+      });
+
+      applySyncResult(result, {
+        accounts: syncAccounts,
+        transactions: syncTxs,
+        categories: syncCats,
+        budgets: syncBudgets,
+        rules: syncRules,
+        members: syncMembers,
+        sharedSettlements: syncSettlements
+      });
+
+      const isOfflineWithCache =
+        !result.success &&
+        typeof navigator !== 'undefined' &&
+        !navigator.onLine &&
+        localCache !== null;
+
+      if (result.success || isOfflineWithCache) {
+        setSessionMode('FIRESTORE');
+        setCurrentScreen('DASHBOARD');
+        showToast(
+          isOfflineWithCache
+            ? language === 'fr'
+              ? 'Mode hors-ligne : cache chiffré local chargé.'
+              : 'Offline mode: encrypted local cache loaded.'
+            : result.message
+        );
+        return { success: true, message: result.message };
+      } else {
+        showToast(result.message);
+        return { success: false, error: result.message };
+      }
+    } catch (err: any) {
+      const code = err?.code ? ` [${err.code}]` : '';
+      const errMsg =
+        (language === 'fr'
+          ? `Erreur lors de l’initialisation ou de la connexion au coffre Firestore${code} : `
+          : `Failed to initialize or connect to Firestore vault${code}: `) +
+        (err?.message || String(err));
+      console.error('completeByobSetupWithUser error:', err);
+      setSyncState(prev => ({
+        ...prev,
+        lastSyncStatus: 'ERROR',
+        lastSyncMessage: errMsg
+      }));
+      showToast(errMsg);
+      return { success: false, error: errMsg };
     }
   };
 
@@ -1977,69 +2016,78 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * Decrypts BYOB config, waits for Firebase Auth persistence, and opens Dashboard if already signed in.
    */
   const finalizeLocalUnlock = async (dek: CryptoKey): Promise<VaultActionResult> => {
-    const decryptedByob = await loadEncryptedByobConfig(dek);
-    if (!decryptedByob) {
+    try {
+      const decryptedByob = await loadEncryptedByobConfig(dek);
+      if (!decryptedByob) {
+        return {
+          success: false,
+          error:
+            language === 'fr'
+              ? 'Impossible de déchiffrer la configuration du coffre.'
+              : 'Failed to decrypt saved vault configuration.'
+        };
+      }
+
+      activeDekRef.current = dek;
+      setSavedByobConfig(decryptedByob);
+      setIsVaultUnlocked(true);
+      setBiometricGateVerified(false);
+      setConfig(prev => ({
+        ...getEmptyConfig(decryptedByob),
+        ...prev,
+        projectId: decryptedByob.projectId,
+        apiKey: decryptedByob.apiKey,
+        applicationId: decryptedByob.applicationId || '',
+        familyName: decryptedByob.familyName || 'Private Family Vault',
+        isConfigured: true,
+        isBiometricLockEnabled: true
+      }));
+
+      const auth = getOrInitAuth(decryptedByob);
+      if (auth) {
+        try {
+          await auth.authStateReady();
+        } catch {
+          // Ignore authStateReady failure and fall back to currentUser check
+        }
+      }
+
+      const activeFbUser = auth?.currentUser;
+      if (activeFbUser && activeFbUser.email && activeFbUser.emailVerified) {
+        const userInfo: AuthUserInfo = {
+          uid: activeFbUser.uid,
+          email: activeFbUser.email,
+          displayName: activeFbUser.displayName,
+          photoURL: activeFbUser.photoURL,
+          emailVerified: activeFbUser.emailVerified
+        };
+        const syncRes = await completeByobSetupWithUser(decryptedByob, userInfo, false, dek);
+        return {
+          success: syncRes.success,
+          vaultUnlocked: true,
+          biometricVerified: true,
+          error: syncRes.error
+        };
+      }
+
       return {
         success: false,
-        error:
-          language === 'fr'
-            ? 'Impossible de déchiffrer la configuration du coffre.'
-            : 'Failed to decrypt saved vault configuration.'
-      };
-    }
-
-    activeDekRef.current = dek;
-    setSavedByobConfig(decryptedByob);
-    setIsVaultUnlocked(true);
-    setBiometricGateVerified(false);
-    setConfig(prev => ({
-      ...getEmptyConfig(decryptedByob),
-      ...prev,
-      projectId: decryptedByob.projectId,
-      apiKey: decryptedByob.apiKey,
-      applicationId: decryptedByob.applicationId || '',
-      familyName: decryptedByob.familyName || 'Private Family Vault',
-      isConfigured: true,
-      isBiometricLockEnabled: true
-    }));
-
-    const auth = getOrInitAuth(decryptedByob);
-    if (auth) {
-      try {
-        await auth.authStateReady();
-      } catch {
-        // Ignore authStateReady failure and fall back to currentUser check
-      }
-    }
-
-    const activeFbUser = auth?.currentUser;
-    if (activeFbUser && activeFbUser.email && activeFbUser.emailVerified) {
-      const userInfo: AuthUserInfo = {
-        uid: activeFbUser.uid,
-        email: activeFbUser.email,
-        displayName: activeFbUser.displayName,
-        photoURL: activeFbUser.photoURL,
-        emailVerified: activeFbUser.emailVerified
-      };
-      const syncRes = await completeByobSetupWithUser(decryptedByob, userInfo, false, dek);
-      return {
-        success: syncRes.success,
         vaultUnlocked: true,
         biometricVerified: true,
-        error: syncRes.error
+        needsGoogleAuth: true,
+        error:
+          language === 'fr'
+            ? 'Coffre déchiffré. Connectez-vous avec votre compte Google pour ouvrir Firestore.'
+            : 'Vault decrypted. Sign in with your Google account to open your Firestore vault.'
       };
+    } catch (err: any) {
+      const errMsg =
+        (language === 'fr'
+          ? 'Erreur lors du déverrouillage local du coffre : '
+          : 'Error while finalizing local vault unlock: ') + (err?.message || String(err));
+      console.error('finalizeLocalUnlock error:', err);
+      return { success: false, error: errMsg };
     }
-
-    return {
-      success: false,
-      vaultUnlocked: true,
-      biometricVerified: true,
-      needsGoogleAuth: true,
-      error:
-        language === 'fr'
-          ? 'Coffre déchiffré. Connectez-vous avec votre compte Google pour ouvrir Firestore.'
-          : 'Vault decrypted. Sign in with your Google account to open your Firestore vault.'
-    };
   };
 
   const unlockVaultWithBiometrics = async (): Promise<VaultActionResult> => {
@@ -2207,108 +2255,122 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     protection: VaultProtectionInput,
     options?: { resetLocalData?: boolean }
   ): Promise<VaultActionResult> => {
-    const hasPrf = Boolean(protection.biometricCredId && protection.prfSecret && protection.prfSalt);
-    const cleanPin = protection.pin?.trim() || '';
-    const hasPin = cleanPin.length >= MIN_VAULT_PASSPHRASE_LENGTH;
-
-    if (!hasPrf && !hasPin) {
-      return {
-        success: false,
-        error:
-          language === 'fr'
-            ? `Protection requise : enregistrez une empreinte WebAuthn PRF ou définissez un mot de passe (${MIN_VAULT_PASSPHRASE_LENGTH} caractères min.).`
-            : `Protection required: enroll a WebAuthn PRF fingerprint or set a Vault Passphrase (min. ${MIN_VAULT_PASSPHRASE_LENGTH} characters).`
-      };
-    }
-
-    const cleanByob: SavedByobConfig = {
-      projectId: byob.projectId.trim(),
-      apiKey: byob.apiKey.trim(),
-      applicationId: byob.applicationId?.trim() || '',
-      familyName: byob.familyName?.trim() || 'Private Family Vault'
-    };
-
-    const rawDek = generateRawDek();
-    let dek: CryptoKey;
-    const meta: VaultLockMeta = {
-      v: 3,
-      encryptionMode: hasPrf && hasPin ? 'HYBRID' : hasPrf ? 'WEBAUTHN_PRF' : 'PIN_WRAPPED',
-      kdfIterations: hasPin ? PBKDF2_ITERATIONS : undefined,
-      credentialId: protection.biometricCredId,
-      updatedAt: Date.now()
-    };
-
     try {
-      if (hasPrf && protection.prfSecret && protection.prfSalt) {
-        const hkdfSalt = generateRandomBytes(16);
-        const kekPrf = await deriveKekFromPrfSecret(protection.prfSecret, hkdfSalt);
-        meta.prfSaltBase64 = uint8ToBase64(protection.prfSalt);
-        meta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
-        meta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
+      const hasPrf = Boolean(protection.biometricCredId && protection.prfSecret && protection.prfSalt);
+      const cleanPin = protection.pin?.trim() || '';
+      const hasPin = cleanPin.length >= MIN_VAULT_PASSPHRASE_LENGTH;
+
+      if (!hasPrf && !hasPin) {
+        return {
+          success: false,
+          error:
+            language === 'fr'
+              ? `Protection requise : enregistrez une empreinte WebAuthn PRF ou définissez un mot de passe (${MIN_VAULT_PASSPHRASE_LENGTH} caractères min.).`
+              : `Protection required: enroll a WebAuthn PRF fingerprint or set a Vault Passphrase (min. ${MIN_VAULT_PASSPHRASE_LENGTH} characters).`
+        };
       }
 
-      if (hasPin) {
-        const pinSalt = generateRandomBytes(16);
-        const kekPin = await deriveKekFromPin(cleanPin, pinSalt, PBKDF2_ITERATIONS);
-        meta.pinSaltBase64 = uint8ToBase64(pinSalt);
-        meta.wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
+      const cleanByob: SavedByobConfig = {
+        projectId: byob.projectId.trim(),
+        apiKey: byob.apiKey.trim(),
+        applicationId: byob.applicationId?.trim() || '',
+        familyName: byob.familyName?.trim() || 'Private Family Vault'
+      };
+
+      const rawDek = generateRawDek();
+      let dek: CryptoKey;
+      const meta: VaultLockMeta = {
+        v: 3,
+        encryptionMode: hasPrf && hasPin ? 'HYBRID' : hasPrf ? 'WEBAUTHN_PRF' : 'PIN_WRAPPED',
+        kdfIterations: hasPin ? PBKDF2_ITERATIONS : undefined,
+        credentialId: protection.biometricCredId,
+        updatedAt: Date.now()
+      };
+
+      try {
+        if (hasPrf && protection.prfSecret && protection.prfSalt) {
+          const hkdfSalt = generateRandomBytes(16);
+          const kekPrf = await deriveKekFromPrfSecret(protection.prfSecret, hkdfSalt);
+          meta.prfSaltBase64 = uint8ToBase64(protection.prfSalt);
+          meta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
+          meta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
+        }
+
+        if (hasPin) {
+          const pinSalt = generateRandomBytes(16);
+          const kekPin = await deriveKekFromPin(cleanPin, pinSalt, PBKDF2_ITERATIONS);
+          meta.pinSaltBase64 = uint8ToBase64(pinSalt);
+          meta.wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
+        }
+
+        dek = await importDekFromRaw(rawDek, false);
+      } finally {
+        rawDek.fill(0);
       }
 
-      dek = await importDekFromRaw(rawDek, false);
-    } finally {
-      rawDek.fill(0);
-    }
+      saveVaultLockMeta(meta);
+      setVaultLockMeta(meta);
+      await saveEncryptedByobConfig(cleanByob, dek);
 
-    saveVaultLockMeta(meta);
-    setVaultLockMeta(meta);
-    await saveEncryptedByobConfig(cleanByob, dek);
+      resetPinBackoff();
+      activeDekRef.current = dek;
+      setSavedByobConfig(cleanByob);
+      setHasSavedVault(true);
+      setIsVaultUnlocked(true);
+      setLegacyPlaintextConfig(null);
+      setLegacyV2VaultDetected(false);
 
-    resetPinBackoff();
-    activeDekRef.current = dek;
-    setSavedByobConfig(cleanByob);
-    setHasSavedVault(true);
-    setIsVaultUnlocked(true);
-    setLegacyPlaintextConfig(null);
-    setLegacyV2VaultDetected(false);
+      const isSameProject = savedByobConfig?.projectId?.trim() === cleanByob.projectId;
+      const shouldReset = options?.resetLocalData !== undefined ? options.resetLocalData : !isSameProject;
 
-    const isSameProject = savedByobConfig?.projectId?.trim() === cleanByob.projectId;
-    const shouldReset = options?.resetLocalData !== undefined ? options.resetLocalData : !isSameProject;
+      const googleRes = await signInWithGoogle(cleanByob, {
+        projectId: cleanByob.projectId,
+        apiKey: cleanByob.apiKey,
+        applicationId: cleanByob.applicationId || '',
+        familyName: cleanByob.familyName || 'Private Family Vault',
+        resetLocalData: shouldReset
+      });
 
-    const googleRes = await signInWithGoogle(cleanByob, {
-      projectId: cleanByob.projectId,
-      apiKey: cleanByob.apiKey,
-      applicationId: cleanByob.applicationId || '',
-      familyName: cleanByob.familyName || 'Private Family Vault',
-      resetLocalData: shouldReset
-    });
+      if (googleRes.redirecting) {
+        return {
+          success: false,
+          redirecting: true,
+          vaultUnlocked: true,
+          error: googleRes.error
+        };
+      }
 
-    if (googleRes.redirecting) {
+      if (!googleRes.success || !googleRes.user) {
+        return {
+          success: false,
+          vaultUnlocked: true,
+          needsGoogleAuth: true,
+          error:
+            googleRes.error ||
+            (language === 'fr' ? 'Échec de l’authentification Google' : 'Google authentication failed')
+        };
+      }
+
+      const syncRes = await completeByobSetupWithUser(cleanByob, googleRes.user, shouldReset, dek);
+      return {
+        success: syncRes.success,
+        vaultUnlocked: true,
+        error: syncRes.error,
+        message: syncRes.message
+      };
+    } catch (err: any) {
+      const code = err?.code ? ` [${err.code}]` : '';
+      const errMsg =
+        (language === 'fr'
+          ? `Erreur lors de la création du coffre ou de la connexion Google${code} : `
+          : `Error while setting up vault or connecting to Google${code}: `) +
+        (err?.message || String(err));
+      console.error('setupProtectedVaultAndConnect error:', err);
       return {
         success: false,
-        redirecting: true,
-        vaultUnlocked: true,
-        error: googleRes.error
+        error: errMsg
       };
     }
-
-    if (!googleRes.success || !googleRes.user) {
-      return {
-        success: false,
-        vaultUnlocked: true,
-        needsGoogleAuth: true,
-        error:
-          googleRes.error ||
-          (language === 'fr' ? 'Échec de l’authentification Google' : 'Google authentication failed')
-      };
-    }
-
-    const syncRes = await completeByobSetupWithUser(cleanByob, googleRes.user, shouldReset, dek);
-    return {
-      success: syncRes.success,
-      vaultUnlocked: true,
-      error: syncRes.error,
-      message: syncRes.message
-    };
   };
 
   /**
@@ -2320,100 +2382,117 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     applicationId?: string;
     familyName?: string;
   }): Promise<VaultActionResult> => {
-    const dek = activeDekRef.current;
-    if (!isVaultUnlocked || !dek) {
-      return {
-        success: false,
-        error:
-          language === 'fr'
-            ? 'Déverrouillage local requis (empreinte ou mot de passe) avant la connexion Google.'
-            : 'Local unlock (fingerprint or passphrase) is required before Google Sign-In.'
-      };
-    }
-
-    const targetByob = overrideByob
-      ? {
-          projectId: overrideByob.projectId.trim(),
-          apiKey: overrideByob.apiKey.trim(),
-          applicationId: overrideByob.applicationId?.trim() || '',
-          familyName: overrideByob.familyName?.trim() || 'Private Family Vault'
-        }
-      : savedByobConfig || (await loadEncryptedByobConfig(dek));
-
-    if (!targetByob) {
-      return {
-        success: false,
-        error:
-          language === 'fr'
-            ? 'Configuration du coffre introuvable.'
-            : 'Vault configuration not found.'
-      };
-    }
-
-    const isSameProject = savedByobConfig?.projectId?.trim() === targetByob.projectId;
-    if (overrideByob) {
-      await saveEncryptedByobConfig(targetByob, dek);
-      setSavedByobConfig(targetByob);
-    }
-
-    const auth = getOrInitAuth(targetByob);
-    if (auth) {
-      try {
-        await auth.authStateReady();
-      } catch {
-        // Ignore
+    try {
+      const dek = activeDekRef.current;
+      if (!isVaultUnlocked || !dek) {
+        return {
+          success: false,
+          error:
+            language === 'fr'
+              ? 'Déverrouillage local requis (empreinte ou mot de passe) avant la connexion Google.'
+              : 'Local unlock (fingerprint or passphrase) is required before Google Sign-In.'
+        };
       }
-    }
 
-    const existingUser = auth?.currentUser;
-    if (existingUser && existingUser.email && existingUser.emailVerified && isSameProject) {
-      const userInfo: AuthUserInfo = {
-        uid: existingUser.uid,
-        email: existingUser.email,
-        displayName: existingUser.displayName,
-        photoURL: existingUser.photoURL,
-        emailVerified: existingUser.emailVerified
-      };
-      const syncRes = await completeByobSetupWithUser(targetByob, userInfo, false, dek);
+      const targetByob = overrideByob
+        ? {
+            projectId: overrideByob.projectId.trim(),
+            apiKey: overrideByob.apiKey.trim(),
+            applicationId: overrideByob.applicationId?.trim() || '',
+            familyName: overrideByob.familyName?.trim() || 'Private Family Vault'
+          }
+        : savedByobConfig || (await loadEncryptedByobConfig(dek));
+
+      if (!targetByob) {
+        return {
+          success: false,
+          error:
+            language === 'fr'
+              ? 'Configuration du coffre introuvable.'
+              : 'Vault configuration not found.'
+        };
+      }
+
+      const isSameProject = savedByobConfig?.projectId?.trim() === targetByob.projectId;
+      if (overrideByob) {
+        await saveEncryptedByobConfig(targetByob, dek);
+        setSavedByobConfig(targetByob);
+      }
+
+      const auth = getOrInitAuth(targetByob);
+      if (auth) {
+        try {
+          await auth.authStateReady();
+        } catch {
+          // Ignore
+        }
+      }
+
+      const existingUser = auth?.currentUser;
+      if (existingUser && existingUser.email && existingUser.emailVerified && isSameProject) {
+        const userInfo: AuthUserInfo = {
+          uid: existingUser.uid,
+          email: existingUser.email,
+          displayName: existingUser.displayName,
+          photoURL: existingUser.photoURL,
+          emailVerified: existingUser.emailVerified
+        };
+        const syncRes = await completeByobSetupWithUser(targetByob, userInfo, false, dek);
+        return {
+          success: syncRes.success,
+          vaultUnlocked: true,
+          error: syncRes.error
+        };
+      }
+
+      const googleRes = await signInWithGoogle(targetByob, {
+        projectId: targetByob.projectId,
+        apiKey: targetByob.apiKey,
+        applicationId: targetByob.applicationId || '',
+        familyName: targetByob.familyName || 'Private Family Vault',
+        resetLocalData: !isSameProject
+      });
+
+      if (googleRes.redirecting) {
+        return {
+          success: false,
+          redirecting: true,
+          vaultUnlocked: true,
+          error: googleRes.error
+        };
+      }
+
+      if (!googleRes.success || !googleRes.user) {
+        return {
+          success: false,
+          vaultUnlocked: true,
+          needsGoogleAuth: true,
+          error:
+            googleRes.error ||
+            (language === 'fr' ? 'Échec de l’authentification Google' : 'Google authentication failed')
+        };
+      }
+
+      const syncRes = await completeByobSetupWithUser(targetByob, googleRes.user, !isSameProject, dek);
       return {
         success: syncRes.success,
         vaultUnlocked: true,
         error: syncRes.error
       };
-    }
-
-    const googleRes = await signInWithGoogle(targetByob, {
-      projectId: targetByob.projectId,
-      apiKey: targetByob.apiKey,
-      applicationId: targetByob.applicationId || '',
-      familyName: targetByob.familyName || 'Private Family Vault',
-      resetLocalData: !isSameProject
-    });
-
-    if (googleRes.redirecting) {
-      return {
-        success: false,
-        redirecting: true,
-        vaultUnlocked: true,
-        error: googleRes.error
-      };
-    }
-
-    if (!googleRes.success || !googleRes.user) {
+    } catch (err: any) {
+      const code = err?.code ? ` [${err.code}]` : '';
+      const errMsg =
+        (language === 'fr'
+          ? `Erreur lors de la connexion Google / Firestore${code} : `
+          : `Error connecting to Google / Firestore${code}: `) +
+        (err?.message || String(err));
+      console.error('continueUnlockedByobWithGoogle error:', err);
       return {
         success: false,
         vaultUnlocked: true,
-        needsGoogleAuth: true,
-        error: googleRes.error
+        error: errMsg
       };
     }
-
-    const syncRes = await completeByobSetupWithUser(targetByob, googleRes.user, !isSameProject, dek);
-    return {
-      success: syncRes.success,
-      vaultUnlocked: true,
-      error: syncRes.error
-    };
   };
 
   /**
@@ -2675,53 +2754,71 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const loginWithGoogle = async (): Promise<{ success: boolean; error?: string }> => {
-    if (!isVaultUnlocked || !activeDekRef.current) {
+    try {
+      if (!isVaultUnlocked || !activeDekRef.current) {
+        return {
+          success: false,
+          error:
+            language === 'fr'
+              ? 'Déverrouillez le coffre avant de vous connecter avec Google.'
+              : 'Unlock your vault before signing in with Google.'
+        };
+      }
+
+      const res = await signInWithGoogle(config);
+      if (res.success && res.user) {
+        setFirebaseUser(res.user);
+        const updatedCfg: FirebaseConfigEntity = {
+          ...config,
+          isGoogleAuthenticated: true,
+          currentUserEmail: res.user.email || '',
+          currentUserName: res.user.displayName || '',
+          isConfigured: true,
+          isAnonymous: false,
+          syncStatusMessage: `Connecté (${res.user.email})`
+        };
+        setConfig(updatedCfg);
+        showToast(language === 'fr' ? `Connecté avec Google (${res.user.email})` : `Signed in as ${res.user.email}`);
+
+        const result = await executeBidirectionalSync({
+          accounts,
+          transactions,
+          categories,
+          budgets,
+          rules,
+          members,
+          sharedSettlements,
+          outbox,
+          syncState,
+          config: updatedCfg
+        });
+        applySyncResult(result, { accounts, transactions, categories, budgets, rules, members, sharedSettlements });
+        if (result.success) {
+          setSessionMode('FIRESTORE');
+        }
+        return { success: result.success, error: result.success ? undefined : result.message };
+      } else if (res.error) {
+        showToast(res.error);
+        return { success: false, error: res.error };
+      }
       return {
         success: false,
         error:
           language === 'fr'
-            ? 'Déverrouillez le coffre avant de vous connecter avec Google.'
-            : 'Unlock your vault before signing in with Google.'
+            ? 'La connexion Google a échoué sans renvoyer d’utilisateur.'
+            : 'Google Sign-In failed without returning a user.'
       };
+    } catch (err: any) {
+      const code = err?.code ? ` [${err.code}]` : '';
+      const errMsg =
+        (language === 'fr'
+          ? `Erreur lors de la connexion Google / Firestore${code} : `
+          : `Google / Firestore sign-in error${code}: `) +
+        (err?.message || String(err));
+      console.error('loginWithGoogle error:', err);
+      showToast(errMsg);
+      return { success: false, error: errMsg };
     }
-
-    const res = await signInWithGoogle(config);
-    if (res.success && res.user) {
-      setFirebaseUser(res.user);
-      const updatedCfg: FirebaseConfigEntity = {
-        ...config,
-        isGoogleAuthenticated: true,
-        currentUserEmail: res.user.email || '',
-        currentUserName: res.user.displayName || '',
-        isConfigured: true,
-        isAnonymous: false,
-        syncStatusMessage: `Connecté (${res.user.email})`
-      };
-      setConfig(updatedCfg);
-      showToast(language === 'fr' ? `Connecté avec Google (${res.user.email})` : `Signed in as ${res.user.email}`);
-
-      const result = await executeBidirectionalSync({
-        accounts,
-        transactions,
-        categories,
-        budgets,
-        rules,
-        members,
-        sharedSettlements,
-        outbox,
-        syncState,
-        config: updatedCfg
-      });
-      applySyncResult(result, { accounts, transactions, categories, budgets, rules, members, sharedSettlements });
-      if (result.success) {
-        setSessionMode('FIRESTORE');
-      }
-      return { success: result.success, error: result.success ? undefined : result.message };
-    } else if (res.error) {
-      showToast(res.error);
-      return { success: false, error: res.error };
-    }
-    return { success: false };
   };
 
   const updateOpenBankingConfig = (patch: Partial<OpenBankingConfig>) => {

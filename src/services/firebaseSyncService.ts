@@ -252,6 +252,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
 
   let pushedCount = 0;
   let pulledCount = 0;
+  let currentStage = 'Initialisation synchronisation Firestore';
 
   try {
     // -------------------------------------------------------------
@@ -260,27 +261,50 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     let incomingFamilyName: string | undefined;
     const rolesRef = doc(db, 'security_config', 'roles');
     const vaultRef = doc(db, 'family_meta', 'vault');
-    const rolesSnap = await getDoc(rolesRef);
-    const vaultSnap = await getDoc(vaultRef);
+    const userEmailLower = currentUser.email.toLowerCase();
 
-    const existingRolesData = rolesSnap.exists()
-      ? (rolesSnap.data()?.userRoles as Record<string, string> | undefined)
-      : undefined;
-    const existingVaultData = vaultSnap.exists() ? vaultSnap.data() : undefined;
+    currentStage = 'Lecture des rôles et métadonnées (security_config/roles, family_meta/vault)';
+    let rolesExists = false;
+    let vaultExists = false;
+    let existingRolesData: Record<string, string> | undefined;
+    let existingVaultData: Record<string, any> | undefined;
+    let readDenied = false;
 
-    if (existingVaultData?.familyName) {
-      incomingFamilyName = String(existingVaultData.familyName);
+    try {
+      const [rolesSnap, vaultSnap] = await Promise.all([getDoc(rolesRef), getDoc(vaultRef)]);
+      rolesExists = rolesSnap.exists();
+      vaultExists = vaultSnap.exists();
+      existingRolesData = rolesExists
+        ? (rolesSnap.data()?.userRoles as Record<string, string> | undefined)
+        : undefined;
+      existingVaultData = vaultExists ? vaultSnap.data() : undefined;
+      if (existingVaultData?.familyName) {
+        incomingFamilyName = String(existingVaultData.familyName);
+      }
+    } catch (readErr: any) {
+      const readCode = readErr?.code || '';
+      const readMsg = String(readErr?.message || '');
+      if (
+        readCode === 'permission-denied' ||
+        readMsg.includes('permission') ||
+        readMsg.includes('Missing or insufficient permissions')
+      ) {
+        // Under zero-trust rules, get(security_config/roles) is denied before roles doc exists.
+        // We safely attempt atomic create-only bootstrap below; rules will reject it if vault already exists.
+        readDenied = true;
+      } else {
+        throw readErr;
+      }
     }
 
-    const userEmailLower = currentUser.email.toLowerCase();
-    const isFreshVaultBootstrap = !rolesSnap.exists() && !vaultSnap.exists();
-    const serverRole = isFreshVaultBootstrap
+    const isFreshVaultBootstrap = (!rolesExists && !vaultExists) || readDenied;
+    let serverRole: MemberRole = isFreshVaultBootstrap
       ? 'ADMIN'
       : ((existingRolesData?.[userEmailLower] as MemberRole | undefined) || 'VIEWER');
-    const isCallerAdmin = serverRole === 'ADMIN';
+    let isCallerAdmin = serverRole === 'ADMIN';
 
     if (isFreshVaultBootstrap) {
-      // Atomic single-batch create for security_config/roles + family_meta/vault
+      currentStage = 'Initialisation atomique du coffre (security_config/roles + family_meta/vault)';
       const userRolesMap: Record<string, string> = {
         [userEmailLower]: 'ADMIN'
       };
@@ -304,8 +328,11 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
         updatedAt: syncStartTime
       });
       await bootstrapBatch.commit();
+      serverRole = 'ADMIN';
+      isCallerAdmin = true;
     } else if (isCallerAdmin) {
       if (payload.outbox.some(o => o.entityType === 'MEMBER')) {
+        currentStage = 'Mise à jour des rôles RBAC (security_config/roles)';
         const userRolesMap: Record<string, string> = {};
         for (const m of payload.members) {
           if (!m.isDeleted && m.email && m.email.trim()) {
@@ -318,6 +345,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
 
       const desiredName = (payload.config.familyName || '').trim().slice(0, 120);
       if (desiredName && existingVaultData && desiredName !== existingVaultData.familyName) {
+        currentStage = 'Mise à jour du nom du coffre (family_meta/vault)';
         await setDoc(
           vaultRef,
           {
@@ -441,6 +469,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
       }
 
       if (chunkOps > 0) {
+        currentStage = `Envoi des modifications locales (Outbox : ${chunk.map(c => c.entityType).slice(0, 3).join(', ')})`;
         await batch.commit();
         pushedCount += chunkOps;
       }
@@ -462,6 +491,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     const incomingSharedSettlements: SharedSettlementEntity[] = [];
 
     // 4a. Pull Categories
+    currentStage = 'Lecture de la collection Firestore (categories)';
     const catCol = collection(db, 'categories');
     const catQuery = lastPull > 0 ? query(catCol, where('updatedAt', '>', lastPull)) : query(catCol);
     const catSnap = await getDocs(catQuery);
@@ -482,6 +512,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     });
 
     // 4b. Pull Category Budgets
+    currentStage = 'Lecture de la collection Firestore (category_budgets)';
     const budgetCol = collection(db, 'category_budgets');
     const budgetQuery = lastPull > 0 ? query(budgetCol, where('updatedAt', '>', lastPull)) : query(budgetCol);
     const budgetSnap = await getDocs(budgetQuery);
@@ -514,6 +545,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     });
 
     // 4c. Pull Rules
+    currentStage = 'Lecture de la collection Firestore (rules)';
     const ruleCol = collection(db, 'rules');
     const ruleQuery = lastPull > 0 ? query(ruleCol, where('updatedAt', '>', lastPull)) : query(ruleCol);
     const ruleSnap = await getDocs(ruleQuery);
@@ -539,6 +571,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     });
 
     // 4d. Pull Accounts (with legacy account_balance fallback on initial sync)
+    currentStage = 'Lecture de la collection Firestore (accounts)';
     const accCol = collection(db, 'accounts');
     const accQuery = lastPull > 0 ? query(accCol, where('updatedAt', '>', lastPull)) : query(accCol);
     const accSnap = await getDocs(accQuery);
@@ -573,6 +606,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     });
 
     if (lastPull === 0 && incomingAccs.length === 0) {
+      currentStage = 'Lecture de la collection héritée Firestore (account_balance)';
       const legacyBalSnap = await getDocs(query(collection(db, 'account_balance')));
       legacyBalSnap.forEach(docSnap => {
         const raw = docSnap.data();
@@ -597,6 +631,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     }
 
     // 4e. Pull Transactions
+    currentStage = 'Lecture de la collection Firestore (transactions)';
     const txCol = collection(db, 'transactions');
     const txQuery = lastPull > 0 ? query(txCol, where('updatedAt', '>', lastPull)) : query(txCol);
     const txSnap = await getDocs(txQuery);
@@ -657,6 +692,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     });
 
     // 4f. Pull Family Members
+    currentStage = 'Lecture de la collection Firestore (family_members)';
     const memberSnap = await getDocs(query(collection(db, 'family_members')));
     memberSnap.forEach(docSnap => {
       const raw = docSnap.data();
@@ -690,6 +726,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     }
 
     // 4g. Pull Shared Settlements
+    currentStage = 'Lecture de la collection Firestore (shared_settlements)';
     const settlementCol = collection(db, 'shared_settlements');
     const settlementQuery =
       lastPull > 0 ? query(settlementCol, where('updatedAt', '>', lastPull)) : query(settlementCol);
@@ -743,16 +780,36 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
       resolvedUserRole: serverRole
     };
   } catch (err: any) {
-    console.error('Firestore sync error:', err);
-    const code = err?.code || '';
+    console.error('Firestore sync error:', { stage: currentStage, err });
+    const code = err?.code || 'unknown';
     const msg = err?.message || String(err);
-    const isPermissionError = code === 'permission-denied' || msg.includes('permission') || msg.includes('Missing or insufficient permissions');
+    const isPermissionError =
+      code === 'permission-denied' ||
+      msg.toLowerCase().includes('permission') ||
+      msg.includes('Missing or insufficient permissions');
 
-    let helpfulMsg = `Erreur Firestore (${code || 'sync'}) : ${msg}`;
+    let helpfulMsg = `Échec Firestore [${code}] à l’étape « ${currentStage} » : ${msg}`;
     if (isPermissionError) {
-      helpfulMsg = `Accès Firestore refusé (permission-denied) pour ${currentUser.email}. Vérifiez que vous avez publié firestore.rules dans votre projet Firebase (${payload.config.projectId}) et que votre email est autorisé dans security_config/roles.`;
-    } else if (code === 'unavailable' || msg.includes('offline')) {
-      helpfulMsg = `Firestore injoignable : vérifiez votre connexion ou que la base Firestore Database existe bien dans le projet ${payload.config.projectId}.`;
+      helpfulMsg =
+        `Accès Firestore refusé [${code}] pour ${currentUser.email} sur le projet « ${payload.config.projectId} ».\n` +
+        `Étape : ${currentStage}\n` +
+        `Vérifications : (1) Publiez la dernière version de firestore.rules dans Firebase Console → Firestore → Rules, (2) vérifiez que votre e-mail « ${currentUser.email} » figure bien dans security_config/roles (userRoles), et (3) vérifiez que le document family_meta/vault existe si ce coffre existait déjà.`;
+    } else if (code === 'not-found') {
+      helpfulMsg =
+        `Base Cloud Firestore introuvable [not-found] pour le projet « ${payload.config.projectId} ».\n` +
+        `Étape : ${currentStage}\n` +
+        `Créez la base Firestore dans Firebase Console → Build → Firestore Database (${msg}).`;
+    } else if (code === 'unauthenticated') {
+      helpfulMsg =
+        `Session Google expirée ou invalide [unauthenticated] à l’étape « ${currentStage} ».\n` +
+        `Reconnectez-vous avec Google (${msg}).`;
+    } else if (code === 'unavailable' || msg.toLowerCase().includes('offline')) {
+      helpfulMsg =
+        `Firestore injoignable [${code}] à l’étape « ${currentStage} ».\n` +
+        `Vérifiez votre connexion internet, le Project ID « ${payload.config.projectId} », ou que Firestore Database est bien activé (${msg}).`;
+    } else if (code === 'failed-precondition') {
+      helpfulMsg =
+        `Précondition Firestore non satisfaite [failed-precondition] à l’étape « ${currentStage} » : ${msg}`;
     }
 
     return {

@@ -531,9 +531,13 @@ export const FirebaseSyncScreen: React.FC = () => {
 
   const handleGoogleSignIn = async () => {
     setAuthError(null);
-    const res = await loginWithGoogle();
-    if (!res.success && res.error) {
-      setAuthError(res.error);
+    try {
+      const res = await loginWithGoogle();
+      if (!res.success && res.error) {
+        setAuthError(res.error);
+      }
+    } catch (err: any) {
+      setAuthError(err?.message || (isFr ? 'Erreur lors de la connexion Google / Firestore.' : 'Google / Firestore sign-in error.'));
     }
   };
 
@@ -798,19 +802,15 @@ export const FirebaseSyncScreen: React.FC = () => {
                 <CloudCheck className="w-5 h-5" />
               )}
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <h2 className="font-bold text-base text-slate-900 dark:text-white">
                 {isFr ? 'Statut de Synchronisation du Coffre' : 'Vault Synchronization Status'}
               </h2>
-              <p
-                className={`text-xs mt-0.5 ${
-                  syncState.lastSyncStatus === 'ERROR'
-                    ? 'text-rose-600 dark:text-rose-300 font-medium'
-                    : 'text-slate-500 dark:text-slate-400'
-                }`}
-              >
-                {syncState.lastSyncMessage || (isFr ? 'Prêt.' : 'Ready.')}
-              </p>
+              {syncState.lastSyncStatus !== 'ERROR' && (
+                <p className="text-xs mt-0.5 text-slate-500 dark:text-slate-400">
+                  {syncState.lastSyncMessage || (isFr ? 'Prêt.' : 'Ready.')}
+                </p>
+              )}
             </div>
           </div>
 
@@ -840,6 +840,30 @@ export const FirebaseSyncScreen: React.FC = () => {
             )}
           </div>
         </div>
+
+        {syncState.lastSyncStatus === 'ERROR' && syncState.lastSyncMessage && (
+          <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2 leading-relaxed">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+              <span className="whitespace-pre-line break-words flex-1 font-medium">
+                {syncState.lastSyncMessage}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 pl-6">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(syncState.lastSyncMessage || '');
+                  showToast(isFr ? 'Erreur de synchronisation copiée' : 'Sync error copied');
+                }}
+                className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-200 hover:underline font-semibold cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{isFr ? 'Copier le diagnostic' : 'Copy diagnostic'}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
           <div>
@@ -938,9 +962,24 @@ export const FirebaseSyncScreen: React.FC = () => {
         </div>
 
         {authError && (
-          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-            <span>{authError}</span>
+          <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs space-y-2 leading-relaxed">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+              <span className="whitespace-pre-line break-words flex-1">{authError}</span>
+            </div>
+            <div className="pl-6">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(authError);
+                  showToast(isFr ? 'Erreur copiée' : 'Error copied');
+                }}
+                className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-200 hover:underline font-semibold cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{isFr ? 'Copier le détail' : 'Copy error'}</span>
+              </button>
+            </div>
           </div>
         )}
 
