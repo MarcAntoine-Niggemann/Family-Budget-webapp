@@ -20,7 +20,13 @@ import {
   Copy
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { parseBankStatementCsv, detectCsvDuplicates, CsvParseResult } from '../utils/csvParser';
+import {
+  parseBankStatementCsv,
+  detectCsvDuplicates,
+  CsvParseResult,
+  MAX_CSV_BYTES,
+  MAX_CSV_ROWS
+} from '../utils/csvParser';
 import { CategoryIcon } from '../components/CategoryIcon';
 import { OpenBankingConfigModal } from '../components/OpenBankingConfigModal';
 
@@ -130,6 +136,15 @@ export const CsvImportScreen: React.FC = () => {
 
     if (file.size === 0) {
       setFileError(isFr ? 'Le fichier sélectionné est vide.' : 'The selected file is empty.');
+      return;
+    }
+
+    if (file.size > MAX_CSV_BYTES) {
+      setFileError(
+        isFr
+          ? `Le fichier dépasse la taille maximale autorisée (${Math.round(MAX_CSV_BYTES / (1024 * 1024))} Mo).`
+          : `The selected file exceeds the maximum allowed size (${Math.round(MAX_CSV_BYTES / (1024 * 1024))} MB).`
+      );
       return;
     }
 
@@ -527,6 +542,17 @@ export const CsvImportScreen: React.FC = () => {
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
+
+                {parseResult.truncated && (
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 text-xs text-amber-900 dark:text-amber-200">
+                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>
+                      {isFr
+                        ? `Pour protéger les performances du navigateur, l’import est limité à ${MAX_CSV_ROWS.toLocaleString()} lignes par fichier.`
+                        : `To protect browser performance, import preview is capped at ${MAX_CSV_ROWS.toLocaleString()} rows per file.`}
+                    </span>
+                  </div>
+                )}
 
                 {duplicateCount > 0 && (
                   <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 text-xs text-amber-900 dark:text-amber-200">

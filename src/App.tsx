@@ -25,6 +25,7 @@ import { Check, X } from 'lucide-react';
 const AppContent: React.FC = () => {
   const {
     sessionMode,
+    config,
     currentScreen,
     toastMessage,
     dismissToast
@@ -87,7 +88,11 @@ const AppContent: React.FC = () => {
           setAddTxPrefill(null);
           setIsAddTxOpen(true);
         }}
-        onOpenShareQr={() => setIsShareQrOpen(true)}
+        onOpenShareQr={
+          sessionMode === 'FIRESTORE' && config.currentUserRole === 'ADMIN'
+            ? () => setIsShareQrOpen(true)
+            : undefined
+        }
       />
 
       {/* Main Body */}
@@ -188,7 +193,7 @@ const AppContent: React.FC = () => {
       />
 
       <ShareVaultQrModal
-        isOpen={isShareQrOpen}
+        isOpen={isShareQrOpen && sessionMode === 'FIRESTORE' && config.currentUserRole === 'ADMIN'}
         onClose={() => setIsShareQrOpen(false)}
       />
 

@@ -177,8 +177,8 @@ export const Navbar: React.FC<{ onOpenAddTx: () => void; onOpenShareQr?: () => v
               <span>{language.toUpperCase()}</span>
             </button>
 
-            {/* Share Vault QR Code (BYOB Firestore only) */}
-            {onOpenShareQr && sessionMode === 'FIRESTORE' && config.projectId && (
+            {/* Share Vault QR Code (BYOB Firestore ADMIN only) */}
+            {onOpenShareQr && sessionMode === 'FIRESTORE' && config.projectId && config.currentUserRole === 'ADMIN' && (
               <button
                 onClick={onOpenShareQr}
                 className="p-1.5 sm:p-2 rounded-lg bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-300 hover:text-teal-600 dark:hover:text-teal-400 transition shrink-0 cursor-pointer"

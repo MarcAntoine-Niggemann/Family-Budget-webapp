@@ -30,6 +30,7 @@ export interface CsvParseResult {
   parsedRecords: ParsedBankRow[];
   headers: string[];
   detectedAccountType: 'MAIN_ACCOUNT' | 'CREDIT_CARD' | 'GENERIC';
+  truncated?: boolean;
   errors: string[];
 }
 
@@ -37,6 +38,84 @@ export interface DuplicateMatchInfo {
   isDuplicate: boolean;
   matchedTransactionId?: number;
   reason?: 'BANK_IMPORT_MATCH' | 'OPEN_BANKING_MATCH';
+}
+
+export const MAX_RULE_PATTERN_LENGTH = 150;
+export const MAX_CSV_BYTES = 10 * 1024 * 1024; // 10 MB
+export const MAX_CSV_ROWS = 10_000;
+
+/**
+ * Validates that a user-supplied or synced regex pattern is bounded and free of
+ * catastrophic backtracking (ReDoS) constructs such as nested or chained quantifiers.
+ */
+export function isSafeRegexPattern(pattern: string): { valid: boolean; reason?: string } {
+  const trimmed = (pattern || '').trim();
+  if (!trimmed) {
+    return { valid: false, reason: 'Pattern cannot be empty.' };
+  }
+  if (trimmed.length > MAX_RULE_PATTERN_LENGTH) {
+    return {
+      valid: false,
+      reason: `Pattern exceeds maximum length of ${MAX_RULE_PATTERN_LENGTH} characters.`
+    };
+  }
+
+  // Disallow backreferences and lookbehinds which can cause exponential or unsupported evaluation
+  if (/\\[1-9]|\\k</.test(trimmed)) {
+    return { valid: false, reason: 'Backreferences are not permitted in rule patterns.' };
+  }
+  if (/\(\?<[=!]/.test(trimmed)) {
+    return { valid: false, reason: 'Lookbehind assertions are not permitted in rule patterns.' };
+  }
+
+  // Strip escaped characters & character classes so quantifier structural checks only inspect syntax tokens
+  const stripped = trimmed
+    .replace(/\\./g, 'a')
+    .replace(/\[[^\]]*\]/g, 'a');
+
+  // Chained quantifiers like a++, a*+, {1,2}+
+  if (/([+*?]|\{\d+,?\d*\})\s*[+*?{]/.test(stripped)) {
+    return { valid: false, reason: 'Nested or chained quantifiers are not allowed (ReDoS protection).' };
+  }
+
+  // Quantified groups that themselves contain a quantifier or alternation: e.g. (a+)+, (.*)*, (a|a)+
+  const groupStack: boolean[] = [];
+  let inQuantifierBrace = false;
+  for (let i = 0; i < stripped.length; i++) {
+    const ch = stripped[i];
+    if (ch === '{') {
+      inQuantifierBrace = true;
+    } else if (ch === '}') {
+      inQuantifierBrace = false;
+    }
+    if (inQuantifierBrace) continue;
+
+    if (ch === '(') {
+      groupStack.push(false);
+    } else if (ch === ')') {
+      const hasInnerComplexity = groupStack.pop() || false;
+      const next = stripped[i + 1];
+      const nextIsQuantifier = next === '+' || next === '*' || next === '?' || next === '{';
+      if (hasInnerComplexity && nextIsQuantifier) {
+        return {
+          valid: false,
+          reason: 'Quantified groups containing quantifiers or alternations are not allowed (ReDoS protection).'
+        };
+      }
+      if (nextIsQuantifier && groupStack.length > 0) {
+        groupStack[groupStack.length - 1] = true;
+      }
+    } else if ((ch === '+' || ch === '*' || ch === '|') && groupStack.length > 0) {
+      groupStack[groupStack.length - 1] = true;
+    }
+  }
+
+  try {
+    new RegExp(trimmed, 'i');
+    return { valid: true };
+  } catch (err: any) {
+    return { valid: false, reason: err?.message || 'Invalid regular expression syntax.' };
+  }
 }
 
 export function normalizeText(text: string): string {
@@ -206,9 +285,13 @@ export function categorizeLabel(
         case 'EXACT':
           matched = normLabel === normPattern;
           break;
-        case 'REGEX':
-          matched = new RegExp(rule.pattern, 'i').test(label);
+        case 'REGEX': {
+          const check = isSafeRegexPattern(rule.pattern);
+          matched = check.valid
+            ? new RegExp(rule.pattern, 'i').test(label)
+            : normLabel.includes(normPattern);
           break;
+        }
       }
     } catch {
       matched = normLabel.includes(normPattern);
@@ -322,6 +405,21 @@ export function parseBankStatementCsv(
   categories: CategoryEntity[],
   budgets: CategoryBudgetEntity[]
 ): CsvParseResult {
+  const byteSize =
+    typeof Blob !== 'undefined' ? new Blob([csvContent]).size : csvContent.length * 2;
+  if (byteSize > MAX_CSV_BYTES) {
+    return {
+      delimiter: ',',
+      totalRows: 0,
+      parsedRecords: [],
+      headers: [],
+      detectedAccountType: 'GENERIC',
+      errors: [
+        `The CSV file exceeds the maximum allowed size of ${Math.round(MAX_CSV_BYTES / (1024 * 1024))} MB.`
+      ]
+    };
+  }
+
   const cleanedContent = csvContent.replace(/^\uFEFF/, '');
   const lines = cleanedContent
     .split(/\r?\n/)
@@ -392,8 +490,14 @@ export function parseBankStatementCsv(
 
   const parsedRecords: ParsedBankRow[] = [];
   const errors: string[] = [];
+  let truncated = false;
+  const maxLineIndex = Math.min(lines.length, headerIndex + 1 + MAX_CSV_ROWS);
+  if (lines.length > maxLineIndex) {
+    truncated = true;
+    errors.push(`CSV truncated at ${MAX_CSV_ROWS.toLocaleString()} rows for safety.`);
+  }
 
-  for (let i = headerIndex + 1; i < lines.length; i++) {
+  for (let i = headerIndex + 1; i < maxLineIndex; i++) {
     const rawTokens = splitCsvLine(lines[i], delimiter);
     if (rawTokens.length <= Math.max(dateColIdx, labelColIdx)) continue;
 
@@ -479,6 +583,7 @@ export function parseBankStatementCsv(
     parsedRecords,
     headers,
     detectedAccountType: detectedType,
+    truncated,
     errors
   };
 }

@@ -9,8 +9,9 @@ interface ShareVaultQrModalProps {
 }
 
 export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, onClose }) => {
-  const { config, language } = useBudget();
+  const { sessionMode, config, language } = useBudget();
   const isFr = language === 'fr';
+  const isAuthorizedAdmin = sessionMode === 'FIRESTORE' && config.currentUserRole === 'ADMIN' && Boolean(config.projectId);
 
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -21,12 +22,11 @@ export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, on
     projectId: config.projectId || '',
     apiKey: config.apiKey || '',
     applicationId: config.applicationId || '',
-    adminEmail: config.currentUserEmail || 'admin@family.local',
-    mode: config.projectId ? 'BYOB' : 'DEMO'
+    mode: 'BYOB'
   });
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isAuthorizedAdmin) {
       QRCode.toDataURL(payload, {
         width: 320,
         margin: 2,
@@ -38,7 +38,7 @@ export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, on
         .then(url => setQrDataUrl(url))
         .catch(err => console.error('Error generating QR code:', err));
     }
-  }, [isOpen, payload]);
+  }, [isOpen, isAuthorizedAdmin, payload]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(payload);
@@ -46,7 +46,7 @@ export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, on
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !isAuthorizedAdmin) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-sm">
@@ -62,7 +62,7 @@ export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, on
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -70,9 +70,15 @@ export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, on
 
         <p className="text-xs text-slate-600 dark:text-slate-400 text-left">
           {isFr
-            ? 'Scannez ce QR Code avec l’appareil photo d’un iPhone ou d’un smartphone Android pour rejoindre instantanément ce Coffre Familial.'
-            : 'Scan this QR code with an iPhone or Android phone camera to instantly connect to this Family Vault.'}
+            ? 'Scannez ce QR Code avec l’appareil photo d’un iPhone ou d’un smartphone Android pour rejoindre ce Coffre Familial.'
+            : 'Scan this QR code with an iPhone or Android phone camera to connect to this Family Vault.'}
         </p>
+
+        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-200 text-[11px] text-left leading-relaxed">
+          {isFr
+            ? 'Rappel RBAC : ajoutez d’abord l’adresse e-mail Google vérifiée du membre dans « Membres de la Famille & Rôles RBAC » et synchronisez avant qu’il ne scanne ce code.'
+            : 'RBAC Reminder: add the invited member’s verified Google email in "Family Members & RBAC Roles" and sync before they scan this code.'}
+        </div>
 
         {/* Generated QR Code Canvas */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 dark:border-transparent mx-auto inline-block shadow-lg dark:shadow-xl">
@@ -93,7 +99,7 @@ export const ShareVaultQrModal: React.FC<ShareVaultQrModalProps> = ({ isOpen, on
         <div className="flex items-center gap-2 pt-2">
           <button
             onClick={handleCopy}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition"
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-4 h-4 text-teal-600 dark:text-teal-400" />}
             <span>{copied ? (isFr ? 'Copié !' : 'Copied!') : isFr ? 'Copier le code texte' : 'Copy code string'}</span>

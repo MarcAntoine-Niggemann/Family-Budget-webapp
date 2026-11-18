@@ -9,19 +9,73 @@ import {
   CategoryBudgetEntity
 } from '../types';
 import { computeDefaultCardPeriod } from '../utils/creditCardPeriod';
+import { isSafeRegexPattern } from '../utils/csvParser';
+
+export const DEFAULT_OPEN_BANKING_IO_URL = 'https://api.open-banking.io';
 
 export const DEFAULT_OPEN_BANKING_CONFIG: OpenBankingConfig = {
   apiKey: '',
   apiSecret: '',
+  proxyUrl: '',
   environment: 'PRODUCTION',
   autoSyncOnLaunch: false,
   isConnected: false,
   lastSyncTimestamp: null,
   status: 'DISCONNECTED',
-  statusMessage: 'Aucune connexion active. Utilisez l’import CSV gratuit ou configurez open-banking.io.',
+  statusMessage: 'Aucune connexion active. Utilisez l’import CSV gratuit ou connectez open-banking.io.',
   discoveredAccounts: [],
   accountMappings: {}
 };
+
+export function validateOpenBankingProxyUrl(proxyUrl?: string): {
+  valid: boolean;
+  normalized: string;
+  isCustomProxy: boolean;
+  error?: string;
+} {
+  const raw = (proxyUrl || '').trim().replace(/\/+$/, '');
+  if (!raw) {
+    return {
+      valid: true,
+      normalized: DEFAULT_OPEN_BANKING_IO_URL,
+      isCustomProxy: false
+    };
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:') {
+      return {
+        valid: false,
+        normalized: DEFAULT_OPEN_BANKING_IO_URL,
+        isCustomProxy: true,
+        error: 'L’URL personnalisée Open Banking doit utiliser le protocole HTTPS.'
+      };
+    }
+    return {
+      valid: true,
+      normalized: parsed.origin + parsed.pathname.replace(/\/+$/, ''),
+      isCustomProxy: true
+    };
+  } catch {
+    return {
+      valid: false,
+      normalized: DEFAULT_OPEN_BANKING_IO_URL,
+      isCustomProxy: true,
+      error: 'URL personnalisée Open Banking invalide.'
+    };
+  }
+}
+
+function buildOpenBankingHeaders(config: OpenBankingConfig): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${config.apiKey.trim()}`,
+    'Accept': 'application/json'
+  };
+  if (config.apiSecret && config.apiSecret.trim()) {
+    headers['X-API-Secret'] = config.apiSecret.trim();
+  }
+  return headers;
+}
 
 /**
  * Mock sandbox accounts matching European PSD2 / open-banking.io schema.
@@ -116,7 +170,7 @@ export function getMockSandboxTransactions(): OpenBankingTransactionDto[] {
 }
 
 /**
- * Tests connection with open-banking.io (or Sandbox simulator when explicitly selected).
+ * Tests connection with Open Banking (via Sandbox simulator, direct api.open-banking.io, or optional HTTPS proxy).
  */
 export async function testOpenBankingConnection(
   config: OpenBankingConfig
@@ -131,23 +185,35 @@ export async function testOpenBankingConnection(
     };
   }
 
-  if (!config.apiKey || !config.apiKey.trim()) {
+  const endpointCheck = validateOpenBankingProxyUrl(config.proxyUrl);
+  if (!endpointCheck.valid) {
     return {
       success: false,
-      message: 'Veuillez saisir votre clé API (Client ID / API Key) pour vous connecter.',
+      message: endpointCheck.error || 'URL Open Banking HTTPS invalide.',
       accounts: []
     };
   }
 
-  // Live HTTP request to open-banking.io API
+  if (!config.apiKey || !config.apiKey.trim()) {
+    return {
+      success: false,
+      message: 'Veuillez saisir votre API Key pour vous connecter en environnement Live Production.',
+      accounts: []
+    };
+  }
+
+  if (!endpointCheck.isCustomProxy && (!config.apiSecret || !config.apiSecret.trim())) {
+    return {
+      success: false,
+      message: 'Veuillez saisir votre API Key et API Secret pour la connexion directe open-banking.io.',
+      accounts: []
+    };
+  }
+
   try {
-    const res = await fetch('https://api.open-banking.io/v1/accounts', {
+    const res = await fetch(`${endpointCheck.normalized}/v1/accounts`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey.trim()}`,
-        'X-API-Secret': (config.apiSecret || '').trim(),
-        'Accept': 'application/json'
-      }
+      headers: buildOpenBankingHeaders(config)
     });
 
     if (!res.ok) {
@@ -179,14 +245,14 @@ export async function testOpenBankingConnection(
     // Do not fall back to fake accounts when live connection fails
     return {
       success: false,
-      message: `Échec de connexion : ${err.message || 'Impossible de joindre open-banking.io'}. Vérifiez vos clés API.`,
+      message: `Échec de connexion : ${err.message || 'Impossible de joindre api.open-banking.io'}.`,
       accounts: []
     };
   }
 }
 
 /**
- * Synchronizes accounts and transactions from open-banking.io with deduplication & auto-categorization.
+ * Synchronizes accounts and transactions from Open Banking with deduplication & auto-categorization.
  */
 export async function executeOpenBankingSync(
   config: OpenBankingConfig,
@@ -216,19 +282,20 @@ export async function executeOpenBankingSync(
     remoteAccounts = MOCK_SANDBOX_ACCOUNTS;
     remoteTransactions = getMockSandboxTransactions();
   } else {
+    const endpointCheck = validateOpenBankingProxyUrl(config.proxyUrl);
+    if (!endpointCheck.valid) {
+      throw new Error(endpointCheck.error || 'Invalid Open Banking HTTPS endpoint.');
+    }
+
     const conn = await testOpenBankingConnection(config);
     if (!conn.success) {
       throw new Error(conn.message);
     }
     remoteAccounts = conn.accounts;
 
-    const txRes = await fetch('https://api.open-banking.io/v1/transactions', {
+    const txRes = await fetch(`${endpointCheck.normalized}/v1/transactions`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey.trim()}`,
-        'X-API-Secret': (config.apiSecret || '').trim(),
-        'Accept': 'application/json'
-      }
+      headers: buildOpenBankingHeaders(config)
     });
 
     if (!txRes.ok) {
@@ -317,10 +384,12 @@ export async function executeOpenBankingSync(
       else if (rule.matchType === 'STARTS_WITH' && cleanLabel.startsWith(pat)) matched = true;
       else if (rule.matchType === 'EXACT' && cleanLabel === pat) matched = true;
       else if (rule.matchType === 'REGEX') {
-        try {
-          if (new RegExp(rule.pattern, 'i').test(cleanLabel)) matched = true;
-        } catch {
-          // Ignore invalid regex
+        if (isSafeRegexPattern(rule.pattern).valid) {
+          try {
+            if (new RegExp(rule.pattern, 'i').test(cleanLabel)) matched = true;
+          } catch {
+            // Ignore invalid regex
+          }
         }
       }
 

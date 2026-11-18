@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Plus, Edit2, Trash2, Sparkles, AlertCircle, X, Power } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { CategorizationRuleEntity, RuleMatchType } from '../types';
-import { categorizeLabel } from '../utils/csvParser';
+import { categorizeLabel, isSafeRegexPattern, MAX_RULE_PATTERN_LENGTH } from '../utils/csvParser';
 import { CategoryIcon } from '../components/CategoryIcon';
 
 export const RulesScreen: React.FC = () => {
@@ -70,19 +70,27 @@ export const RulesScreen: React.FC = () => {
   const isPriorityValid = !Number.isNaN(parsedPriority) && parsedPriority >= 1;
 
   const regexError = useMemo(() => {
-    if (matchType !== 'REGEX' || !pattern.trim()) return null;
-    try {
-      new RegExp(pattern.trim(), 'i');
-      return null;
-    } catch (err: any) {
-      return err?.message || (isFr ? 'Expression régulière invalide' : 'Invalid regular expression');
+    const trimmed = pattern.trim();
+    if (!trimmed) return null;
+    if (trimmed.length > MAX_RULE_PATTERN_LENGTH) {
+      return isFr
+        ? `Le motif dépasse la limite de ${MAX_RULE_PATTERN_LENGTH} caractères.`
+        : `Pattern exceeds the ${MAX_RULE_PATTERN_LENGTH}-character limit.`;
     }
+    if (matchType !== 'REGEX') return null;
+    const check = isSafeRegexPattern(trimmed);
+    return check.valid ? null : check.reason || (isFr ? 'Expression régulière invalide' : 'Invalid regular expression');
   }, [matchType, pattern, isFr]);
 
   const selectedCategory = activeCategories.find(c => c.id === targetCatId);
   const selectedBudget = targetCategoryBudgets.find(b => b.id === targetBudgetId);
   const canSave = Boolean(
-    pattern.trim() && selectedCategory && selectedBudget && isPriorityValid && !regexError
+    pattern.trim() &&
+      pattern.trim().length <= MAX_RULE_PATTERN_LENGTH &&
+      selectedCategory &&
+      selectedBudget &&
+      isPriorityValid &&
+      !regexError
   );
 
   const handleSave = (e: React.FormEvent) => {
@@ -362,6 +370,7 @@ export const RulesScreen: React.FC = () => {
                 <input
                   type="text"
                   required
+                  maxLength={MAX_RULE_PATTERN_LENGTH}
                   placeholder="Ex: CARREFOUR|AUCHAN ou EDF"
                   value={pattern}
                   onChange={e => setPattern(e.target.value)}

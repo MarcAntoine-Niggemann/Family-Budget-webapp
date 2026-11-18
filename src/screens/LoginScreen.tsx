@@ -25,7 +25,8 @@ import {
   checkBiometricSupport,
   enrollBiometricWithPrf
 } from '../utils/biometricKeyvault';
-import { generateRandomBytes } from '../utils/crypto';
+import { generateRandomBytes, MIN_VAULT_PASSPHRASE_LENGTH, evaluatePassphraseStrength } from '../utils/crypto';
+import { validateFirebaseConfigFields } from '../services/firebaseSyncService';
 import { BYOB_FIRESTORE_RULES } from './FirebaseSyncScreen';
 
 export const LoginScreen: React.FC = () => {
@@ -36,6 +37,8 @@ export const LoginScreen: React.FC = () => {
     isVaultUnlocked,
     biometricGateVerified,
     legacyPlaintextConfig,
+    legacyV2VaultDetected,
+    pinLockoutSecondsRemaining,
     startDemoMode,
     lockVault,
     unlockVaultWithBiometrics,
@@ -270,8 +273,8 @@ export const LoginScreen: React.FC = () => {
         setEnableBackupPin(true);
         setNoticeMsg(
           isFr
-            ? 'Empreinte enregistrée comme barrière d’accès. Ce navigateur ne supporte pas WebAuthn PRF : définissez un code PIN (6 caractères min.) pour chiffrer les données locales.'
-            : 'Fingerprint enrolled as access gate. This browser does not support WebAuthn PRF: set a Vault PIN (min. 6 characters) to encrypt local storage.'
+            ? `Empreinte enregistrée comme barrière d’accès. Ce navigateur ne supporte pas WebAuthn PRF : définissez un mot de passe (${MIN_VAULT_PASSPHRASE_LENGTH} caractères min.) pour chiffrer les données locales.`
+            : `Fingerprint enrolled as access gate. This browser does not support WebAuthn PRF: set a Vault Passphrase (min. ${MIN_VAULT_PASSPHRASE_LENGTH} characters) to encrypt local storage.`
         );
       }
     } finally {
@@ -284,11 +287,17 @@ export const LoginScreen: React.FC = () => {
     setErrorMsg(null);
     setNoticeMsg(null);
 
-    if (!projectId.trim() || !apiKey.trim()) {
+    const fieldValidation = validateFirebaseConfigFields({
+      projectId: projectId.trim(),
+      apiKey: apiKey.trim(),
+      applicationId: applicationId.trim()
+    });
+    if (!fieldValidation.valid) {
       setErrorMsg(
-        isFr
-          ? 'Veuillez saisir votre Firebase Project ID et Web API Key.'
-          : 'Please provide your Firebase Project ID and Web API Key.'
+        fieldValidation.error ||
+          (isFr
+            ? 'Veuillez saisir un Firebase Project ID et une Web API Key valides.'
+            : 'Please provide a valid Firebase Project ID and Web API Key.')
       );
       return;
     }
@@ -320,17 +329,19 @@ export const LoginScreen: React.FC = () => {
     const needPin = !hasPrf || enableBackupPin;
 
     if (needPin) {
-      if (setupPin.trim().length < 6) {
+      if (setupPin.trim().length < MIN_VAULT_PASSPHRASE_LENGTH) {
         setErrorMsg(
           isFr
-            ? 'Un code PIN de 6 caractères minimum est requis pour chiffrer votre coffre local.'
-            : 'A Vault PIN of at least 6 characters is required to encrypt your local vault.'
+            ? `Un mot de passe de ${MIN_VAULT_PASSPHRASE_LENGTH} caractères minimum est requis pour chiffrer votre coffre local.`
+            : `A Vault Passphrase of at least ${MIN_VAULT_PASSPHRASE_LENGTH} characters is required to encrypt your local vault.`
         );
         return;
       }
       if (setupPin.trim() !== setupPinConfirm.trim()) {
         setErrorMsg(
-          isFr ? 'Les deux codes PIN saisis ne correspondent pas.' : 'The Vault PIN entries do not match.'
+          isFr
+            ? 'Les deux mots de passe / codes PIN saisis ne correspondent pas.'
+            : 'The Vault Passphrase entries do not match.'
         );
         return;
       }
@@ -371,30 +382,57 @@ export const LoginScreen: React.FC = () => {
   };
 
   const handleQrCodeScanned = (scannedString: string) => {
+    setErrorMsg(null);
+    setNoticeMsg(null);
     try {
       const data = JSON.parse(scannedString);
-      if (data.projectId) setProjectId(data.projectId);
-      if (data.apiKey) setApiKey(data.apiKey);
-      if (data.applicationId) setApplicationId(data.applicationId);
-      if (data.familyName) setFamilyName(data.familyName);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('Invalid QR payload');
+      }
 
-      if (data.projectId && data.apiKey) {
-        setViewMode('SETUP');
-        setSetupTab('BYOB');
-        setErrorMsg(null);
-        setNoticeMsg(
-          isFr
-            ? `Coffre BYOB « ${data.projectId} » importé. Protégez-le avec votre empreinte ou code PIN avant de vous connecter.`
-            : `BYOB Vault "${data.projectId}" imported. Protect it with your fingerprint or PIN before signing in.`
+      const scannedProjectId = typeof data.projectId === 'string' ? data.projectId.trim() : '';
+      const scannedApiKey = typeof data.apiKey === 'string' ? data.apiKey.trim() : '';
+      const scannedAppId = typeof data.applicationId === 'string' ? data.applicationId.trim() : '';
+      const scannedFamilyName =
+        typeof data.familyName === 'string' && data.familyName.trim()
+          ? data.familyName.trim().slice(0, 120)
+          : 'Private Family Vault';
+
+      const validation = validateFirebaseConfigFields({
+        projectId: scannedProjectId,
+        apiKey: scannedApiKey,
+        applicationId: scannedAppId
+      });
+
+      if (!validation.valid) {
+        setErrorMsg(
+          validation.error ||
+            (isFr
+              ? 'QR Code invalide : configuration Firebase incomplète ou malformée.'
+              : 'Invalid QR Code: incomplete or malformed Firebase configuration.')
         );
-        showToast(isFr ? 'Identifiants BYOB chargés' : 'BYOB credentials loaded');
         return;
       }
+
+      setProjectId(scannedProjectId);
+      setApiKey(scannedApiKey);
+      setApplicationId(scannedAppId);
+      setFamilyName(scannedFamilyName);
+      setViewMode('SETUP');
+      setSetupTab('BYOB');
+      setNoticeMsg(
+        isFr
+          ? `Coffre BYOB « ${scannedProjectId} » importé. Protégez-le avec votre empreinte ou mot de passe (${MIN_VAULT_PASSPHRASE_LENGTH}+ car.) avant de vous connecter.`
+          : `BYOB Vault "${scannedProjectId}" imported. Protect it with your fingerprint or passphrase (${MIN_VAULT_PASSPHRASE_LENGTH}+ chars) before signing in.`
+      );
+      showToast(isFr ? 'Identifiants BYOB chargés' : 'BYOB credentials loaded');
     } catch {
-      setProjectId(scannedString);
+      setErrorMsg(
+        isFr
+          ? 'QR Code refusé : le contenu doit être un objet JSON valide généré depuis un coffre Budget Family.'
+          : 'QR Code rejected: payload must be valid JSON exported from a Budget Family vault.'
+      );
     }
-    setViewMode('SETUP');
-    setSetupTab('BYOB');
   };
 
   const handleForgetByob = async () => {
@@ -432,10 +470,12 @@ export const LoginScreen: React.FC = () => {
 
   const hasSetupPrf = Boolean(setupCredId && setupPrfSecret && setupPrfSalt);
   const showSetupPinInputs = !hasSetupPrf || enableBackupPin;
+  const setupStrength = evaluatePassphraseStrength(setupPin);
   const setupProtectionReady =
     isVaultUnlocked ||
     hasSetupPrf ||
-    (setupPin.trim().length >= 6 && setupPin.trim() === setupPinConfirm.trim());
+    (setupPin.trim().length >= MIN_VAULT_PASSPHRASE_LENGTH &&
+      setupPin.trim() === setupPinConfirm.trim());
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6">
@@ -578,25 +618,39 @@ export const LoginScreen: React.FC = () => {
                     (showPinUnlock || !vaultLockMeta?.credentialId || biometricGateVerified) && (
                       <form onSubmit={handlePinUnlock} className="space-y-2.5 text-left">
                         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-                          {isFr ? 'Code PIN du coffre' : 'Vault PIN'}
+                          {isFr ? 'Mot de passe / Code PIN du coffre' : 'Vault Passphrase / PIN'}
                         </label>
+                        {pinLockoutSecondsRemaining > 0 && (
+                          <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs font-mono tabular-nums">
+                            {isFr
+                              ? `Trop de tentatives. Patientez ${pinLockoutSecondsRemaining}s avant de réessayer.`
+                              : `Too many failed attempts. Wait ${pinLockoutSecondsRemaining}s before retrying.`}
+                          </div>
+                        )}
                         <div className="flex gap-2">
                           <input
                             type="password"
                             required
                             autoFocus
+                            disabled={pinLockoutSecondsRemaining > 0}
                             value={unlockPin}
                             onChange={e => setUnlockPin(e.target.value)}
-                            placeholder={isFr ? 'Saisir votre code PIN...' : 'Enter Vault PIN...'}
-                            className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+                            placeholder={isFr ? 'Saisir votre mot de passe...' : 'Enter Vault Passphrase...'}
+                            className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 disabled:opacity-50"
                           />
                           <button
                             type="submit"
-                            disabled={isLoading || !unlockPin.trim()}
+                            disabled={isLoading || !unlockPin.trim() || pinLockoutSecondsRemaining > 0}
                             className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 text-white dark:text-slate-950 font-bold text-xs transition flex items-center gap-1.5 disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
                           >
                             <KeyRound className="w-4 h-4" />
-                            <span>{isFr ? 'Déverrouiller' : 'Unlock'}</span>
+                            <span>
+                              {pinLockoutSecondsRemaining > 0
+                                ? `${pinLockoutSecondsRemaining}s`
+                                : isFr
+                                ? 'Déverrouiller'
+                                : 'Unlock'}
+                            </span>
                           </button>
                         </div>
                       </form>
@@ -750,14 +804,34 @@ export const LoginScreen: React.FC = () => {
               </div>
             )}
 
+            {legacyV2VaultDetected && !hasSavedVault && (
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 text-xs flex items-start justify-between gap-3 leading-relaxed">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    {isFr
+                      ? 'Ancien coffre v2 (120 000 itérations PBKDF2) détecté. Par sécurité (v3 · 600 000 itérations et mot de passe 8+ caractères), reconnectez votre projet Firestore ou effacez l’ancien cache ci-dessous.'
+                      : 'Legacy v2 vault metadata (120k PBKDF2 iterations) detected. Under strict v3 hardening (600,000 iterations & 8+ char passphrase), re-link your Firestore vault or wipe the legacy cache.'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleForgetByob}
+                  className="px-2.5 py-1 rounded-lg bg-amber-200/70 hover:bg-amber-200 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  {isFr ? 'Effacer' : 'Wipe'}
+                </button>
+              </div>
+            )}
+
             {legacyPlaintextConfig && !hasSavedVault && (
               <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 text-xs flex items-start justify-between gap-3 leading-relaxed">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <span>
                     {isFr
-                      ? 'Ancienne configuration non chiffrée détectée dans le navigateur. Enregistrez votre empreinte ou un code PIN ci-dessous pour la chiffrer en AES-256-GCM.'
-                      : 'Unencrypted legacy vault configuration detected in browser storage. Enroll your fingerprint or set a Vault PIN below to encrypt it with AES-256-GCM.'}
+                      ? 'Ancienne configuration non chiffrée détectée dans le navigateur. Enregistrez votre empreinte ou un mot de passe ci-dessous pour la chiffrer en AES-256-GCM.'
+                      : 'Unencrypted legacy vault configuration detected in browser storage. Enroll your fingerprint or set a Vault Passphrase below to encrypt it with AES-256-GCM.'}
                   </span>
                 </div>
                 <button
@@ -1047,35 +1121,94 @@ export const LoginScreen: React.FC = () => {
                     )}
 
                     {showSetupPinInputs && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        <div>
-                          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            {isFr ? 'Code PIN du coffre (6+ car.)' : 'Vault PIN (6+ chars)'}
-                          </label>
-                          <input
-                            type="password"
-                            required={!hasSetupPrf || enableBackupPin}
-                            minLength={6}
-                            value={setupPin}
-                            onChange={e => setSetupPin(e.target.value)}
-                            placeholder="••••••"
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
-                          />
+                      <div className="space-y-2.5 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
+                              {isFr
+                                ? `Mot de passe / PIN (${MIN_VAULT_PASSPHRASE_LENGTH}+ car.)`
+                                : `Vault Passphrase (${MIN_VAULT_PASSPHRASE_LENGTH}+ chars)`}
+                            </label>
+                            <input
+                              type="password"
+                              required={!hasSetupPrf || enableBackupPin}
+                              minLength={MIN_VAULT_PASSPHRASE_LENGTH}
+                              value={setupPin}
+                              onChange={e => setSetupPin(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
+                              {isFr ? 'Confirmer le mot de passe' : 'Confirm Vault Passphrase'}
+                            </label>
+                            <input
+                              type="password"
+                              required={!hasSetupPrf || enableBackupPin}
+                              minLength={MIN_VAULT_PASSPHRASE_LENGTH}
+                              value={setupPinConfirm}
+                              onChange={e => setSetupPinConfirm(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            {isFr ? 'Confirmer le code PIN' : 'Confirm Vault PIN'}
-                          </label>
-                          <input
-                            type="password"
-                            required={!hasSetupPrf || enableBackupPin}
-                            minLength={6}
-                            value={setupPinConfirm}
-                            onChange={e => setSetupPinConfirm(e.target.value)}
-                            placeholder="••••••"
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
-                          />
-                        </div>
+
+                        {setupPin.length > 0 && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-500 dark:text-slate-400">
+                                {isFr ? 'Robustesse (PBKDF2 600k) :' : 'Strength (PBKDF2 600k):'}
+                              </span>
+                              <span
+                                className={`font-semibold ${
+                                  setupStrength.score >= 4
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : setupStrength.score === 3
+                                    ? 'text-teal-600 dark:text-teal-400'
+                                    : setupStrength.score === 2
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-rose-600 dark:text-rose-400'
+                                }`}
+                              >
+                                {setupStrength.label === 'strong'
+                                  ? isFr
+                                    ? 'Forte'
+                                    : 'Strong'
+                                  : setupStrength.label === 'good'
+                                  ? isFr
+                                    ? 'Bonne'
+                                    : 'Good'
+                                  : setupStrength.label === 'fair'
+                                  ? isFr
+                                    ? 'Moyenne'
+                                    : 'Fair'
+                                  : isFr
+                                  ? 'Faible'
+                                  : 'Weak'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1 h-1.5">
+                              {[1, 2, 3, 4].map(level => (
+                                <div
+                                  key={level}
+                                  className={`rounded-full transition-colors ${
+                                    setupStrength.score >= level
+                                      ? setupStrength.score >= 4
+                                        ? 'bg-emerald-500'
+                                        : setupStrength.score === 3
+                                        ? 'bg-teal-500'
+                                        : setupStrength.score === 2
+                                        ? 'bg-amber-500'
+                                        : 'bg-rose-500'
+                                      : 'bg-slate-200 dark:bg-slate-800'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 

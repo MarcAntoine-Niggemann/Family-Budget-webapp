@@ -19,6 +19,7 @@ import {
   CategoryEntity,
   FamilyMemberEntity,
   FirebaseConfigEntity,
+  MemberRole,
   SharedSettlementEntity,
   SyncOutboxEntity,
   SyncStateEntity,
@@ -28,6 +29,39 @@ import {
 let firebaseAppInstance: FirebaseApp | null = null;
 let firestoreInstance: Firestore | null = null;
 let activeConfigSignature = '';
+
+const PROJECT_ID_REGEX = /^[a-z0-9-]{4,64}$/;
+const API_KEY_REGEX = /^[A-Za-z0-9_-]{20,128}$/;
+const APP_ID_REGEX = /^1:\d+:web:[a-fA-F0-9]+$/;
+
+export function validateFirebaseConfigFields(config?: Partial<FirebaseConfigEntity>): {
+  valid: boolean;
+  error?: string;
+} {
+  const projectId = config?.projectId?.trim() || '';
+  const apiKey = config?.apiKey?.trim() || '';
+  const appId = config?.applicationId?.trim() || '';
+
+  if (!PROJECT_ID_REGEX.test(projectId)) {
+    return {
+      valid: false,
+      error: 'Format de Firebase Project ID invalide (lettres minuscules, chiffres et tirets uniquement, 4-64 caractères).'
+    };
+  }
+  if (!API_KEY_REGEX.test(apiKey)) {
+    return {
+      valid: false,
+      error: 'Format de Firebase Web API Key invalide.'
+    };
+  }
+  if (appId && !APP_ID_REGEX.test(appId)) {
+    return {
+      valid: false,
+      error: 'Format de Firebase Application ID invalide (attendu : 1:<num>:web:<hex>).'
+    };
+  }
+  return { valid: true };
+}
 
 function buildConfigSignature(config?: Partial<FirebaseConfigEntity>): string {
   const apiKey = config?.apiKey?.trim() || '';
@@ -63,6 +97,11 @@ export function getOrInitFirestore(config?: Partial<FirebaseConfigEntity>): {
     // If no explicit user credentials are provided, remain in clean offline local mode
     if (!apiKey || !projectId) {
       return { app: null, db: null };
+    }
+
+    const validation = validateFirebaseConfigFields({ projectId, apiKey, applicationId: appId });
+    if (!validation.valid) {
+      return { app: null, db: null, error: validation.error };
     }
 
     const nextSig = buildConfigSignature(config);
@@ -124,6 +163,7 @@ export interface SyncResult {
   incomingMembers?: FamilyMemberEntity[];
   incomingSharedSettlements?: SharedSettlementEntity[];
   incomingFamilyName?: string;
+  resolvedUserRole?: MemberRole;
 }
 
 function toMillis(val: any, fallback: number): number {
@@ -150,8 +190,8 @@ function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, a
 }
 
 /**
- * Executes the Transactional Outbox Push + Delta Pull sync pipeline
- * specified in docs/SYNC_ALGORITHM.md against real BYOB Cloud Firestore.
+ * Executes the Atomic RBAC Bootstrap + Transactional Outbox Push + Delta Pull sync pipeline
+ * against real BYOB Cloud Firestore.
  */
 export async function executeBidirectionalSync(payload: SyncPayload): Promise<SyncResult> {
   const syncStartTime = Date.now();
@@ -190,11 +230,13 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     };
   }
 
-  // Enforce real Firebase Auth check for BYOB Firestore
+  // Enforce real verified Firebase Auth check for BYOB Firestore
   const auth = getAuth(app);
   const currentUser = auth.currentUser;
-  if (!currentUser || !currentUser.email) {
-    const authErrMsg = 'Authentification Google OAuth requise pour synchroniser avec votre Firestore BYOB.';
+  if (!currentUser || !currentUser.email || !currentUser.emailVerified) {
+    const authErrMsg = !currentUser || !currentUser.email
+      ? 'Authentification Google OAuth requise pour synchroniser avec votre Firestore BYOB.'
+      : 'Votre adresse e-mail Google doit être vérifiée pour accéder à votre coffre Firestore.';
     return {
       success: false,
       pushedCount: 0,
@@ -213,6 +255,81 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
 
   try {
     // -------------------------------------------------------------
+    // PHASE 1: ATOMIC RBAC & METADATA BOOTSTRAP (must run BEFORE Outbox Push)
+    // -------------------------------------------------------------
+    let incomingFamilyName: string | undefined;
+    const rolesRef = doc(db, 'security_config', 'roles');
+    const vaultRef = doc(db, 'family_meta', 'vault');
+    const rolesSnap = await getDoc(rolesRef);
+    const vaultSnap = await getDoc(vaultRef);
+
+    const existingRolesData = rolesSnap.exists()
+      ? (rolesSnap.data()?.userRoles as Record<string, string> | undefined)
+      : undefined;
+    const existingVaultData = vaultSnap.exists() ? vaultSnap.data() : undefined;
+
+    if (existingVaultData?.familyName) {
+      incomingFamilyName = String(existingVaultData.familyName);
+    }
+
+    const userEmailLower = currentUser.email.toLowerCase();
+    const isFreshVaultBootstrap = !rolesSnap.exists() && !vaultSnap.exists();
+    const serverRole = isFreshVaultBootstrap
+      ? 'ADMIN'
+      : ((existingRolesData?.[userEmailLower] as MemberRole | undefined) || 'VIEWER');
+    const isCallerAdmin = serverRole === 'ADMIN';
+
+    if (isFreshVaultBootstrap) {
+      // Atomic single-batch create for security_config/roles + family_meta/vault
+      const userRolesMap: Record<string, string> = {
+        [userEmailLower]: 'ADMIN'
+      };
+      for (const m of payload.members) {
+        if (m.email && m.email.trim()) {
+          const emailKey = m.email.trim().toLowerCase();
+          if (emailKey !== userEmailLower) {
+            userRolesMap[emailKey] = m.role;
+          }
+        }
+      }
+
+      const bootstrapBatch = writeBatch(db);
+      bootstrapBatch.set(rolesRef, {
+        userRoles: userRolesMap,
+        updatedAt: syncStartTime
+      });
+      bootstrapBatch.set(vaultRef, {
+        familyName: (payload.config.familyName || 'Family Budget Vault').trim().slice(0, 120) || 'Family Budget Vault',
+        adminEmail: currentUser.email,
+        updatedAt: syncStartTime
+      });
+      await bootstrapBatch.commit();
+    } else if (isCallerAdmin) {
+      if (payload.outbox.some(o => o.entityType === 'MEMBER')) {
+        const userRolesMap: Record<string, string> = {};
+        for (const m of payload.members) {
+          if (!m.isDeleted && m.email && m.email.trim()) {
+            userRolesMap[m.email.trim().toLowerCase()] = m.role;
+          }
+        }
+        userRolesMap[userEmailLower] = 'ADMIN';
+        await setDoc(rolesRef, { userRoles: userRolesMap, updatedAt: syncStartTime });
+      }
+
+      const desiredName = (payload.config.familyName || '').trim().slice(0, 120);
+      if (desiredName && existingVaultData && desiredName !== existingVaultData.familyName) {
+        await setDoc(
+          vaultRef,
+          {
+            familyName: desiredName,
+            updatedAt: syncStartTime
+          },
+          { merge: true }
+        );
+      }
+    }
+
+    // -------------------------------------------------------------
     // PHASE 2: PUSH OUTBOX (Local Device -> Firestore) in chunks of 400
     // -------------------------------------------------------------
     const pendingOutbox = [...payload.outbox];
@@ -227,97 +344,98 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
           const rawId = item.entityId.replace('tx_', '');
           const txId = parseInt(rawId, 10);
           const docRef = doc(db, 'transactions', `tx_${txId}`);
+          const tx = payload.transactions.find(t => t.id === txId);
 
           if (item.operation === 'DELETE') {
-            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
-            chunkOps++;
-          } else {
-            const tx = payload.transactions.find(t => t.id === txId);
             if (tx) {
-              batch.set(docRef, stripUndefined({ ...tx, updatedAt: item.createdAt }), { merge: true });
+              batch.set(docRef, stripUndefined({ ...tx, isDeleted: true, updatedAt: item.createdAt }));
               chunkOps++;
             }
+          } else if (tx) {
+            batch.set(docRef, stripUndefined({ ...tx, updatedAt: item.createdAt }), { merge: true });
+            chunkOps++;
           }
         } else if (item.entityType === 'ACCOUNT') {
           const accId = item.entityId;
           const docRef = doc(db, 'accounts', accId);
+          const acc = payload.accounts.find(a => a.id === accId);
           if (item.operation === 'DELETE') {
-            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
-            chunkOps++;
-          } else {
-            const acc = payload.accounts.find(a => a.id === accId);
             if (acc) {
-              batch.set(docRef, stripUndefined({ ...acc, updatedAt: item.createdAt }), { merge: true });
+              batch.set(docRef, stripUndefined({ ...acc, isDeleted: true, updatedAt: item.createdAt }));
               chunkOps++;
             }
+          } else if (acc) {
+            batch.set(docRef, stripUndefined({ ...acc, updatedAt: item.createdAt }), { merge: true });
+            chunkOps++;
           }
         } else if (item.entityType === 'CATEGORY') {
           const rawId = item.entityId.replace('cat_', '');
           const catId = parseInt(rawId, 10);
           const docRef = doc(db, 'categories', `cat_${catId}`);
+          const cat = payload.categories.find(c => c.id === catId);
           if (item.operation === 'DELETE') {
-            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
-            chunkOps++;
-          } else {
-            const cat = payload.categories.find(c => c.id === catId);
             if (cat) {
-              batch.set(docRef, stripUndefined({ ...cat, updatedAt: item.createdAt }), { merge: true });
+              batch.set(docRef, stripUndefined({ ...cat, isDeleted: true, updatedAt: item.createdAt }));
               chunkOps++;
             }
+          } else if (cat) {
+            batch.set(docRef, stripUndefined({ ...cat, updatedAt: item.createdAt }), { merge: true });
+            chunkOps++;
           }
         } else if (item.entityType === 'BUDGET') {
           const rawId = item.entityId.replace('budget_', '');
           const bId = parseInt(rawId, 10);
           const docRef = doc(db, 'category_budgets', `budget_${bId}`);
+          const b = payload.budgets.find(bg => bg.id === bId);
           if (item.operation === 'DELETE') {
-            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
-            chunkOps++;
-          } else {
-            const b = payload.budgets.find(bg => bg.id === bId);
             if (b) {
-              batch.set(docRef, stripUndefined({ ...b, updatedAt: item.createdAt }), { merge: true });
+              batch.set(docRef, stripUndefined({ ...b, isDeleted: true, updatedAt: item.createdAt }));
               chunkOps++;
             }
+          } else if (b) {
+            batch.set(docRef, stripUndefined({ ...b, updatedAt: item.createdAt }), { merge: true });
+            chunkOps++;
           }
         } else if (item.entityType === 'RULE') {
           const rawId = item.entityId.replace('rule_', '');
           const rId = parseInt(rawId, 10);
           const docRef = doc(db, 'rules', `rule_${rId}`);
+          const r = payload.rules.find(rl => rl.id === rId);
           if (item.operation === 'DELETE') {
-            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
-            chunkOps++;
-          } else {
-            const r = payload.rules.find(rl => rl.id === rId);
             if (r) {
-              batch.set(docRef, stripUndefined({ ...r, updatedAt: item.createdAt }), { merge: true });
+              batch.set(docRef, stripUndefined({ ...r, isDeleted: true, updatedAt: item.createdAt }));
               chunkOps++;
             }
+          } else if (r) {
+            batch.set(docRef, stripUndefined({ ...r, updatedAt: item.createdAt }), { merge: true });
+            chunkOps++;
           }
         } else if (item.entityType === 'MEMBER') {
+          if (!isCallerAdmin) continue;
           const memberId = item.entityId;
           const docRef = doc(db, 'family_members', memberId);
+          const m = payload.members.find(mb => mb.id === memberId);
           if (item.operation === 'DELETE') {
-            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
-            chunkOps++;
-          } else {
-            const m = payload.members.find(mb => mb.id === memberId);
             if (m) {
-              batch.set(docRef, stripUndefined({ ...m, updatedAt: item.createdAt }), { merge: true });
+              batch.set(docRef, stripUndefined({ ...m, isDeleted: true, updatedAt: item.createdAt }));
               chunkOps++;
             }
+          } else if (m) {
+            batch.set(docRef, stripUndefined({ ...m, updatedAt: item.createdAt }), { merge: true });
+            chunkOps++;
           }
         } else if (item.entityType === 'SHARED_SETTLEMENT') {
           const settlementId = item.entityId;
           const docRef = doc(db, 'shared_settlements', settlementId);
+          const st = (payload.sharedSettlements || []).find(s => s.id === settlementId);
           if (item.operation === 'DELETE') {
-            batch.set(docRef, { isDeleted: true, updatedAt: item.createdAt }, { merge: true });
-            chunkOps++;
-          } else {
-            const st = (payload.sharedSettlements || []).find(s => s.id === settlementId);
             if (st) {
-              batch.set(docRef, stripUndefined({ ...st, updatedAt: item.createdAt }), { merge: true });
+              batch.set(docRef, stripUndefined({ ...st, isDeleted: true, updatedAt: item.createdAt }));
               chunkOps++;
             }
+          } else if (st) {
+            batch.set(docRef, stripUndefined({ ...st, updatedAt: item.createdAt }), { merge: true });
+            chunkOps++;
           }
         }
       }
@@ -326,72 +444,6 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
         await batch.commit();
         pushedCount += chunkOps;
       }
-    }
-
-    // -------------------------------------------------------------
-    // PHASE 3: METADATA & RBAC ROLES SYNC (Read first, bootstrap only if empty)
-    // -------------------------------------------------------------
-    let incomingFamilyName: string | undefined;
-    const rolesSnap = await getDoc(doc(db, 'security_config', 'roles'));
-    const vaultSnap = await getDoc(doc(db, 'family_meta', 'vault'));
-
-    const existingRolesData = rolesSnap.exists() ? (rolesSnap.data()?.userRoles as Record<string, string> | undefined) : undefined;
-    const existingVaultData = vaultSnap.exists() ? vaultSnap.data() : undefined;
-
-    if (existingVaultData?.familyName) {
-      incomingFamilyName = String(existingVaultData.familyName);
-    }
-
-    const userEmailLower = currentUser.email.toLowerCase();
-    const isRolesEmpty = !existingRolesData || Object.keys(existingRolesData).length === 0;
-    const isCallerAdmin =
-      isRolesEmpty ||
-      !existingVaultData ||
-      existingRolesData?.[userEmailLower] === 'ADMIN' ||
-      String(existingVaultData?.adminEmail || '').toLowerCase() === userEmailLower;
-
-    // Bootstrap security_config/roles and family_meta/vault only if uninitialized OR caller is Admin updating members
-    if (isRolesEmpty || !existingVaultData) {
-      const userRolesMap: Record<string, string> = {
-        ...(existingRolesData || {}),
-        [userEmailLower]: 'ADMIN'
-      };
-      for (const m of payload.members) {
-        if (m.email) {
-          userRolesMap[m.email.toLowerCase()] = m.role;
-        }
-      }
-
-      await setDoc(
-        doc(db, 'security_config', 'roles'),
-        { userRoles: userRolesMap, updatedAt: syncStartTime },
-        { merge: true }
-      );
-
-      if (!existingVaultData) {
-        await setDoc(
-          doc(db, 'family_meta', 'vault'),
-          {
-            familyName: payload.config.familyName || 'Family Budget Vault',
-            adminEmail: currentUser.email,
-            updatedAt: syncStartTime
-          },
-          { merge: true }
-        );
-      }
-    } else if (isCallerAdmin && payload.outbox.some(o => o.entityType === 'MEMBER')) {
-      const userRolesMap: Record<string, string> = {};
-      for (const m of payload.members) {
-        if (m.email) {
-          userRolesMap[m.email.toLowerCase()] = m.role;
-        }
-      }
-      userRolesMap[userEmailLower] = 'ADMIN';
-      await setDoc(
-        doc(db, 'security_config', 'roles'),
-        { userRoles: userRolesMap, updatedAt: syncStartTime },
-        { merge: true }
-      );
     }
 
     // -------------------------------------------------------------
@@ -687,7 +739,8 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
       incomingRules: incomingRules,
       incomingMembers: incomingMembers.length > 0 ? incomingMembers : undefined,
       incomingSharedSettlements: incomingSharedSettlements.length > 0 ? incomingSharedSettlements : undefined,
-      incomingFamilyName
+      incomingFamilyName,
+      resolvedUserRole: serverRole
     };
   } catch (err: any) {
     console.error('Firestore sync error:', err);

@@ -9,7 +9,7 @@ import {
   User,
   Auth
 } from 'firebase/auth';
-import { getOrInitFirestore } from './firebaseSyncService';
+import { getOrInitFirestore, validateFirebaseConfigFields } from './firebaseSyncService';
 import { FirebaseConfigEntity } from '../types';
 
 const PENDING_BYOB_STORAGE_KEY = 'fbv_pending_byob_config';
@@ -19,6 +19,7 @@ export interface AuthUserInfo {
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
+  emailVerified?: boolean;
 }
 
 export interface PendingByobPayload {
@@ -42,8 +43,33 @@ export function consumePendingByobConfig(): PendingByobPayload | null {
     const raw = sessionStorage.getItem(PENDING_BYOB_STORAGE_KEY);
     if (!raw) return null;
     sessionStorage.removeItem(PENDING_BYOB_STORAGE_KEY);
-    return JSON.parse(raw) as PendingByobPayload;
+    const parsed = JSON.parse(raw) as Partial<PendingByobPayload>;
+    if (
+      !parsed ||
+      typeof parsed.projectId !== 'string' ||
+      typeof parsed.apiKey !== 'string'
+    ) {
+      return null;
+    }
+    const validation = validateFirebaseConfigFields({
+      projectId: parsed.projectId,
+      apiKey: parsed.apiKey,
+      applicationId: typeof parsed.applicationId === 'string' ? parsed.applicationId : ''
+    });
+    if (!validation.valid) {
+      return null;
+    }
+    return {
+      projectId: parsed.projectId.trim(),
+      apiKey: parsed.apiKey.trim(),
+      applicationId: typeof parsed.applicationId === 'string' ? parsed.applicationId.trim() : '',
+      familyName: typeof parsed.familyName === 'string' && parsed.familyName.trim()
+        ? parsed.familyName.trim().slice(0, 120)
+        : 'Private Family Vault',
+      resetLocalData: Boolean(parsed.resetLocalData)
+    };
   } catch {
+    clearPendingByobConfig();
     return null;
   }
 }
@@ -125,7 +151,8 @@ export async function signInWithGoogle(
       uid: user.uid,
       email: user.email,
       displayName: user.displayName || user.email?.split('@')[0] || 'Utilisateur Google',
-      photoURL: user.photoURL
+      photoURL: user.photoURL,
+      emailVerified: user.emailVerified
     };
 
     return { success: true, user: userInfo };
@@ -175,7 +202,8 @@ export async function checkRedirectAuthResult(
         uid: result.user.uid,
         email: result.user.email,
         displayName: result.user.displayName,
-        photoURL: result.user.photoURL
+        photoURL: result.user.photoURL,
+        emailVerified: result.user.emailVerified
       };
     }
   } catch (err) {
@@ -217,7 +245,8 @@ export function subscribeToAuth(
         uid: firebaseUser.uid,
         email: firebaseUser.email,
         displayName: firebaseUser.displayName,
-        photoURL: firebaseUser.photoURL
+        photoURL: firebaseUser.photoURL,
+        emailVerified: firebaseUser.emailVerified
       });
     } else {
       callback(null);

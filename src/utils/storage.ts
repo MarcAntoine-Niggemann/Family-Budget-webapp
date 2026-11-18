@@ -59,8 +59,9 @@ export interface SavedByobConfig {
 export type VaultEncryptionMode = 'WEBAUTHN_PRF' | 'PIN_WRAPPED' | 'HYBRID';
 
 export interface VaultLockMeta {
-  v: 2;
+  v: 3;
   encryptionMode: VaultEncryptionMode;
+  kdfIterations?: number;
   credentialId?: string;
   prfSaltBase64?: string;
   hkdfSaltBase64?: string;
@@ -77,7 +78,7 @@ export function loadVaultLockMeta(): VaultLockMeta | null {
     const parsed = JSON.parse(raw) as VaultLockMeta;
     if (
       parsed &&
-      parsed.v === 2 &&
+      parsed.v === 3 &&
       (parsed.wrappedDekPrf || parsed.wrappedDekPin)
     ) {
       return parsed;
@@ -85,6 +86,17 @@ export function loadVaultLockMeta(): VaultLockMeta | null {
     return null;
   } catch {
     return null;
+  }
+}
+
+export function hasLegacyV2Vault(): boolean {
+  try {
+    const raw = localStorage.getItem(VAULT_LOCK_META_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { v?: number };
+    return Boolean(parsed && typeof parsed.v === 'number' && parsed.v < 3);
+  } catch {
+    return false;
   }
 }
 

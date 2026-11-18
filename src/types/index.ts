@@ -237,6 +237,7 @@ export type AppScreen =
 export interface OpenBankingConfig {
   apiKey: string;
   apiSecret: string;
+  proxyUrl?: string;
   environment: 'SANDBOX' | 'PRODUCTION';
   autoSyncOnLaunch: boolean;
   isConnected: boolean;

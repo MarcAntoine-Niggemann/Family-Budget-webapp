@@ -8,21 +8,23 @@ import {
   RefreshCw,
   ExternalLink,
   Wallet,
-  Fingerprint,
+  ShieldCheck,
   Unplug
 } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { OpenBankingAccountDto } from '../types';
-import { DEFAULT_OPEN_BANKING_CONFIG } from '../services/openBankingService';
-import { enrollBiometricCredential } from '../utils/biometricKeyvault';
+import {
+  DEFAULT_OPEN_BANKING_CONFIG,
+  validateOpenBankingProxyUrl
+} from '../services/openBankingService';
 
 interface OpenBankingConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const buildSignature = (env: string, key: string, secret: string) =>
-  `${env}::${key.trim()}::${secret.trim()}`;
+const buildSignature = (env: string, key: string, secret: string, proxyUrl: string) =>
+  `${env}::${key.trim()}::${secret.trim()}::${proxyUrl.trim().replace(/\/+$/, '')}`;
 
 export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
   isOpen,
@@ -41,6 +43,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
 
   const [apiKey, setApiKey] = useState(openBankingConfig.apiKey || '');
   const [apiSecret, setApiSecret] = useState(openBankingConfig.apiSecret || '');
+  const [proxyUrl, setProxyUrl] = useState(openBankingConfig.proxyUrl || '');
   const [environment, setEnvironment] = useState<'SANDBOX' | 'PRODUCTION'>(
     openBankingConfig.environment || 'PRODUCTION'
   );
@@ -58,7 +61,8 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
       ? buildSignature(
           openBankingConfig.environment || 'PRODUCTION',
           openBankingConfig.apiKey || '',
-          openBankingConfig.apiSecret || ''
+          openBankingConfig.apiSecret || '',
+          openBankingConfig.proxyUrl || ''
         )
       : null
   );
@@ -75,8 +79,10 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
     const env = openBankingConfig.environment || 'PRODUCTION';
     const key = openBankingConfig.apiKey || '';
     const secret = openBankingConfig.apiSecret || '';
+    const proxy = openBankingConfig.proxyUrl || '';
     setApiKey(key);
     setApiSecret(secret);
+    setProxyUrl(proxy);
     setEnvironment(env);
     setAutoSyncOnLaunch(openBankingConfig.autoSyncOnLaunch || false);
     setDiscoveredAccounts(
@@ -86,19 +92,19 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
       openBankingConfig.isConnected ? (openBankingConfig.accountMappings || {}) : {}
     );
     setVerifiedSignature(
-      openBankingConfig.isConnected ? buildSignature(env, key, secret) : null
+      openBankingConfig.isConnected ? buildSignature(env, key, secret, proxy) : null
     );
     setTestResult(null);
   }, [isOpen, openBankingConfig]);
 
   if (!isOpen) return null;
 
-  const currentSignature = buildSignature(environment, apiKey, apiSecret);
+  const currentSignature = buildSignature(environment, apiKey, apiSecret, proxyUrl);
 
   const handleEnvironmentChange = (nextEnv: 'SANDBOX' | 'PRODUCTION') => {
     setEnvironment(nextEnv);
     setTestResult(null);
-    if (buildSignature(nextEnv, apiKey, apiSecret) !== verifiedSignature) {
+    if (buildSignature(nextEnv, apiKey, apiSecret, proxyUrl) !== verifiedSignature) {
       setDiscoveredAccounts([]);
     }
   };
@@ -106,7 +112,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
   const handleApiKeyChange = (val: string) => {
     setApiKey(val);
     setTestResult(null);
-    if (buildSignature(environment, val, apiSecret) !== verifiedSignature) {
+    if (buildSignature(environment, val, apiSecret, proxyUrl) !== verifiedSignature) {
       setDiscoveredAccounts([]);
     }
   };
@@ -114,7 +120,15 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
   const handleApiSecretChange = (val: string) => {
     setApiSecret(val);
     setTestResult(null);
-    if (buildSignature(environment, apiKey, val) !== verifiedSignature) {
+    if (buildSignature(environment, apiKey, val, proxyUrl) !== verifiedSignature) {
+      setDiscoveredAccounts([]);
+    }
+  };
+
+  const handleProxyUrlChange = (val: string) => {
+    setProxyUrl(val);
+    setTestResult(null);
+    if (buildSignature(environment, apiKey, apiSecret, val) !== verifiedSignature) {
       setDiscoveredAccounts([]);
     }
   };
@@ -125,10 +139,12 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
 
     const trimmedKey = apiKey.trim();
     const trimmedSecret = apiSecret.trim();
+    const trimmedProxy = proxyUrl.trim().replace(/\/+$/, '');
 
     const res = await testOpenBankingConn({
       apiKey: trimmedKey,
       apiSecret: trimmedSecret,
+      proxyUrl: trimmedProxy,
       environment
     });
 
@@ -140,7 +156,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
 
     if (res.success) {
       setDiscoveredAccounts(res.accounts);
-      setVerifiedSignature(buildSignature(environment, trimmedKey, trimmedSecret));
+      setVerifiedSignature(buildSignature(environment, trimmedKey, trimmedSecret, trimmedProxy));
       // Keep only mappings relevant to discovered accounts
       setMappings(prev => {
         const next: Record<string, string> = {};
@@ -160,15 +176,26 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
 
     const trimmedKey = apiKey.trim();
     const trimmedSecret = apiSecret.trim();
+    const trimmedProxy = proxyUrl.trim().replace(/\/+$/, '');
 
-    if (environment === 'PRODUCTION' && !trimmedKey) {
-      setTestResult({
-        success: false,
-        message: isFr
-          ? 'Veuillez saisir votre clé API (Client ID / API Key) pour l’environnement Live Production.'
-          : 'Please enter your API Key / Client ID for Live Production.'
-      });
-      return;
+    if (environment === 'PRODUCTION') {
+      const endpointCheck = validateOpenBankingProxyUrl(trimmedProxy);
+      if (!endpointCheck.valid) {
+        setTestResult({
+          success: false,
+          message: endpointCheck.error || (isFr ? 'URL Open Banking HTTPS invalide.' : 'Invalid HTTPS Open Banking URL.')
+        });
+        return;
+      }
+      if (!trimmedKey || (!endpointCheck.isCustomProxy && !trimmedSecret)) {
+        setTestResult({
+          success: false,
+          message: isFr
+            ? 'Veuillez saisir votre API Key et API Secret pour l’environnement Live Production.'
+            : 'Please enter both API Key and API Secret for Live Production.'
+        });
+        return;
+      }
     }
 
     let accountsToSave = discoveredAccounts;
@@ -180,6 +207,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
       const res = await testOpenBankingConn({
         apiKey: trimmedKey,
         apiSecret: trimmedSecret,
+        proxyUrl: trimmedProxy,
         environment
       });
       setIsSaving(false);
@@ -207,6 +235,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
     updateOpenBankingConfig({
       apiKey: trimmedKey,
       apiSecret: trimmedSecret,
+      proxyUrl: trimmedProxy,
       environment,
       autoSyncOnLaunch,
       discoveredAccounts: accountsToSave,
@@ -218,9 +247,13 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
           ? isFr
             ? 'Connecté au simulateur Sandbox open-banking.io'
             : 'Connected to Sandbox simulator'
-          : isFr
-            ? 'Connecté à open-banking.io Live'
-            : 'Connected to Live open-banking.io'
+          : trimmedProxy
+            ? isFr
+              ? 'Connecté via proxy HTTPS Open Banking'
+              : 'Connected via HTTPS Open Banking proxy'
+            : isFr
+              ? 'Connecté à open-banking.io (Live Production)'
+              : 'Connected to open-banking.io (Live Production)'
     });
 
     showToast(isFr ? 'Configuration Open Banking enregistrée' : 'Open Banking settings saved');
@@ -234,6 +267,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
     });
     setApiKey('');
     setApiSecret('');
+    setProxyUrl('');
     setDiscoveredAccounts([]);
     setMappings({});
     setVerifiedSignature(null);
@@ -257,8 +291,8 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {isFr
-                  ? 'Synchronisation automatique directe avec vos banques (Option PSD2)'
-                  : 'Automated direct bank sync via PSD2 open banking'}
+                  ? 'Synchronisation automatique directe via open-banking.io ou simulateur Sandbox'
+                  : 'Automated bank sync directly via open-banking.io or Sandbox simulator'}
               </p>
             </div>
           </div>
@@ -276,11 +310,11 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
           <HelpCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div>
             <span className="font-bold block text-amber-800 dark:text-amber-300 mb-0.5">
-              {isFr ? 'Option facultative & indépendante' : 'Optional & Independent Service'}
+              {isFr ? 'Option facultative — Chiffrement local du coffre' : 'Optional Service — Local Vault Encrypted'}
             </span>
             {isFr
-              ? 'L’API open-banking.io est un service tiers qui requiert un compte ou un abonnement développeur pour les flux en direct. Si vous préférez ne pas souscrire ou payer, l’import manuel de vos fichiers CSV reste 100% gratuit, privé et illimité.'
-              : 'The open-banking.io API is a third-party service requiring personal credentials or subscription for live bank feeds. If you choose not to subscribe, free offline manual CSV import remains available without restriction.'}
+              ? 'Cet agrégateur est totalement facultatif : l’import CSV reste 100% gratuit. Si vous connectez open-banking.io, vos clés API Key et API Secret sont chiffrées en AES-256-GCM dans votre cache local (et effacées à la déconnexion), sans proxy obligatoire.'
+              : 'This aggregator is completely optional: CSV import remains 100% free. When connecting open-banking.io directly, your API Key and API Secret are encrypted with AES-256-GCM in your local vault cache and cleared on logout—no backend proxy required.'}
           </div>
         </div>
 
@@ -301,12 +335,12 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
                 }`}
               >
                 <div className="font-bold text-xs text-teal-700 dark:text-teal-300">
-                  {isFr ? '🧪 Sandbox (Test Gratuit)' : '🧪 Sandbox (Free Simulator)'}
+                  {isFr ? 'Sandbox (Test Gratuit)' : 'Sandbox (Free Simulator)'}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                   {isFr
-                    ? 'Simulateur avec banques européennes (BNP, BoursoBank) sans abonnement'
-                    : 'Simulated European banks without requiring paid credentials'}
+                    ? 'Simulateur local avec banques européennes (BNP, BoursoBank)'
+                    : 'Local simulated European banks without live API keys'}
                 </div>
               </button>
 
@@ -320,12 +354,12 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
                 }`}
               >
                 <div className="font-bold text-xs text-indigo-700 dark:text-indigo-300">
-                  {isFr ? '⚡ Live Production' : '⚡ Live Production'}
+                  {isFr ? 'Live Production (Clés Réelles)' : 'Live Production (Direct API)'}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                   {isFr
-                    ? 'Connexion réelle à api.open-banking.io avec vos clés d’accès'
-                    : 'Direct live connection to api.open-banking.io'}
+                    ? 'Connexion directe à api.open-banking.io (proxy optionnel)'
+                    : 'Direct connection to api.open-banking.io (proxy optional)'}
                 </div>
               </button>
             </div>
@@ -336,7 +370,7 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {isFr ? 'Clé API (Client ID / API Key)' : 'API Key / Client ID'}
+                  {isFr ? 'Clé API (Client ID)' : 'API Key (Client ID)'}
                 </label>
                 <a
                   href="https://open-banking.io"
@@ -349,55 +383,56 @@ export const OpenBankingConfigModal: React.FC<OpenBankingConfigModalProps> = ({
                 </a>
               </div>
               <input
-                type="text"
+                type="password"
                 value={apiKey}
                 onChange={e => handleApiKeyChange(e.target.value)}
-                placeholder={environment === 'SANDBOX' ? 'sandbox_demo_key_7792' : 'ob_live_pk_...'}
+                placeholder={environment === 'SANDBOX' ? 'sandbox_demo_key_7792' : 'ob_live_key_...'}
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                {isFr ? 'Secret API (Client Secret / Token)' : 'API Secret / Token'}
+                {isFr ? 'Secret API (Client Secret)' : 'API Secret (Client Secret)'}
               </label>
               <input
                 type="password"
                 value={apiSecret}
                 onChange={e => handleApiSecretChange(e.target.value)}
-                placeholder="••••••••••••••••••••••••"
+                placeholder={environment === 'SANDBOX' ? 'sandbox_secret_••••••••' : 'ob_live_secret_...'}
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
               />
             </div>
 
-            {/* Biometric & Keyvault Hardware Protection */}
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Fingerprint className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                  <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                    {isFr ? 'Protection Matérielle (Touch ID / Face ID)' : 'Hardware Keyvault Protection'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const res = await enrollBiometricCredential('Admin', 'admin@family.local');
-                    if (res.success) {
-                      showToast(isFr ? 'Empreinte biométrique enrôlée avec succès !' : 'Biometrics successfully enrolled!');
-                    } else {
-                      showToast(res.error || (isFr ? 'Échec d’enrôlement' : 'Enrollment failed'));
-                    }
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 dark:bg-teal-500/10 dark:hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30 text-[11px] font-semibold transition cursor-pointer"
-                >
-                  {isFr ? 'Enrôler Empreinte' : 'Enroll Biometrics'}
-                </button>
+            {environment === 'PRODUCTION' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  {isFr
+                    ? 'URL Proxy HTTPS personnalisée (optionnel)'
+                    : 'Custom HTTPS Proxy URL (Optional)'}
+                </label>
+                <input
+                  type="url"
+                  value={proxyUrl}
+                  onChange={e => handleProxyUrlChange(e.target.value)}
+                  placeholder="https://api.open-banking.io (laisser vide par défaut)"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+                />
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            )}
+
+            {/* Vault AES-256-GCM Storage Security Notice */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span className="text-xs font-semibold text-slate-900 dark:text-white">
+                  {isFr ? 'Protection locale AES-256-GCM du coffre' : 'Vault AES-256-GCM Local Protection'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                 {isFr
-                  ? 'Vos clés API open-banking.io sont protégées au repos par chiffrement AES-GCM 256 bits et liées à l’enclave sécurisée de votre téléphone (Apple Secure Enclave / Android Keystore).'
-                  : 'Your open-banking.io API keys are protected at rest by AES-GCM 256 encryption and bound to your phone’s hardware enclave.'}
+                  ? 'Votre API Key, votre API Secret et les associations de comptes sont chiffrés dans le cache local par la clé AES-256-GCM de votre coffre (WebAuthn PRF / PBKDF2 600k), jamais stockés en clair, et effacés à la déconnexion.'
+                  : 'Your API Key, API Secret, and account mappings are encrypted at rest inside your local AES-256-GCM vault cache (WebAuthn PRF / PBKDF2 600k), never stored in plaintext, and wiped on logout.'}
               </p>
             </div>
           </div>

@@ -1,20 +1,57 @@
 /**
- * Web Crypto API client-side encryption module.
+ * Web Crypto API client-side encryption module (v3 hardened).
  * Provides AES-GCM 256-bit authenticated encryption with:
- * - Random 256-bit Data Encryption Keys (DEK) for local vault & financial cache
+ * - Random 256-bit Data Encryption Keys (DEK) imported non-extractable at runtime
  * - Key Encryption Keys (KEK) derived from WebAuthn PRF hardware secrets (HKDF-SHA256)
- *   and/or a user Vault PIN (PBKDF2-SHA256).
+ *   and/or a user Vault Passphrase / PIN (PBKDF2-SHA256, 600,000 iterations).
  */
 
 const SALT_SIZE = 16;
 const IV_SIZE = 12;
-const PBKDF2_ITERATIONS = 120_000;
+export const PBKDF2_ITERATIONS = 600_000;
+export const MIN_VAULT_PASSPHRASE_LENGTH = 8;
 
 export interface EncryptedEnvelope {
-  v: 2;
+  v: 3;
   alg: 'AES-GCM';
   iv: string; // base64
   ct: string; // base64
+}
+
+export interface PassphraseStrengthResult {
+  score: 0 | 1 | 2 | 3 | 4;
+  label: 'weak' | 'fair' | 'good' | 'strong';
+  meetsMinLength: boolean;
+}
+
+export function evaluatePassphraseStrength(passphrase: string): PassphraseStrengthResult {
+  const trimmed = passphrase.trim();
+  const meetsMinLength = trimmed.length >= MIN_VAULT_PASSPHRASE_LENGTH;
+  if (!trimmed) {
+    return { score: 0, label: 'weak', meetsMinLength: false };
+  }
+
+  let variety = 0;
+  if (/[a-z]/.test(trimmed)) variety++;
+  if (/[A-Z]/.test(trimmed)) variety++;
+  if (/\d/.test(trimmed)) variety++;
+  if (/[^a-zA-Z0-9]/.test(trimmed)) variety++;
+
+  let score: 0 | 1 | 2 | 3 | 4 = 1;
+  if (!meetsMinLength) {
+    score = 1;
+  } else if (trimmed.length >= 14 && variety >= 3) {
+    score = 4;
+  } else if (trimmed.length >= 10 && variety >= 2) {
+    score = 3;
+  } else if (variety >= 2 || trimmed.length >= 12) {
+    score = 2;
+  } else {
+    score = 1;
+  }
+
+  const label = score >= 4 ? 'strong' : score === 3 ? 'good' : score === 2 ? 'fair' : 'weak';
+  return { score, label, meetsMinLength };
 }
 
 export function uint8ToBase64(bytes: Uint8Array): string {
@@ -48,7 +85,7 @@ export function generateRawDek(): Uint8Array {
 
 export async function importDekFromRaw(
   rawDek: Uint8Array,
-  extractable: boolean = true
+  extractable: boolean = false
 ): Promise<CryptoKey> {
   if (rawDek.byteLength !== 32) {
     throw new Error('Invalid vault key length.');
@@ -60,11 +97,6 @@ export async function importDekFromRaw(
     extractable,
     ['encrypt', 'decrypt']
   );
-}
-
-export async function exportDekRaw(dek: CryptoKey): Promise<Uint8Array> {
-  const raw = await crypto.subtle.exportKey('raw', dek);
-  return new Uint8Array(raw);
 }
 
 /**
@@ -82,7 +114,7 @@ export async function deriveKekFromPrfSecret(
     ['deriveKey']
   );
 
-  const info = new TextEncoder().encode('fbv-local-vault-kek-v2');
+  const info = new TextEncoder().encode('fbv-local-vault-kek-v3');
   return crypto.subtle.deriveKey(
     {
       name: 'HKDF',
@@ -98,9 +130,13 @@ export async function deriveKekFromPrfSecret(
 }
 
 /**
- * Derives a 256-bit AES-GCM Key Encryption Key (KEK) from a user Vault PIN via PBKDF2-SHA256.
+ * Derives a 256-bit AES-GCM Key Encryption Key (KEK) from a user Vault Passphrase / PIN via PBKDF2-SHA256.
  */
-export async function deriveKekFromPin(pin: string, salt: Uint8Array): Promise<CryptoKey> {
+export async function deriveKekFromPin(
+  pin: string,
+  salt: Uint8Array,
+  iterations: number = PBKDF2_ITERATIONS
+): Promise<CryptoKey> {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -114,7 +150,7 @@ export async function deriveKekFromPin(pin: string, salt: Uint8Array): Promise<C
     {
       name: 'PBKDF2',
       salt: salt as BufferSource,
-      iterations: PBKDF2_ITERATIONS,
+      iterations: Math.max(PBKDF2_ITERATIONS, iterations),
       hash: 'SHA-256'
     },
     keyMaterial,
@@ -135,7 +171,7 @@ export async function wrapDekWithKek(
     rawDek as BufferSource
   );
   return {
-    v: 2,
+    v: 3,
     alg: 'AES-GCM',
     iv: uint8ToBase64(iv),
     ct: uint8ToBase64(new Uint8Array(ctBuf))
@@ -146,8 +182,8 @@ export async function unwrapDekWithKek(
   envelope: EncryptedEnvelope,
   kek: CryptoKey
 ): Promise<Uint8Array> {
-  if (!envelope || envelope.v !== 2 || envelope.alg !== 'AES-GCM') {
-    throw new Error('Invalid encrypted key envelope.');
+  if (!envelope || envelope.v !== 3 || envelope.alg !== 'AES-GCM') {
+    throw new Error('Invalid or outdated encrypted key envelope.');
   }
   const iv = base64ToUint8(envelope.iv);
   const ct = base64ToUint8(envelope.ct);
@@ -168,7 +204,7 @@ export async function encryptJsonWithKey<T>(data: T, dek: CryptoKey): Promise<st
     plainBytes
   );
   const envelope: EncryptedEnvelope = {
-    v: 2,
+    v: 3,
     alg: 'AES-GCM',
     iv: uint8ToBase64(iv),
     ct: uint8ToBase64(new Uint8Array(ctBuf))
@@ -181,7 +217,7 @@ export async function decryptJsonWithKey<T>(
   dek: CryptoKey
 ): Promise<T> {
   const envelope = JSON.parse(serializedEnvelope) as EncryptedEnvelope;
-  if (!envelope || envelope.v !== 2 || envelope.alg !== 'AES-GCM' || !envelope.iv || !envelope.ct) {
+  if (!envelope || envelope.v !== 3 || envelope.alg !== 'AES-GCM' || !envelope.iv || !envelope.ct) {
     throw new Error('Corrupted or unencrypted storage payload.');
   }
   const iv = base64ToUint8(envelope.iv);
@@ -201,7 +237,7 @@ export function isEncryptedEnvelopeString(raw: string | null): boolean {
     const parsed = JSON.parse(raw);
     return (
       !!parsed &&
-      parsed.v === 2 &&
+      parsed.v === 3 &&
       parsed.alg === 'AES-GCM' &&
       typeof parsed.iv === 'string' &&
       typeof parsed.ct === 'string'

@@ -32,6 +32,7 @@ export default defineConfig({
         'pwa-192x192.png',
         'pwa-512x512.png',
         'pwa-maskable-512x512.png',
+        'theme-init.js',
       ],
       manifest: {
         id: base,

@@ -7,6 +7,7 @@ import {
   CategoryEntity,
   FamilyMemberEntity,
   FirebaseConfigEntity,
+  MemberRole,
   OpenBankingConfig,
   OpenBankingAccountDto,
   ResolvedTheme,
@@ -28,6 +29,7 @@ import {
   getEmptySyncState,
   getInitialSeedData,
   hasEncryptedByobConfig,
+  hasLegacyV2Vault,
   loadEncryptedByobConfig,
   loadEncryptedByobLocalCache,
   loadLanguagePreference,
@@ -48,10 +50,11 @@ import {
   enrollBiometricWithPrf
 } from '../utils/biometricKeyvault';
 import {
+  MIN_VAULT_PASSPHRASE_LENGTH,
+  PBKDF2_ITERATIONS,
   base64ToUint8,
   deriveKekFromPin,
   deriveKekFromPrfSecret,
-  exportDekRaw,
   generateRandomBytes,
   generateRawDek,
   importDekFromRaw,
@@ -127,6 +130,8 @@ interface BudgetContextType {
   isVaultUnlocked: boolean;
   biometricGateVerified: boolean;
   legacyPlaintextConfig: SavedByobConfig | null;
+  legacyV2VaultDetected: boolean;
+  pinLockoutSecondsRemaining: number;
   authInitialized: boolean;
 
   accounts: AccountEntity[];
@@ -177,8 +182,8 @@ interface BudgetContextType {
     applicationId?: string;
     familyName?: string;
   }) => Promise<VaultActionResult>;
-  enrollOrUpdateBiometrics: () => Promise<{ success: boolean; prfSupported?: boolean; error?: string }>;
-  updateVaultPin: (newPin: string) => Promise<{ success: boolean; error?: string }>;
+  enrollOrUpdateBiometrics: (currentPin?: string) => Promise<{ success: boolean; prfSupported?: boolean; error?: string }>;
+  updateVaultPin: (newPin: string, currentPin?: string) => Promise<{ success: boolean; error?: string }>;
   removeVaultPin: () => Promise<{ success: boolean; error?: string }>;
   removeBiometrics: () => Promise<{ success: boolean; error?: string }>;
 
@@ -252,6 +257,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [legacyPlaintextConfig, setLegacyPlaintextConfig] = useState<SavedByobConfig | null>(() =>
     hasEncryptedByobConfig() ? null : loadLegacyPlaintextByobConfig()
   );
+  const [legacyV2VaultDetected, setLegacyV2VaultDetected] = useState<boolean>(() =>
+    !hasEncryptedByobConfig() && hasLegacyV2Vault()
+  );
+  const [pinLockoutSecondsRemaining, setPinLockoutSecondsRemaining] = useState<number>(0);
   const [isVaultUnlocked, setIsVaultUnlocked] = useState<boolean>(false);
   const [biometricGateVerified, setBiometricGateVerified] = useState<boolean>(false);
   const [savedByobConfig, setSavedByobConfig] = useState<SavedByobConfig | null>(null);
@@ -291,6 +300,23 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const isSyncingRef = useRef(false);
   const activeDekRef = useRef<CryptoKey | null>(null);
   const persistCounterRef = useRef(0);
+  const failedPinAttemptsRef = useRef(0);
+  const pinLockoutUntilRef = useRef<number>(0);
+
+  const resetPinBackoff = () => {
+    failedPinAttemptsRef.current = 0;
+    pinLockoutUntilRef.current = 0;
+    setPinLockoutSecondsRemaining(0);
+  };
+
+  useEffect(() => {
+    if (pinLockoutSecondsRemaining <= 0) return;
+    const timer = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((pinLockoutUntilRef.current - Date.now()) / 1000));
+      setPinLockoutSecondsRemaining(remaining);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [pinLockoutSecondsRemaining]);
 
   // Persist AES-256-GCM encrypted local cache ONLY while unlocked & authenticated in BYOB Firestore mode
   useEffect(() => {
@@ -408,10 +434,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setSharedSettlements(Array.from(map.values()).sort((a, b) => b.date - a.date));
     }
 
-    if (result.incomingFamilyName) {
+    if (result.incomingFamilyName || result.resolvedUserRole) {
       setConfig(prev => ({
         ...prev,
-        familyName: result.incomingFamilyName || prev.familyName
+        familyName: result.incomingFamilyName || prev.familyName,
+        currentUserRole: result.resolvedUserRole || prev.currentUserRole
       }));
     }
 
@@ -664,6 +691,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * plus the active Firebase Auth session for fast biometric/PIN re-entry.
    */
   const lockVault = () => {
+    persistCounterRef.current++;
     activeDekRef.current = null;
     setIsVaultUnlocked(false);
     setBiometricGateVerified(false);
@@ -683,6 +711,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * - Preserves ONLY the AES-256-GCM encrypted BYOB vault config and lock metadata.
    */
   const logout = async () => {
+    persistCounterRef.current++;
     const targetCfg = savedByobConfig || config;
     await signOutGoogle(targetCfg);
     await resetFirebaseInstances();
@@ -702,6 +731,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const forgetByobConfig = async () => {
+    persistCounterRef.current++;
     const targetCfg = savedByobConfig || config;
     await signOutGoogle(targetCfg);
     await resetFirebaseInstances();
@@ -710,12 +740,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     clearBiometricCredential();
     purgeLocalData({ preserveByob: false });
     activeDekRef.current = null;
+    resetPinBackoff();
     setIsVaultUnlocked(false);
     setBiometricGateVerified(false);
     setSavedByobConfig(null);
     setVaultLockMeta(null);
     setHasSavedVault(false);
     setLegacyPlaintextConfig(null);
+    setLegacyV2VaultDetected(false);
     eraseAllSessionMemory(null);
     showToast(
       language === 'fr'
@@ -1981,12 +2013,13 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     const activeFbUser = auth?.currentUser;
-    if (activeFbUser && activeFbUser.email) {
+    if (activeFbUser && activeFbUser.email && activeFbUser.emailVerified) {
       const userInfo: AuthUserInfo = {
         uid: activeFbUser.uid,
         email: activeFbUser.email,
         displayName: activeFbUser.displayName,
-        photoURL: activeFbUser.photoURL
+        photoURL: activeFbUser.photoURL,
+        emailVerified: activeFbUser.emailVerified
       };
       const syncRes = await completeByobSetupWithUser(decryptedByob, userInfo, false, dek);
       return {
@@ -2065,8 +2098,13 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const kek = await deriveKekFromPrfSecret(authRes.prfSecret, base64ToUint8(meta.hkdfSaltBase64));
         const rawDek = await unwrapDekWithKek(meta.wrappedDekPrf, kek);
-        const dek = await importDekFromRaw(rawDek, true);
-        return await finalizeLocalUnlock(dek);
+        try {
+          const dek = await importDekFromRaw(rawDek, false);
+          resetPinBackoff();
+          return await finalizeLocalUnlock(dek);
+        } finally {
+          rawDek.fill(0);
+        }
       } catch {
         return {
           success: false,
@@ -2087,8 +2125,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       needsPinForDecrypt: true,
       error:
         language === 'fr'
-          ? 'Empreinte vérifiée. Saisissez votre code PIN pour déchiffrer le stockage local.'
-          : 'Fingerprint verified. Enter your Vault PIN to decrypt local storage.'
+          ? 'Empreinte vérifiée. Saisissez votre mot de passe / code PIN pour déchiffrer le stockage local.'
+          : 'Fingerprint verified. Enter your Vault Passphrase to decrypt local storage.'
     };
   };
 
@@ -2097,7 +2135,20 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!cleanPin) {
       return {
         success: false,
-        error: language === 'fr' ? 'Veuillez saisir votre code PIN.' : 'Please enter your Vault PIN.'
+        error: language === 'fr' ? 'Veuillez saisir votre mot de passe / PIN.' : 'Please enter your Vault Passphrase.'
+      };
+    }
+
+    const now = Date.now();
+    if (pinLockoutUntilRef.current > now) {
+      const secs = Math.max(1, Math.ceil((pinLockoutUntilRef.current - now) / 1000));
+      setPinLockoutSecondsRemaining(secs);
+      return {
+        success: false,
+        error:
+          language === 'fr'
+            ? `Trop de tentatives incorrectes. Réessayez dans ${secs}s.`
+            : `Too many failed attempts. Try again in ${secs}s.`
       };
     }
 
@@ -2107,26 +2158,48 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         success: false,
         error:
           language === 'fr'
-            ? 'Aucun code PIN configuré pour ce coffre. Utilisez votre empreinte biométrique.'
-            : 'No Vault PIN is configured for this vault. Unlock with your fingerprint.'
+            ? 'Aucun mot de passe configuré pour ce coffre. Utilisez votre empreinte biométrique.'
+            : 'No Vault Passphrase is configured for this vault. Unlock with your fingerprint.'
       };
     }
 
     try {
-      const kek = await deriveKekFromPin(cleanPin, base64ToUint8(meta.pinSaltBase64));
+      const kek = await deriveKekFromPin(
+        cleanPin,
+        base64ToUint8(meta.pinSaltBase64),
+        meta.kdfIterations || PBKDF2_ITERATIONS
+      );
       const rawDek = await unwrapDekWithKek(meta.wrappedDekPin, kek);
-      const dek = await importDekFromRaw(rawDek, true);
-      return await finalizeLocalUnlock(dek);
+      try {
+        const dek = await importDekFromRaw(rawDek, false);
+        resetPinBackoff();
+        return await finalizeLocalUnlock(dek);
+      } finally {
+        rawDek.fill(0);
+      }
     } catch {
+      const attempts = ++failedPinAttemptsRef.current;
+      if (attempts >= 3) {
+        const penaltySec = Math.min(300, Math.pow(2, attempts - 2) * 5);
+        pinLockoutUntilRef.current = Date.now() + penaltySec * 1000;
+        setPinLockoutSecondsRemaining(penaltySec);
+        return {
+          success: false,
+          error:
+            language === 'fr'
+              ? `Mot de passe du coffre incorrect. Verrouillage temporaire de ${penaltySec}s.`
+              : `Incorrect Vault Passphrase. Temporarily locked for ${penaltySec}s.`
+        };
+      }
       return {
         success: false,
-        error: language === 'fr' ? 'Code PIN du coffre incorrect.' : 'Incorrect Vault PIN.'
+        error: language === 'fr' ? 'Mot de passe / PIN du coffre incorrect.' : 'Incorrect Vault Passphrase.'
       };
     }
   };
 
   /**
-   * Configures mandatory local AES-256-GCM encryption (WebAuthn PRF biometric key and/or Vault PIN),
+   * Configures mandatory local AES-256-GCM encryption (WebAuthn PRF biometric key and/or 8+ char passphrase),
    * encrypts the BYOB config before disk persistence, and then runs Google Sign-In.
    */
   const setupProtectedVaultAndConnect = async (
@@ -2136,15 +2209,15 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   ): Promise<VaultActionResult> => {
     const hasPrf = Boolean(protection.biometricCredId && protection.prfSecret && protection.prfSalt);
     const cleanPin = protection.pin?.trim() || '';
-    const hasPin = cleanPin.length >= 6;
+    const hasPin = cleanPin.length >= MIN_VAULT_PASSPHRASE_LENGTH;
 
     if (!hasPrf && !hasPin) {
       return {
         success: false,
         error:
           language === 'fr'
-            ? 'Protection requise : enregistrez une empreinte WebAuthn PRF ou définissez un code PIN (6 caractères min.).'
-            : 'Protection required: enroll a WebAuthn PRF fingerprint or set a Vault PIN (min. 6 characters).'
+            ? `Protection requise : enregistrez une empreinte WebAuthn PRF ou définissez un mot de passe (${MIN_VAULT_PASSPHRASE_LENGTH} caractères min.).`
+            : `Protection required: enroll a WebAuthn PRF fingerprint or set a Vault Passphrase (min. ${MIN_VAULT_PASSPHRASE_LENGTH} characters).`
       };
     }
 
@@ -2156,39 +2229,47 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const rawDek = generateRawDek();
+    let dek: CryptoKey;
     const meta: VaultLockMeta = {
-      v: 2,
+      v: 3,
       encryptionMode: hasPrf && hasPin ? 'HYBRID' : hasPrf ? 'WEBAUTHN_PRF' : 'PIN_WRAPPED',
+      kdfIterations: hasPin ? PBKDF2_ITERATIONS : undefined,
       credentialId: protection.biometricCredId,
       updatedAt: Date.now()
     };
 
-    if (hasPrf && protection.prfSecret && protection.prfSalt) {
-      const hkdfSalt = generateRandomBytes(16);
-      const kekPrf = await deriveKekFromPrfSecret(protection.prfSecret, hkdfSalt);
-      meta.prfSaltBase64 = uint8ToBase64(protection.prfSalt);
-      meta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
-      meta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
-    }
+    try {
+      if (hasPrf && protection.prfSecret && protection.prfSalt) {
+        const hkdfSalt = generateRandomBytes(16);
+        const kekPrf = await deriveKekFromPrfSecret(protection.prfSecret, hkdfSalt);
+        meta.prfSaltBase64 = uint8ToBase64(protection.prfSalt);
+        meta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
+        meta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
+      }
 
-    if (hasPin) {
-      const pinSalt = generateRandomBytes(16);
-      const kekPin = await deriveKekFromPin(cleanPin, pinSalt);
-      meta.pinSaltBase64 = uint8ToBase64(pinSalt);
-      meta.wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
-    }
+      if (hasPin) {
+        const pinSalt = generateRandomBytes(16);
+        const kekPin = await deriveKekFromPin(cleanPin, pinSalt, PBKDF2_ITERATIONS);
+        meta.pinSaltBase64 = uint8ToBase64(pinSalt);
+        meta.wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
+      }
 
-    const dek = await importDekFromRaw(rawDek, true);
+      dek = await importDekFromRaw(rawDek, false);
+    } finally {
+      rawDek.fill(0);
+    }
 
     saveVaultLockMeta(meta);
     setVaultLockMeta(meta);
     await saveEncryptedByobConfig(cleanByob, dek);
 
+    resetPinBackoff();
     activeDekRef.current = dek;
     setSavedByobConfig(cleanByob);
     setHasSavedVault(true);
     setIsVaultUnlocked(true);
     setLegacyPlaintextConfig(null);
+    setLegacyV2VaultDetected(false);
 
     const isSameProject = savedByobConfig?.projectId?.trim() === cleanByob.projectId;
     const shouldReset = options?.resetLocalData !== undefined ? options.resetLocalData : !isSameProject;
@@ -2245,8 +2326,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         success: false,
         error:
           language === 'fr'
-            ? 'Déverrouillage local requis (empreinte ou code PIN) avant la connexion Google.'
-            : 'Local unlock (fingerprint or PIN) is required before Google Sign-In.'
+            ? 'Déverrouillage local requis (empreinte ou mot de passe) avant la connexion Google.'
+            : 'Local unlock (fingerprint or passphrase) is required before Google Sign-In.'
       };
     }
 
@@ -2285,12 +2366,13 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     const existingUser = auth?.currentUser;
-    if (existingUser && existingUser.email && isSameProject) {
+    if (existingUser && existingUser.email && existingUser.emailVerified && isSameProject) {
       const userInfo: AuthUserInfo = {
         uid: existingUser.uid,
         email: existingUser.email,
         displayName: existingUser.displayName,
-        photoURL: existingUser.photoURL
+        photoURL: existingUser.photoURL,
+        emailVerified: existingUser.emailVerified
       };
       const syncRes = await completeByobSetupWithUser(targetByob, userInfo, false, dek);
       return {
@@ -2334,7 +2416,85 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   };
 
-  const enrollOrUpdateBiometrics = async (): Promise<{
+  /**
+   * Transiently unwraps the encrypted DEK using fresh step-up verification
+   * (current Vault Passphrase or WebAuthn PRF assertion) so the active runtime DEK
+   * remains strictly non-extractable during normal operation.
+   */
+  const obtainRawDekForRotation = async (
+    currentMeta: VaultLockMeta,
+    currentPin?: string
+  ): Promise<{ rawDek?: Uint8Array; error?: string }> => {
+    const cleanCurrentPin = currentPin?.trim() || '';
+
+    if (cleanCurrentPin && currentMeta.wrappedDekPin && currentMeta.pinSaltBase64) {
+      try {
+        const kekPin = await deriveKekFromPin(
+          cleanCurrentPin,
+          base64ToUint8(currentMeta.pinSaltBase64),
+          currentMeta.kdfIterations || PBKDF2_ITERATIONS
+        );
+        const rawDek = await unwrapDekWithKek(currentMeta.wrappedDekPin, kekPin);
+        return { rawDek };
+      } catch {
+        return {
+          error:
+            language === 'fr'
+              ? 'Le mot de passe / PIN actuel saisi est incorrect.'
+              : 'The current Vault Passphrase entered is incorrect.'
+        };
+      }
+    }
+
+    if (
+      currentMeta.wrappedDekPrf &&
+      currentMeta.hkdfSaltBase64 &&
+      currentMeta.credentialId
+    ) {
+      const prfSalt = currentMeta.prfSaltBase64
+        ? base64ToUint8(currentMeta.prfSaltBase64)
+        : undefined;
+      const authRes = await authenticateWithBiometricPrf(currentMeta.credentialId, prfSalt);
+      if (authRes.success && authRes.prfSecret) {
+        try {
+          const kekPrf = await deriveKekFromPrfSecret(
+            authRes.prfSecret,
+            base64ToUint8(currentMeta.hkdfSaltBase64)
+          );
+          const rawDek = await unwrapDekWithKek(currentMeta.wrappedDekPrf, kekPrf);
+          return { rawDek };
+        } catch {
+          // Fall through to PIN error message if wrapped PRF key failed
+        }
+      }
+      if (currentMeta.wrappedDekPin) {
+        return {
+          error:
+            language === 'fr'
+              ? 'Saisissez votre mot de passe / PIN actuel pour confirmer ce changement de sécurité.'
+              : 'Enter your current Vault Passphrase to authorize this security change.'
+        };
+      }
+      return {
+        error:
+          authRes.error ||
+          (language === 'fr'
+            ? 'Vérification biométrique requise pour modifier les clés du coffre.'
+            : 'Biometric verification is required to rotate vault keys.')
+      };
+    }
+
+    return {
+      error:
+        language === 'fr'
+          ? 'Veuillez saisir votre mot de passe / PIN actuel pour confirmer ce changement de sécurité.'
+          : 'Please enter your current Vault Passphrase to authorize this security change.'
+    };
+  };
+
+  const enrollOrUpdateBiometrics = async (
+    currentPin?: string
+  ): Promise<{
     success: boolean;
     prfSupported?: boolean;
     error?: string;
@@ -2348,63 +2508,76 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
     }
 
-    const prfSalt = generateRandomBytes(32);
-    const enrollRes = await enrollBiometricWithPrf(
-      firebaseUser?.displayName || config.currentUserName || 'Vault Owner',
-      firebaseUser?.email || config.currentUserEmail || 'vault@family.local',
-      prfSalt
-    );
-
-    if (!enrollRes.success || !enrollRes.credentialId) {
-      return { success: false, error: enrollRes.error };
+    const stepUp = await obtainRawDekForRotation(currentMeta, currentPin);
+    if (!stepUp.rawDek) {
+      return { success: false, error: stepUp.error };
     }
 
-    if (!enrollRes.prfSupported && !currentMeta.wrappedDekPin) {
-      return {
-        success: false,
-        prfSupported: false,
-        error:
-          language === 'fr'
-            ? 'Ce navigateur ne supporte pas WebAuthn PRF. Définissez d’abord un code PIN de secours.'
-            : 'This browser does not support WebAuthn PRF. Set a backup Vault PIN first.'
+    const rawDek = stepUp.rawDek;
+    try {
+      const prfSalt = generateRandomBytes(32);
+      const enrollRes = await enrollBiometricWithPrf(
+        firebaseUser?.displayName || config.currentUserName || 'Vault Owner',
+        firebaseUser?.email || config.currentUserEmail || 'vault@family.local',
+        prfSalt
+      );
+
+      if (!enrollRes.success || !enrollRes.credentialId) {
+        return { success: false, error: enrollRes.error };
+      }
+
+      if (!enrollRes.prfSupported && !currentMeta.wrappedDekPin) {
+        return {
+          success: false,
+          prfSupported: false,
+          error:
+            language === 'fr'
+              ? 'Ce navigateur ne supporte pas WebAuthn PRF. Définissez d’abord un mot de passe de secours.'
+              : 'This browser does not support WebAuthn PRF. Set a backup Vault Passphrase first.'
+        };
+      }
+
+      const nextMeta: VaultLockMeta = {
+        ...currentMeta,
+        v: 3,
+        credentialId: enrollRes.credentialId,
+        updatedAt: Date.now()
       };
+
+      if (enrollRes.prfSupported && enrollRes.prfSecret) {
+        const hkdfSalt = generateRandomBytes(16);
+        const kekPrf = await deriveKekFromPrfSecret(enrollRes.prfSecret, hkdfSalt);
+        nextMeta.prfSaltBase64 = uint8ToBase64(prfSalt);
+        nextMeta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
+        nextMeta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
+        nextMeta.encryptionMode = nextMeta.wrappedDekPin ? 'HYBRID' : 'WEBAUTHN_PRF';
+      } else {
+        delete nextMeta.prfSaltBase64;
+        delete nextMeta.hkdfSaltBase64;
+        delete nextMeta.wrappedDekPrf;
+        nextMeta.encryptionMode = 'PIN_WRAPPED';
+      }
+
+      saveVaultLockMeta(nextMeta);
+      setVaultLockMeta(nextMeta);
+      return { success: true, prfSupported: enrollRes.prfSupported };
+    } finally {
+      rawDek.fill(0);
     }
-
-    const rawDek = await exportDekRaw(dek);
-    const nextMeta: VaultLockMeta = {
-      ...currentMeta,
-      credentialId: enrollRes.credentialId,
-      updatedAt: Date.now()
-    };
-
-    if (enrollRes.prfSupported && enrollRes.prfSecret) {
-      const hkdfSalt = generateRandomBytes(16);
-      const kekPrf = await deriveKekFromPrfSecret(enrollRes.prfSecret, hkdfSalt);
-      nextMeta.prfSaltBase64 = uint8ToBase64(prfSalt);
-      nextMeta.hkdfSaltBase64 = uint8ToBase64(hkdfSalt);
-      nextMeta.wrappedDekPrf = await wrapDekWithKek(rawDek, kekPrf);
-      nextMeta.encryptionMode = nextMeta.wrappedDekPin ? 'HYBRID' : 'WEBAUTHN_PRF';
-    } else {
-      delete nextMeta.prfSaltBase64;
-      delete nextMeta.hkdfSaltBase64;
-      delete nextMeta.wrappedDekPrf;
-      nextMeta.encryptionMode = 'PIN_WRAPPED';
-    }
-
-    saveVaultLockMeta(nextMeta);
-    setVaultLockMeta(nextMeta);
-    return { success: true, prfSupported: enrollRes.prfSupported };
   };
 
-  const updateVaultPin = async (newPin: string): Promise<{ success: boolean; error?: string }> => {
+  const updateVaultPin = async (
+    newPin: string,
+    currentPin?: string
+  ): Promise<{ success: boolean; error?: string }> => {
     const cleanPin = newPin.trim();
-    if (cleanPin.length < 6) {
+    if (cleanPin.length < MIN_VAULT_PASSPHRASE_LENGTH) {
       return {
         success: false,
         error:
           language === 'fr'
-            ? 'Le code PIN doit contenir au moins 6 caractères.'
-            : 'Vault PIN must be at least 6 characters.'
+            ? `Le mot de passe du coffre doit contenir au moins ${MIN_VAULT_PASSPHRASE_LENGTH} caractères.`
+            : `Vault Passphrase must be at least ${MIN_VAULT_PASSPHRASE_LENGTH} characters.`
       };
     }
 
@@ -2417,22 +2590,33 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
     }
 
-    const rawDek = await exportDekRaw(dek);
-    const pinSalt = generateRandomBytes(16);
-    const kekPin = await deriveKekFromPin(cleanPin, pinSalt);
-    const wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
+    const stepUp = await obtainRawDekForRotation(currentMeta, currentPin);
+    if (!stepUp.rawDek) {
+      return { success: false, error: stepUp.error };
+    }
 
-    const nextMeta: VaultLockMeta = {
-      ...currentMeta,
-      pinSaltBase64: uint8ToBase64(pinSalt),
-      wrappedDekPin,
-      encryptionMode: currentMeta.wrappedDekPrf ? 'HYBRID' : 'PIN_WRAPPED',
-      updatedAt: Date.now()
-    };
+    const rawDek = stepUp.rawDek;
+    try {
+      const pinSalt = generateRandomBytes(16);
+      const kekPin = await deriveKekFromPin(cleanPin, pinSalt, PBKDF2_ITERATIONS);
+      const wrappedDekPin = await wrapDekWithKek(rawDek, kekPin);
 
-    saveVaultLockMeta(nextMeta);
-    setVaultLockMeta(nextMeta);
-    return { success: true };
+      const nextMeta: VaultLockMeta = {
+        ...currentMeta,
+        v: 3,
+        kdfIterations: PBKDF2_ITERATIONS,
+        pinSaltBase64: uint8ToBase64(pinSalt),
+        wrappedDekPin,
+        encryptionMode: currentMeta.wrappedDekPrf ? 'HYBRID' : 'PIN_WRAPPED',
+        updatedAt: Date.now()
+      };
+
+      saveVaultLockMeta(nextMeta);
+      setVaultLockMeta(nextMeta);
+      return { success: true };
+    } finally {
+      rawDek.fill(0);
+    }
   };
 
   const removeVaultPin = async (): Promise<{ success: boolean; error?: string }> => {
@@ -2597,6 +2781,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         isVaultUnlocked,
         biometricGateVerified,
         legacyPlaintextConfig,
+        legacyV2VaultDetected,
+        pinLockoutSecondsRemaining,
         authInitialized,
 
         accounts: accounts.filter(a => !a.isDeleted),

@@ -57,25 +57,25 @@ Firebase Authentication blocks OAuth popups and redirects from unrecognized doma
 3. Replace the default rules with the copied rules and click **Publish**.
 
 #### How Bootstrap & Dynamic RBAC Work
-- **Automatic First-User Bootstrap:** When the first authenticated user connects to an empty Firestore database, the app initializes `/security_config/roles` (with the first user as `ADMIN`) and `/family_meta/vault` (with `adminEmail` and `familyName`).
-- **One-Time Rule Setup:** Because `firestore.rules` dynamically checks `request.auth.token.email.lower()` against `/security_config/roles`, **you never need to edit or re-publish `firestore.rules`** when adding, editing, or removing family members in the app.
+- **Atomic First-User Bootstrap:** When the first verified Google user connects to an empty Firestore database, the app atomically creates `/security_config/roles` (with the first user as `ADMIN`) and `/family_meta/vault` (with matching `adminEmail` and `familyName`) in a single batch.
+- **One-Time Rule Setup:** Because `firestore.rules` dynamically checks `request.auth.token.email.lower()` (with `email_verified == true`) against `/security_config/roles`, **you never need to edit or re-publish `firestore.rules`** when adding, editing, or removing family members in the app.
 
-### Step 6: First Sign-In, Local Delta Cache & Fingerprint Unlock
+### Step 6: First Sign-In, Encrypted Delta Cache & Vault Unlock
 1. Open the app — the Login screen is enforced before any financial UI or data loads.
 2. Select **My Firestore (BYOB)** (or **Scan QR Code** if joining an existing family vault).
-3. Enter your **Firebase Project ID**, **Firebase Web API Key**, optional **Application ID**, and **Vault Name**.
+3. Enter your **Firebase Project ID**, **Firebase Web API Key**, optional **Application ID**, **Vault Name**, and create an **8+ character Vault Passphrase** (with optional WebAuthn PRF biometrics).
 4. Click **Sign in with Google & Connect Firestore**.
-5. Once authenticated, your initial data is pulled from Firestore and cached locally (`localStorage` `fbv_*` keys + `lastPullTimestamp` watermark).
+5. Once authenticated, your initial data is pulled from Firestore and cached locally in encrypted AES-256-GCM envelopes (`fbv_sec_*` keys + `lastPullTimestamp` watermark).
 
-#### Returning Visits & Fingerprint Unlock
-- Because your BYOB connection details (`fbv_byob_config`) are saved locally, subsequent visits open directly on the **Fingerprint / Face ID Unlock** screen (powered by WebAuthn / FIDO2).
-- On first use, click **Verify Fingerprint & Connect** (or enroll anytime in **Vault Config & Cloud Sync ➔ Direct Fingerprint / Face ID Login**) to register a hardware platform credential (`fbv_biometric_cred_id`).
-- When unlocked, the app hydrates from the local cache (if still present) and performs an **incremental delta sync** (`updatedAt > lastPullTimestamp`) rather than re-downloading every collection.
+#### Returning Visits & Passphrase / Biometric Unlock
+- Because your encrypted BYOB connection envelope (`fbv_vault_lock`, `v: 3` PBKDF2-SHA256 600,000 iterations) is saved locally, subsequent visits open directly on the **Unlock Vault** screen.
+- On first use or in **Vault Config & Cloud Sync**, you can enroll a hardware WebAuthn PRF platform credential (`fbv_biometric_cred_id`) with step-up passphrase verification.
+- When unlocked, the runtime Data Encryption Key stays non-extractable in memory and the app performs an **incremental delta sync** (`updatedAt > lastPullTimestamp`).
 
 #### What Happens on Log Out
-- Clicking **Log Out** signs out of Firebase Auth, wipes React state and `sessionStorage`, and **erases all local cached financial data** (`accounts`, `transactions`, `categories`, `budgets`, `rules`, `members`, `syncState`, `outbox`, preferences).
-- **Only** your BYOB connection configuration (`fbv_byob_config`) and WebAuthn credential ID (`fbv_biometric_cred_id`) are retained so you can unlock with fingerprint on your next visit.
-- Clicking **Forget Config** erases everything including `fbv_byob_config` and `fbv_biometric_cred_id`.
+- Clicking **Log Out** signs out of Firebase Auth, aborts pending cache writes, wipes React memory and `sessionStorage`, and **erases all encrypted cached financial data** (`fbv_sec_*`).
+- **Only** your wrapped keyvault envelope (`fbv_vault_lock`) and WebAuthn credential ID (`fbv_biometric_cred_id`) are retained so you can unlock on your next visit.
+- Clicking **Forget Config** erases everything including `fbv_vault_lock` and `fbv_biometric_cred_id`.
 
 ---
 

@@ -276,19 +276,3 @@ export async function authenticateWithBiometricPrf(
     };
   }
 }
-
-export async function enrollBiometricCredential(
-  userName: string = 'Vault Owner',
-  userEmail: string = 'vault@family.local'
-): Promise<{ success: boolean; error?: string }> {
-  const res = await enrollBiometricWithPrf(userName, userEmail);
-  return { success: res.success, error: res.error };
-}
-
-export async function authenticateWithBiometrics(): Promise<{
-  success: boolean;
-  error?: string;
-}> {
-  const res = await authenticateWithBiometricPrf();
-  return { success: res.success, error: res.error };
-}

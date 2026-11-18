@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Camera, Upload, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 import jsQR from 'jsqr';
+import { validateFirebaseConfigFields } from '../services/firebaseSyncService';
 
 interface QrCodeScannerModalProps {
   isOpen: boolean;
@@ -19,6 +20,32 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  const validateAndAcceptPayload = (rawPayload: string): boolean => {
+    try {
+      const parsed = JSON.parse(rawPayload);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setErrorMsg('Invalid Vault QR Code: expected a JSON configuration object.');
+        return false;
+      }
+      const check = validateFirebaseConfigFields({
+        projectId: typeof parsed.projectId === 'string' ? parsed.projectId : '',
+        apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
+        applicationId: typeof parsed.applicationId === 'string' ? parsed.applicationId : ''
+      });
+      if (!check.valid) {
+        setErrorMsg(check.error || 'Invalid Firebase BYOB configuration in QR payload.');
+        return false;
+      }
+      setErrorMsg(null);
+      onScanned(rawPayload);
+      handleClose();
+      return true;
+    } catch {
+      setErrorMsg('Invalid Vault QR Code: payload is not valid JSON.');
+      return false;
+    }
+  };
 
   useEffect(() => {
     let animId: number;
@@ -59,9 +86,9 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
           });
 
           if (code && code.data) {
-            onScanned(code.data);
-            handleClose();
-            return;
+            if (validateAndAcceptPayload(code.data)) {
+              return;
+            }
           }
         }
       }
@@ -105,8 +132,7 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const code = jsQR(imageData.data, imageData.width, imageData.height);
           if (code && code.data) {
-            onScanned(code.data);
-            handleClose();
+            validateAndAcceptPayload(code.data);
           } else {
             setErrorMsg('No QR code detected in this image. Try another photo or paste the code.');
           }
@@ -119,8 +145,7 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
 
   const handleManualSubmit = () => {
     if (pasteText.trim()) {
-      onScanned(pasteText.trim());
-      handleClose();
+      validateAndAcceptPayload(pasteText.trim());
     }
   };
 

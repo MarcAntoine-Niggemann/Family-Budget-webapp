@@ -6,6 +6,9 @@ on:
   push:
     branches-ignore: [main]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -24,6 +27,16 @@ jobs:
 
       - name: TypeScript typecheck
         run: npm run lint
+
+      - name: Validate Firestore security rules
+        run: npx eslint firestore.rules
+
+      - name: Production dependency security audit (critical)
+        run: npm audit --audit-level=critical --omit=dev
+
+      - name: Production dependency security audit (high advisory)
+        run: npm audit --audit-level=high --omit=dev
+        continue-on-error: true
 
       - name: Production build
         run: npm run build

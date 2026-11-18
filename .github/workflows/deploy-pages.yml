@@ -33,6 +33,9 @@ jobs:
       - name: TypeScript typecheck
         run: npm run lint
 
+      - name: Validate Firestore security rules
+        run: npx eslint firestore.rules
+
       - name: Build PWA for GitHub Pages
         run: npm run build
 

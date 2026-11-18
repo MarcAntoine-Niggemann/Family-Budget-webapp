@@ -1,0 +1,254 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user private document keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid"]
+    },
+    "SecurityRoles": {
+      "title": "SecurityRoles",
+      "description": "Authoritative RBAC role map keyed by lowercase verified Google email.",
+      "type": "object",
+      "properties": {
+        "userRoles": { "type": "object", "description": "Map of lowercase email to ADMIN | EDITOR | MEMBER | VIEWER | CHILD" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userRoles", "updatedAt"]
+    },
+    "VaultMetadata": {
+      "title": "VaultMetadata",
+      "description": "Family vault identity and primary admin ownership metadata.",
+      "type": "object",
+      "properties": {
+        "familyName": { "type": "string", "maxLength": 120 },
+        "adminEmail": { "type": "string", "format": "email", "maxLength": 254 },
+        "updatedAt": { "type": "number" },
+        "subscriptionStatus": { "type": "string", "enum": ["ACTIVE", "EXPIRED", "CANCELLED"] },
+        "subscriptionExpiryMillis": { "type": "number" },
+        "subscriptionPurchaseToken": { "type": "string", "maxLength": 512 }
+      },
+      "required": ["familyName", "adminEmail", "updatedAt"]
+    },
+    "FamilyMember": {
+      "title": "FamilyMember",
+      "description": "Household member profile used for RBAC visibility and shared expense splitting.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 254 },
+        "role": { "type": "string", "enum": ["ADMIN", "EDITOR", "MEMBER", "VIEWER", "CHILD"] },
+        "avatarColor": { "type": "number" },
+        "firestoreSynced": { "type": "boolean" },
+        "customPermissions": { "type": "string", "maxLength": 500 },
+        "monthlyIncome": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "name", "role", "updatedAt", "isDeleted"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Household checking, deferred card, savings, cash, or investment account.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "type": { "type": "string", "enum": ["CHECKING", "DEFERRED_CARD", "SAVINGS", "CASH", "INVESTMENT", "OTHER"] },
+        "currentBalance": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "billingCycleClosingDay": { "type": "number" },
+        "settlementDay": { "type": "number" },
+        "linkedCheckingAccountId": { "type": "string", "maxLength": 128 },
+        "includeInLiquidForecast": { "type": "boolean" },
+        "targetSavingsGoal": { "type": "number" },
+        "monthlyClosingOverrides": { "type": "string", "maxLength": 2000 },
+        "color": { "type": "number" },
+        "icon": { "type": "string", "maxLength": 64 },
+        "isDefault": { "type": "boolean" },
+        "lastManualSyncTimestamp": { "type": "number" },
+        "openBankingAccountId": { "type": "string", "maxLength": 128 },
+        "openBankingInstitution": { "type": "string", "maxLength": 120 },
+        "openBankingIban": { "type": "string", "maxLength": 64 },
+        "lastOpenBankingSync": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "name", "type", "currentBalance", "updatedAt", "isDeleted"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Budget category grouping.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "name": { "type": "string", "maxLength": 120 },
+        "icon": { "type": "string", "maxLength": 64 },
+        "color": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "name", "updatedAt", "isDeleted"]
+    },
+    "CategoryBudget": {
+      "title": "CategoryBudget",
+      "description": "Scheduled or recurring budget line item under a category.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "categoryId": { "type": "number" },
+        "categoryName": { "type": "string", "maxLength": 120 },
+        "amount": { "type": "number" },
+        "frequency": { "type": "string", "enum": ["MONTHLY", "YEARLY", "ONCE"] },
+        "year": { "type": "number" },
+        "month": { "type": "number" },
+        "day": { "type": "number" },
+        "startYear": { "type": "number" },
+        "startMonth": { "type": "number" },
+        "endYear": { "type": "number" },
+        "endMonth": { "type": "number" },
+        "title": { "type": "string", "maxLength": 160 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "isExpense": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "categoryId", "title", "amount", "frequency", "updatedAt", "isDeleted"]
+    },
+    "CategorizationRule": {
+      "title": "CategorizationRule",
+      "description": "Auto-categorization rule matching bank labels using bounded patterns.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "pattern": { "type": "string", "maxLength": 150 },
+        "matchType": { "type": "string", "enum": ["CONTAINS", "STARTS_WITH", "EXACT", "REGEX"] },
+        "targetCategoryId": { "type": "number" },
+        "targetCategoryName": { "type": "string", "maxLength": 120 },
+        "targetBudgetId": { "type": "number" },
+        "targetBudgetTitle": { "type": "string", "maxLength": 160 },
+        "priority": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "pattern", "matchType", "targetCategoryId", "updatedAt", "isDeleted"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial ledger transaction synced across devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "remoteId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "originalBankLabel": { "type": "string", "maxLength": 300 },
+        "amount": { "type": "number" },
+        "isExpense": { "type": "boolean" },
+        "categoryId": { "type": "number" },
+        "categoryName": { "type": "string", "maxLength": 120 },
+        "categoryColor": { "type": "number" },
+        "categoryIcon": { "type": "string", "maxLength": 64 },
+        "budgetId": { "type": "number" },
+        "budgetTitle": { "type": "string", "maxLength": 160 },
+        "date": { "type": "number" },
+        "familyMemberId": { "type": "string", "maxLength": 128 },
+        "familyMemberName": { "type": "string", "maxLength": 120 },
+        "source": { "type": "string", "enum": ["MANUAL", "BANK_IMPORT", "OPEN_BANKING"] },
+        "status": { "type": "string", "enum": ["PENDING", "RECONCILED", "VERIFIED"] },
+        "reconciledWithId": { "type": "number" },
+        "paymentMethod": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "parentId": { "type": "number" },
+        "isSplitParent": { "type": "boolean" },
+        "isSplit": { "type": "boolean" },
+        "isExcluded": { "type": "boolean" },
+        "isExcludedFromTotals": { "type": "boolean" },
+        "settlementCardName": { "type": "string", "maxLength": 120 },
+        "billingCycleClosingDay": { "type": "number" },
+        "billingCycleEndDate": { "type": "number" },
+        "billingCycleStartDate": { "type": "number" },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "accountName": { "type": "string", "maxLength": 120 },
+        "targetAccountId": { "type": "string", "maxLength": 128 },
+        "targetAccountName": { "type": "string", "maxLength": 120 },
+        "isInternalTransfer": { "type": "boolean" },
+        "transferType": { "type": "string", "enum": ["TO_SAVINGS", "FROM_SAVINGS", "CARD_SETTLEMENT", "GENERAL_TRANSFER"] },
+        "creditCardPeriod": { "type": "string", "maxLength": 16 },
+        "sharedSplit": { "type": "object" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "title", "amount", "date", "accountId", "updatedAt", "isDeleted"]
+    },
+    "SharedSettlement": {
+      "title": "SharedSettlement",
+      "description": "Shared expense settlement reimbursement between household members.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fromMemberId": { "type": "string", "maxLength": 128 },
+        "fromMemberName": { "type": "string", "maxLength": 120 },
+        "toMemberId": { "type": "string", "maxLength": 128 },
+        "toMemberName": { "type": "string", "maxLength": 120 },
+        "amount": { "type": "number" },
+        "date": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "linkedTransactionId": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "fromMemberId", "toMemberId", "amount", "date", "updatedAt", "isDeleted"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user metadata owned strictly by request.auth.uid."
+    },
+    "/security_config/{configDoc}": {
+      "schema": { "$ref": "#/entities/SecurityRoles" },
+      "description": "Singleton 'roles' document defining household RBAC roles."
+    },
+    "/family_meta/{docId}": {
+      "schema": { "$ref": "#/entities/VaultMetadata" },
+      "description": "Singleton 'vault' document storing family name and adminEmail."
+    },
+    "/family_members/{memberId}": {
+      "schema": { "$ref": "#/entities/FamilyMember" },
+      "description": "Household members and proportional split income settings."
+    },
+    "/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/Account" },
+      "description": "Checking, deferred card, and savings accounts."
+    },
+    "/categories/{catId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Budget categories."
+    },
+    "/category_budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/CategoryBudget" },
+      "description": "Sub-category budget items and recurrence schedules."
+    },
+    "/rules/{ruleId}": {
+      "schema": { "$ref": "#/entities/CategorizationRule" },
+      "description": "Auto-categorization pattern rules."
+    },
+    "/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Household financial transactions."
+    },
+    "/shared_settlements/{settlementId}": {
+      "schema": { "$ref": "#/entities/SharedSettlement" },
+      "description": "Member reimbursement records."
+    }
+  }
+}

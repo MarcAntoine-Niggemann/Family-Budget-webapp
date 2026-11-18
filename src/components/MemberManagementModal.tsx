@@ -23,8 +23,9 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   member,
   onClose
 }) => {
-  const { addMember, updateMember, deleteMember, members, language, currency } = useBudget();
+  const { addMember, updateMember, deleteMember, members, sessionMode, config, language, currency } = useBudget();
   const isFr = language === 'fr';
+  const isAdmin = sessionMode !== 'FIRESTORE' || config.currentUserRole === 'ADMIN';
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -53,7 +54,7 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
 
   if (!isOpen) return null;
 
-  const canSave = Boolean(name.trim());
+  const canSave = isAdmin && Boolean(name.trim());
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +85,7 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   };
 
   const handleDelete = () => {
-    if (!member) return;
+    if (!member || !isAdmin) return;
     if (!confirmDelete) {
       setConfirmDelete(true);
       return;
@@ -116,6 +117,14 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
           </button>
         </div>
 
+        {!isAdmin && (
+          <div className="mt-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 text-xs leading-relaxed">
+            {isFr
+              ? 'Accès administrateur requis : seuls les membres avec le rôle ADMIN peuvent ajouter, modifier ou supprimer des membres et rôles Firestore.'
+              : 'Administrator access required: only vault ADMIN users can add, modify, or remove family members and Firestore RBAC roles.'}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -125,10 +134,11 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
               type="text"
               required
               autoFocus
+              disabled={!isAdmin}
               placeholder={isFr ? 'Ex: Sophie Martin' : 'e.g. Sophie Smith'}
               value={name}
               onChange={e => setName(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 disabled:opacity-60"
             />
           </div>
 
@@ -140,10 +150,11 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
               <input
                 type="text"
                 inputMode="decimal"
+                disabled={!isAdmin}
                 placeholder="2500"
                 value={incomeStr}
                 onChange={e => setIncomeStr(e.target.value)}
-                className="w-full font-mono tabular-nums bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+                className="w-full font-mono tabular-nums bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 disabled:opacity-60"
               />
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                 {isFr
@@ -158,8 +169,9 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
               </label>
               <select
                 value={role}
+                disabled={!isAdmin}
                 onChange={e => setRole(e.target.value as MemberRole)}
-                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-teal-500 disabled:opacity-60"
               >
                 <option value="ADMIN">ADMIN</option>
                 <option value="EDITOR">EDITOR</option>
@@ -176,10 +188,11 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
             </label>
             <input
               type="email"
+              disabled={!isAdmin}
               placeholder="partner@example.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 disabled:opacity-60"
             />
           </div>
 
@@ -192,8 +205,9 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
                 <button
                   key={c}
                   type="button"
+                  disabled={!isAdmin}
                   onClick={() => setAvatarColor(c)}
-                  className={`w-7 h-7 rounded-full transition cursor-pointer ${
+                  className={`w-7 h-7 rounded-full transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                     avatarColor === c ? 'ring-2 ring-offset-2 ring-teal-500 dark:ring-offset-slate-900 scale-110' : 'opacity-80 hover:opacity-100'
                   }`}
                   style={{ backgroundColor: `#${c.toString(16).slice(-6)}` }}
@@ -204,11 +218,11 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
           </div>
 
           <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
-            {member && members.length > 1 ? (
+            {member && members.length > 1 && isAdmin ? (
               <button
                 type="button"
                 onClick={handleDelete}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                   confirmDelete
                     ? 'bg-rose-50 dark:bg-rose-500/20 border border-rose-300 dark:border-rose-500/50 text-rose-700 dark:text-rose-200'
                     : 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10'
@@ -225,17 +239,19 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer whitespace-nowrap"
               >
-                {isFr ? 'Annuler' : 'Cancel'}
+                {isFr ? 'Fermer' : 'Close'}
               </button>
-              <button
-                type="submit"
-                disabled={!canSave}
-                className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 disabled:opacity-40 text-white dark:text-slate-950 font-bold text-sm shadow-sm transition cursor-pointer"
-              >
-                {isFr ? 'Enregistrer' : 'Save'}
-              </button>
+              {isAdmin && (
+                <button
+                  type="submit"
+                  disabled={!canSave}
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 dark:bg-teal-500 dark:hover:bg-teal-400 disabled:opacity-40 text-white dark:text-slate-950 font-bold text-sm shadow-sm transition cursor-pointer whitespace-nowrap"
+                >
+                  {isFr ? 'Enregistrer' : 'Save'}
+                </button>
+              )}
             </div>
           </div>
         </form>
