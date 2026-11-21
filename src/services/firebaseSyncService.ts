@@ -380,20 +380,37 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
         );
       }
 
+      const hasVaultMetaUpdate = payload.outbox.some(o => o.entityType === 'VAULT_META');
       const desiredName = (payload.config.familyName || '').trim().slice(0, 120);
-      if (desiredName && existingVaultData && desiredName !== existingVaultData.familyName) {
-        currentStage = 'Mise à jour du nom du coffre (family_meta/vault)';
-        await withFirestoreTimeout(
-          setDoc(
-            vaultRef,
-            {
+      if (hasVaultMetaUpdate && desiredName) {
+        if (vaultExists) {
+          if (desiredName !== existingVaultData?.familyName) {
+            currentStage = 'Mise à jour du nom du coffre (family_meta/vault)';
+            const adminEmail =
+              typeof existingVaultData?.adminEmail === 'string' && existingVaultData.adminEmail.trim()
+                ? existingVaultData.adminEmail.trim()
+                : currentUser.email;
+            await withFirestoreTimeout(
+              setDoc(vaultRef, {
+                familyName: desiredName,
+                adminEmail,
+                updatedAt: syncStartTime
+              }),
+              currentStage
+            );
+          }
+        } else {
+          currentStage = 'Création des métadonnées du coffre (family_meta/vault)';
+          await withFirestoreTimeout(
+            setDoc(vaultRef, {
               familyName: desiredName,
+              adminEmail: currentUser.email,
               updatedAt: syncStartTime
-            },
-            { merge: true }
-          ),
-          currentStage
-        );
+            }),
+            currentStage
+          );
+        }
+        incomingFamilyName = desiredName;
       }
     }
 

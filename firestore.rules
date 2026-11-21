@@ -510,7 +510,9 @@ service cloud.firestore {
       allow update: if isAdmin()
         && docId == 'vault'
         && isValidByobVaultMeta(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['familyName', 'updatedAt']);
+        && incoming().diff(existing()).addedKeys().hasOnly(['familyName', 'adminEmail', 'updatedAt'])
+        && incoming().diff(existing()).changedKeys().hasOnly(['familyName', 'updatedAt'])
+        && (!('adminEmail' in existing()) || incoming().adminEmail == existing().adminEmail);
       allow delete: if false;
     }
 

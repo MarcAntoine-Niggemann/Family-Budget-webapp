@@ -314,6 +314,30 @@ service cloud.firestore {
         && isValidTimestamp(data.updatedAt)
         && data.isDeleted is bool;
     }
+    function isValidSimulation(data) {
+      return data.keys().hasAll([
+          'id', 'name', 'clonedFromName', 'categories', 'budgets',
+          'createdAt', 'updatedAt', 'isDeleted'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'description', 'clonedFromName', 'categories', 'budgets',
+          'createdAt', 'updatedAt', 'isDeleted'
+        ])
+        && isValidId(data.id)
+        && isValidString(data.name, 120)
+        && data.name.size() >= 1
+        && isOptionalString(data, 'description', 500)
+        && isValidString(data.clonedFromName, 120)
+        && data.categories is list
+        && data.categories.size() <= 200
+        && (data.categories.size() == 0 || data.categories[0] is map)
+        && data.budgets is list
+        && data.budgets.size() <= 1000
+        && (data.budgets.size() == 0 || data.budgets[0] is map)
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt)
+        && data.isDeleted is bool;
+    }
     function isValidLegacyAccountBalance(data) {
       return data.keys().hasAll(['currentBalance', 'updatedAt'])
         && data.keys().hasOnly(['id', 'accountName', 'currentBalance', 'lastManualSyncTimestamp', 'updatedAt', 'isDeleted'])
@@ -376,7 +400,12 @@ service cloud.firestore {
         && docId == 'vault'
         && isValidByobVaultMeta(incoming())
         && ((!rolesDocExists() && !vaultMetaExists() && incoming().adminEmail.lower() == userEmail() && getAfter(rolesDocPath()).data.userRoles[userEmail()] == 'ADMIN') || isAdmin());
-      allow update: if isAdmin() && docId == 'vault' && isValidByobVaultMeta(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['familyName', 'updatedAt']);
+      allow update: if isAdmin()
+        && docId == 'vault'
+        && isValidByobVaultMeta(incoming())
+        && incoming().diff(existing()).addedKeys().hasOnly(['familyName', 'adminEmail', 'updatedAt'])
+        && incoming().diff(existing()).changedKeys().hasOnly(['familyName', 'updatedAt'])
+        && (!('adminEmail' in existing()) || incoming().adminEmail == existing().adminEmail);
       allow delete: if false;
     }
     match /family_members/{memberId} {
@@ -438,6 +467,12 @@ service cloud.firestore {
       allow list: if isFamilyMember();
       allow create, update: if canEdit() && isValidId(settlementId) && isValidSettlement(incoming());
       allow delete: if isAdmin() && isValidId(settlementId);
+    }
+    match /budget_simulations/{simId} {
+      allow get: if isValidId(simId) && isFamilyMember();
+      allow list: if isFamilyMember();
+      allow create, update: if canEdit() && isValidId(simId) && isValidSimulation(incoming());
+      allow delete: if isAdmin() && isValidId(simId);
     }
   }
 }`;
@@ -503,6 +538,12 @@ export const FirebaseSyncScreen: React.FC = () => {
   useEffect(() => {
     checkBiometricSupport().then(setBiometricStatus);
   }, []);
+
+  useEffect(() => {
+    if (config.familyName) {
+      setFamilyName(config.familyName);
+    }
+  }, [config.familyName]);
 
   useEffect(() => {
     const syncDiag = () => {

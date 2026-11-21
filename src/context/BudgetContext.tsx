@@ -2121,14 +2121,28 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateConfig = (patch: Partial<FirebaseConfigEntity>) => {
-    setConfig(prev => ({ ...prev, ...patch }));
-    if (patch.familyName && sessionMode === 'FIRESTORE' && savedByobConfig && activeDekRef.current) {
-      const updated = { ...savedByobConfig, familyName: patch.familyName };
+    const trimmedName = patch.familyName !== undefined ? patch.familyName.trim() : undefined;
+    const nameChanged =
+      trimmedName !== undefined && trimmedName.length > 0 && trimmedName !== config.familyName;
+
+    setConfig(prev => ({
+      ...prev,
+      ...patch,
+      ...(trimmedName !== undefined ? { familyName: trimmedName || prev.familyName } : {})
+    }));
+
+    if (trimmedName && sessionMode === 'FIRESTORE' && savedByobConfig && activeDekRef.current) {
+      const updated = { ...savedByobConfig, familyName: trimmedName };
       saveEncryptedByobConfig(updated, activeDekRef.current).catch(err =>
         console.error('Failed to re-encrypt updated vault name:', err)
       );
       setSavedByobConfig(updated);
     }
+
+    if (nameChanged && sessionMode === 'FIRESTORE') {
+      enqueueOutbox('VAULT_META', 'vault', 'UPSERT');
+    }
+
     showToast(language === 'fr' ? 'Configuration mise à jour' : 'Configuration updated');
   };
 
@@ -2225,7 +2239,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     byob: { projectId: string; apiKey: string; applicationId?: string; familyName?: string },
     user: AuthUserInfo,
     resetLocalData: boolean,
-    dekOverride?: CryptoKey
+    dekOverride?: CryptoKey,
+    extraOutbox?: SyncOutboxEntity[]
   ): Promise<{ success: boolean; error?: string; message?: string }> => {
     try {
       const dek = dekOverride || activeDekRef.current;
@@ -2349,9 +2364,15 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
       }
 
+      if (extraOutbox && extraOutbox.length > 0) {
+        syncOutbox = [...syncOutbox, ...extraOutbox];
+      }
+
       const nextConfig: FirebaseConfigEntity = {
         ...config,
-        familyName: localCache?.familyName || cleanByob.familyName || 'Private Family Vault',
+        familyName: extraOutbox?.some(o => o.entityType === 'VAULT_META')
+          ? cleanByob.familyName || 'Private Family Vault'
+          : localCache?.familyName || cleanByob.familyName || 'Private Family Vault',
         projectId: cleanByob.projectId,
         apiKey: cleanByob.apiKey,
         applicationId: cleanByob.applicationId || '',
@@ -2384,6 +2405,15 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         syncState: baseSyncState,
         config: nextConfig
       });
+
+      if (result.success && result.incomingFamilyName && result.incomingFamilyName !== cleanByob.familyName) {
+        const syncedByob: SavedByobConfig = {
+          ...cleanByob,
+          familyName: result.incomingFamilyName
+        };
+        await saveEncryptedByobConfig(syncedByob, dek);
+        setSavedByobConfig(syncedByob);
+      }
 
       applySyncResult(result, {
         accounts: syncAccounts,
@@ -2873,6 +2903,22 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       const isSameProject = savedByobConfig?.projectId?.trim() === targetByob.projectId;
+      const explicitVaultRenameOutbox: SyncOutboxEntity[] =
+        overrideByob &&
+        isSameProject &&
+        savedByobConfig?.familyName &&
+        targetByob.familyName !== savedByobConfig.familyName
+          ? [
+              {
+                outboxId: Date.now(),
+                entityType: 'VAULT_META',
+                entityId: 'vault',
+                operation: 'UPSERT',
+                payloadJson: '',
+                createdAt: Date.now()
+              }
+            ]
+          : [];
       if (overrideByob) {
         recordAuthTrace('1/3 · Mise à jour de la config BYOB chiffrée...');
         await saveEncryptedByobConfig(targetByob, dek);
@@ -2902,7 +2948,13 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           photoURL: existingUser.photoURL,
           emailVerified: existingUser.emailVerified
         };
-        const syncRes = await completeByobSetupWithUser(targetByob, userInfo, false, dek);
+        const syncRes = await completeByobSetupWithUser(
+          targetByob,
+          userInfo,
+          false,
+          dek,
+          explicitVaultRenameOutbox
+        );
         return {
           success: syncRes.success,
           vaultUnlocked: true,
@@ -2939,7 +2991,13 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         };
       }
 
-      const syncRes = await completeByobSetupWithUser(targetByob, googleRes.user, !isSameProject, dek);
+      const syncRes = await completeByobSetupWithUser(
+        targetByob,
+        googleRes.user,
+        !isSameProject,
+        dek,
+        explicitVaultRenameOutbox
+      );
       return {
         success: syncRes.success,
         vaultUnlocked: true,
