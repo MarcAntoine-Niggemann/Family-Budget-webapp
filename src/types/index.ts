@@ -138,6 +138,18 @@ export interface CategoryBudgetEntity {
   isDeleted: boolean;
 }
 
+export interface BudgetSimulationEntity {
+  id: string;
+  name: string;
+  description?: string | null;
+  clonedFromName: string;
+  categories: CategoryEntity[];
+  budgets: CategoryBudgetEntity[];
+  createdAt: number;
+  updatedAt: number;
+  isDeleted: boolean;
+}
+
 export type RuleMatchType = 'CONTAINS' | 'STARTS_WITH' | 'EXACT' | 'REGEX';
 
 export interface CategorizationRuleEntity {

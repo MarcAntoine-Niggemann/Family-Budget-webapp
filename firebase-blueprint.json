@@ -207,6 +207,29 @@
         "isDeleted": { "type": "boolean" }
       },
       "required": ["id", "fromMemberId", "toMemberId", "amount", "date", "updatedAt", "isDeleted"]
+    },
+    "BudgetSimulation": {
+      "title": "BudgetSimulation",
+      "description": "Isolated What-If budget scenario containing cloned/custom categories and budget lines.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "clonedFromName": { "type": "string", "maxLength": 120 },
+        "categories": {
+          "type": "array",
+          "items": { "$ref": "#/entities/Category" }
+        },
+        "budgets": {
+          "type": "array",
+          "items": { "$ref": "#/entities/CategoryBudget" }
+        },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["id", "name", "clonedFromName", "categories", "budgets", "createdAt", "updatedAt", "isDeleted"]
     }
   },
   "firestore": {
@@ -249,6 +272,10 @@
     "/shared_settlements/{settlementId}": {
       "schema": { "$ref": "#/entities/SharedSettlement" },
       "description": "Member reimbursement records."
+    },
+    "/budget_simulations/{simId}": {
+      "schema": { "$ref": "#/entities/BudgetSimulation" },
+      "description": "What-If budget simulation scenarios isolated from the Live budget and transactions."
     }
   }
 }

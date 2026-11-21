@@ -19,6 +19,7 @@ import { TransferModal } from './components/TransferModal';
 import { ShareVaultQrModal } from './components/ShareVaultQrModal';
 import { AccountModal } from './components/AccountModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { SimulationScenarioBar } from './components/SimulationScenarioBar';
 import { AccountEntity, TransactionEntity } from './types';
 import { Check, X } from 'lucide-react';
 
@@ -94,6 +95,8 @@ const AppContent: React.FC = () => {
             : undefined
         }
       />
+
+      <SimulationScenarioBar />
 
       {/* Main Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6">

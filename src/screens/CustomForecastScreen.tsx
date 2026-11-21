@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
+  GitCompare,
   Info,
   RotateCcw
 } from 'lucide-react';
@@ -36,7 +37,16 @@ function addDaysToDateInput(value: string, days: number): string {
 }
 
 export const CustomForecastScreen: React.FC = () => {
-  const { accounts, transactions, budgets, currency, language, resolvedTheme } = useBudget();
+  const {
+    accounts,
+    transactions,
+    budgets,
+    effectiveBudgets,
+    activeSimulation,
+    currency,
+    language,
+    resolvedTheme
+  } = useBudget();
   const isFr = language === 'fr';
   const isDark = resolvedTheme === 'dark';
 
@@ -53,6 +63,7 @@ export const CustomForecastScreen: React.FC = () => {
   );
   const [hasCustomBalanceEdit, setHasCustomBalanceEdit] = useState<boolean>(false);
   const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
+  const [compareWithLive, setCompareWithLive] = useState<boolean>(true);
 
   const isCustomMode = horizonMode === 'CUSTOM';
   const isCustomStart = isCustomMode && customStartDate !== todayStr;
@@ -118,34 +129,47 @@ export const CustomForecastScreen: React.FC = () => {
     setSelectedPointIndex(null);
   };
 
+  const forecastOptions = isCustomMode
+    ? {
+        startDate: startDateObj ?? undefined,
+        endDate:
+          startDateObj && endDateObj && endDateObj.getTime() >= startDateObj.getTime()
+            ? endDateObj
+            : startDateObj ?? undefined,
+        startingBalanceOverride:
+          hasValidStartingBalance && (isCustomStart || hasCustomBalanceEdit)
+            ? parsedBalanceRaw
+            : null,
+        locale: language
+      }
+    : {
+        horizonDays: Number(horizonMode),
+        locale: language
+      };
+
   const forecast = computeCashFlowForecast(
     accounts,
     transactions,
-    budgets,
-    isCustomMode
-      ? {
-          startDate: startDateObj ?? undefined,
-          endDate:
-            startDateObj && endDateObj && endDateObj.getTime() >= startDateObj.getTime()
-              ? endDateObj
-              : startDateObj ?? undefined,
-          startingBalanceOverride:
-            hasValidStartingBalance && (isCustomStart || hasCustomBalanceEdit)
-              ? parsedBalanceRaw
-              : null,
-          locale: language
-        }
-      : {
-          horizonDays: Number(horizonMode),
-          locale: language
-        }
+    effectiveBudgets,
+    forecastOptions
   );
 
+  const showLiveComparison = Boolean(activeSimulation && compareWithLive);
+  const liveForecast = showLiveComparison
+    ? computeCashFlowForecast(accounts, transactions, budgets, forecastOptions)
+    : null;
+
   const timeline = forecast.timeline;
-  const activePoint: CashFlowPoint | null =
-    selectedPointIndex !== null && timeline[selectedPointIndex]
-      ? timeline[selectedPointIndex]
-      : timeline[0] || null;
+  const activeIdx =
+    selectedPointIndex !== null && timeline[selectedPointIndex] ? selectedPointIndex : 0;
+  const activePoint: CashFlowPoint | null = timeline[activeIdx] || null;
+  const activeLivePoint: CashFlowPoint | null =
+    liveForecast && liveForecast.timeline[activeIdx] ? liveForecast.timeline[activeIdx] : null;
+
+  const formatSignedDelta = (delta: number) => {
+    const rounded = Math.round(delta * 100) / 100;
+    return `${rounded > 0 ? '+' : ''}${rounded.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
+  };
 
   const dateLocale = isFr ? 'fr-FR' : 'en-US';
   const spanLabel = `${new Date(forecast.startDateMillis).toLocaleDateString(dateLocale, {
@@ -176,32 +200,49 @@ export const CustomForecastScreen: React.FC = () => {
           </p>
         </div>
 
-        {/* Horizon Picker */}
-        <div className="grid grid-cols-4 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold shrink-0">
-          {(['30', '60', '90'] as const).map(days => (
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {activeSimulation && (
             <button
-              key={days}
-              onClick={() => handleSelectHorizon(days)}
-              className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 ${
-                horizonMode === days
+              type="button"
+              onClick={() => setCompareWithLive(prev => !prev)}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition whitespace-nowrap shrink-0 cursor-pointer ${
+                compareWithLive
+                  ? 'bg-indigo-600 text-white border-indigo-600 dark:bg-indigo-500 dark:border-indigo-500 shadow-xs'
+                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <GitCompare className="w-3.5 h-3.5" />
+              <span>{isFr ? 'Comparer au Live' : 'Compare vs. Live'}</span>
+            </button>
+          )}
+
+          {/* Horizon Picker */}
+          <div className="grid grid-cols-4 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold shrink-0">
+            {(['30', '60', '90'] as const).map(days => (
+              <button
+                key={days}
+                onClick={() => handleSelectHorizon(days)}
+                className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 cursor-pointer ${
+                  horizonMode === days
+                    ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                {isFr ? `${days} Jours` : `${days} Days`}
+              </button>
+            ))}
+            <button
+              onClick={() => handleSelectHorizon('CUSTOM')}
+              className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 cursor-pointer ${
+                horizonMode === 'CUSTOM'
                   ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
-              {isFr ? `${days} Jours` : `${days} Days`}
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{isFr ? 'Perso' : 'Custom'}</span>
             </button>
-          ))}
-          <button
-            onClick={() => handleSelectHorizon('CUSTOM')}
-            className={`px-3 py-1.5 rounded-lg transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
-              horizonMode === 'CUSTOM'
-                ? 'bg-teal-600 text-white dark:bg-teal-500 dark:text-slate-950 font-bold shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{isFr ? 'Perso' : 'Custom'}</span>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -412,6 +453,11 @@ export const CustomForecastScreen: React.FC = () => {
               <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
                 {isFr ? `Point bas atteint le ${forecast.lowestBalanceDate}` : `Lowest point on ${forecast.lowestBalanceDate}`}
               </span>
+              {liveForecast && (
+                <div className="mt-1.5 text-[11px] font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                  vs Live: {formatSignedDelta(forecast.lowestBalance - liveForecast.lowestBalance)}
+                </div>
+              )}
             </div>
 
             {/* Current Forecast Balance across included accounts or custom override */}
@@ -431,6 +477,17 @@ export const CustomForecastScreen: React.FC = () => {
                   ? `Comptes inclus (${forecast.accountCount})`
                   : `Included accounts (${forecast.accountCount})`}
               </span>
+              {liveForecast && timeline.length > 0 && liveForecast.timeline.length > 0 && (
+                <div className="mt-1.5 text-[11px] font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                  {isFr ? 'Fin :' : 'End:'}{' '}
+                  {timeline[timeline.length - 1].balance.toLocaleString()} {currency} (
+                  {formatSignedDelta(
+                    timeline[timeline.length - 1].balance -
+                      liveForecast.timeline[liveForecast.timeline.length - 1].balance
+                  )}
+                  )
+                </div>
+              )}
             </div>
 
             {/* Upcoming Scheduled Bills */}
@@ -444,6 +501,11 @@ export const CustomForecastScreen: React.FC = () => {
               <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
                 {isFr ? 'Prélèvements datés sur la période' : 'Dated debits in range'}
               </span>
+              {liveForecast && (
+                <div className="mt-1.5 text-[11px] font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                  vs Live: {formatSignedDelta(forecast.upcomingBillsTotal - liveForecast.upcomingBillsTotal)}
+                </div>
+              )}
             </div>
 
             {/* Upcoming Scheduled Income */}
@@ -457,25 +519,49 @@ export const CustomForecastScreen: React.FC = () => {
               <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
                 {isFr ? 'Crédits datés sur la période' : 'Dated credits in range'}
               </span>
+              {liveForecast && (
+                <div className="mt-1.5 text-[11px] font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                  vs Live: {formatSignedDelta(forecast.upcomingIncomeTotal - liveForecast.upcomingIncomeTotal)}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Interactive Chart Container */}
           <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h2 className="font-bold text-slate-900 dark:text-white text-sm">
                   {isFr ? 'Courbe d’Évolution de Trésorerie' : 'Cash Flow Trajectory'}
+                  {activeSimulation && (
+                    <span className="ml-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                      · {activeSimulation.name}
+                    </span>
+                  )}
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
                   {spanLabel} · {forecast.totalDays} {isFr ? 'jours' : 'days'}
                 </p>
               </div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                {isFr
-                  ? 'Survolez ou cliquez sur la courbe pour examiner chaque date'
-                  : 'Hover or tap to inspect daily balance & scheduled events'}
-              </span>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                {liveForecast && (
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5 text-teal-700 dark:text-teal-400 font-medium">
+                      <span className="w-4 h-0.5 bg-teal-600 dark:bg-teal-400" />
+                      {activeSimulation?.name}
+                    </span>
+                    <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-medium">
+                      <span className="w-4 border-t-2 border-dashed border-indigo-500 dark:border-indigo-400" />
+                      {isFr ? 'Base Live' : 'Live Baseline'}
+                    </span>
+                  </div>
+                )}
+                <span className="text-slate-500 dark:text-slate-400">
+                  {isFr
+                    ? 'Survolez ou cliquez sur la courbe pour examiner chaque date'
+                    : 'Hover or tap to inspect daily balance & scheduled events'}
+                </span>
+              </div>
             </div>
 
             {/* Single-day view vs SVG Interactive Graph */}
@@ -500,8 +586,10 @@ export const CustomForecastScreen: React.FC = () => {
             ) : timeline.length >= 2 ? (
               (() => {
                 const balances = timeline.map(t => t.balance);
-                const rawMin = Math.min(...balances);
-                const rawMax = Math.max(...balances);
+                const liveBalances = liveForecast ? liveForecast.timeline.map(t => t.balance) : [];
+                const allScaleBalances = liveBalances.length > 0 ? [...balances, ...liveBalances] : balances;
+                const rawMin = Math.min(...allScaleBalances);
+                const rawMax = Math.max(...allScaleBalances);
                 const span = rawMax - rawMin || 500;
                 const minBal = rawMin < 0 ? rawMin - span * 0.08 : Math.max(0, rawMin - span * 0.15);
                 const maxBal = rawMax + span * 0.08;
@@ -525,6 +613,29 @@ export const CustomForecastScreen: React.FC = () => {
                     .join(' ');
 
                 const areaD = `${pathD} L ${points[points.length - 1].x},${height - padding} L ${points[0].x},${height - padding} Z`;
+
+                const livePathD =
+                  liveForecast && liveForecast.timeline.length >= 2
+                    ? (() => {
+                        const lPts = liveForecast.timeline.map((pt, idx) => {
+                          const x =
+                            padding +
+                            (idx / (liveForecast.timeline.length - 1)) * (width - 2 * padding);
+                          const y =
+                            height -
+                            padding -
+                            ((pt.balance - minBal) / range) * (height - 2 * padding);
+                          return { x, y };
+                        });
+                        return (
+                          `M ${lPts[0].x},${lPts[0].y} ` +
+                          lPts
+                            .slice(1)
+                            .map(p => `L ${p.x},${p.y}`)
+                            .join(' ')
+                        );
+                      })()
+                    : null;
 
                 const zeroY = height - padding - ((0 - minBal) / range) * (height - 2 * padding);
 
@@ -587,6 +698,18 @@ export const CustomForecastScreen: React.FC = () => {
                               stroke={isDark ? '#f43f5e' : '#e11d48'}
                               strokeWidth="1.5"
                               strokeDasharray="4 4"
+                            />
+                          )}
+
+                          {/* Live Baseline overlay line when comparing */}
+                          {livePathD && (
+                            <path
+                              d={livePathD}
+                              fill="none"
+                              stroke={isDark ? '#818cf8' : '#6366f1'}
+                              strokeWidth="1.75"
+                              strokeDasharray="5 4"
+                              strokeOpacity="0.85"
                             />
                           )}
 
@@ -689,7 +812,7 @@ export const CustomForecastScreen: React.FC = () => {
                     {isFr ? 'Date sélectionnée :' : 'Inspected date:'}{' '}
                     <strong className="text-slate-900 dark:text-white text-sm">{activePoint.dateStr}</strong>
                   </span>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
                     <span className="text-slate-500 dark:text-slate-400">
                       {isFr ? 'Solde prévisionnel :' : 'Projected balance:'}
                     </span>
@@ -702,6 +825,12 @@ export const CustomForecastScreen: React.FC = () => {
                     >
                       {activePoint.balance.toLocaleString()} {currency}
                     </span>
+                    {activeLivePoint && (
+                      <span className="text-xs font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                        · Live: {activeLivePoint.balance.toLocaleString()} {currency} (
+                        {formatSignedDelta(activePoint.balance - activeLivePoint.balance)})
+                      </span>
+                    )}
                   </div>
                 </div>
 

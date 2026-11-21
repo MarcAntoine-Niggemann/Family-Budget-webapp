@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import {
   AccountEntity,
   AppScreen,
+  BudgetSimulationEntity,
   CategorizationRuleEntity,
   CategoryBudgetEntity,
   CategoryEntity,
@@ -148,6 +149,11 @@ interface BudgetContextType {
   members: FamilyMemberEntity[];
   sharedSettlements: SharedSettlementEntity[];
   sharedPreset: SharedExpensePreset;
+  simulations: BudgetSimulationEntity[];
+  activeSimulationId: string | null;
+  activeSimulation: BudgetSimulationEntity | null;
+  effectiveCategories: CategoryEntity[];
+  effectiveBudgets: CategoryBudgetEntity[];
   config: FirebaseConfigEntity;
   syncState: SyncStateEntity;
   openBankingConfig: OpenBankingConfig;
@@ -221,6 +227,16 @@ interface BudgetContextType {
   updateBudget: (b: CategoryBudgetEntity) => void;
   deleteBudget: (id: number) => void;
 
+  setActiveSimulationId: (id: string | null) => void;
+  createSimulation: (input: {
+    name: string;
+    description?: string;
+    sourceId: 'LIVE' | string;
+  }) => string | null;
+  duplicateSimulation: (sourceSimId: string, name?: string) => string | null;
+  renameSimulation: (id: string, name: string, description?: string | null) => void;
+  deleteSimulation: (id: string) => void;
+
   addRule: (r: Omit<CategorizationRuleEntity, 'id' | 'updatedAt' | 'isDeleted'>) => void;
   updateRule: (r: CategorizationRuleEntity) => void;
   deleteRule: (id: number) => void;
@@ -293,10 +309,19 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     defaultMode: 'EQUAL',
     defaultParticipantIds: []
   });
+  const [simulations, setSimulations] = useState<BudgetSimulationEntity[]>([]);
+  const [activeSimulationId, setActiveSimulationId] = useState<string | null>(null);
   const [outbox, setOutbox] = useState<SyncOutboxEntity[]>([]);
   const [config, setConfig] = useState<FirebaseConfigEntity>(() => getEmptyConfig(null));
   const [syncState, setSyncState] = useState<SyncStateEntity>(() => getEmptySyncState());
   const [openBankingConfig, setOpenBankingConfig] = useState<OpenBankingConfig>(DEFAULT_OPEN_BANKING_CONFIG);
+
+  const visibleSimulations = simulations.filter(s => !s.isDeleted);
+  const activeSimulation = activeSimulationId
+    ? visibleSimulations.find(s => s.id === activeSimulationId) || null
+    : null;
+  const effectiveCategories = activeSimulation ? activeSimulation.categories : categories;
+  const effectiveBudgets = activeSimulation ? activeSimulation.budgets : budgets;
 
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('DASHBOARD');
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
@@ -348,6 +373,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.MEMBERS, members, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.SHARED_SETTLEMENTS, sharedSettlements, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.SHARED_PRESET, sharedPreset, dek),
+        saveEncryptedCachedData(CACHE_STORAGE_KEYS.BUDGET_SIMULATIONS, simulations, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.SYNC_STATE, syncState, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.OUTBOX, outbox, dek),
         saveEncryptedCachedData(CACHE_STORAGE_KEYS.OPEN_BANKING, openBankingConfig, dek),
@@ -370,6 +396,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     members,
     sharedSettlements,
     sharedPreset,
+    simulations,
     syncState,
     outbox,
     openBankingConfig,
@@ -387,6 +414,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       rules: CategorizationRuleEntity[];
       members: FamilyMemberEntity[];
       sharedSettlements?: SharedSettlementEntity[];
+      simulations?: BudgetSimulationEntity[];
     }
   ) => {
     if (result.incomingTransactions && result.incomingTransactions.length > 0) {
@@ -439,6 +467,18 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         map.set(inc.id, inc);
       }
       setSharedSettlements(Array.from(map.values()).sort((a, b) => b.date - a.date));
+    }
+
+    if (result.incomingSimulations && result.incomingSimulations.length > 0) {
+      const map = new Map((base.simulations || []).map(s => [s.id, s]));
+      for (const inc of result.incomingSimulations) {
+        map.set(inc.id, inc);
+      }
+      const nextSims = Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+      setSimulations(nextSims);
+      if (activeSimulationId && !nextSims.some(s => s.id === activeSimulationId && !s.isDeleted)) {
+        setActiveSimulationId(null);
+      }
     }
 
     if (result.incomingFamilyName || result.resolvedUserRole) {
@@ -627,6 +667,17 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const drillDownToTransactions = (filter: Partial<TransactionFilters>) => {
+    if (
+      (typeof filter.categoryId === 'number' && filter.categoryId < 0) ||
+      (typeof filter.budgetId === 'number' && filter.budgetId < 0)
+    ) {
+      showToast(
+        language === 'fr'
+          ? 'Ligne propre à la simulation — aucune opération réelle ne peut lui être associée.'
+          : 'Simulation-only budget item — no real transactions can be associated with it.'
+      );
+      return;
+    }
     setTransactionFilters({
       ...DEFAULT_TRANSACTION_FILTERS,
       ...filter
@@ -678,6 +729,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setMembers(data.members);
     setSharedSettlements(data.sharedSettlements || []);
     setSharedPreset(data.sharedPreset || { defaultMode: 'EQUAL', defaultParticipantIds: data.members.slice(0, 2).map(m => m.id) });
+    setSimulations(data.simulations || []);
+    setActiveSimulationId(null);
     setConfig(data.config);
     setSyncState(data.syncState);
     setOutbox([]);
@@ -702,6 +755,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setMembers(data.members);
       setSharedSettlements(data.sharedSettlements || []);
       setSharedPreset(data.sharedPreset || { defaultMode: 'EQUAL', defaultParticipantIds: data.members.slice(0, 2).map(m => m.id) });
+      setSimulations(data.simulations || []);
+      setActiveSimulationId(null);
       setOutbox([]);
       setActiveAccountId(null);
       showToast(lang === 'fr' ? 'Données de démonstration chargées' : 'Demo data loaded');
@@ -717,6 +772,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setMembers([]);
     setSharedSettlements([]);
     setSharedPreset({ defaultMode: 'EQUAL', defaultParticipantIds: [] });
+    setSimulations([]);
+    setActiveSimulationId(null);
     setOutbox([]);
     setActiveAccountId(null);
     setTransactionFilters(DEFAULT_TRANSACTION_FILTERS);
@@ -799,12 +856,70 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
   };
 
+  // Live-only assignment isolation helpers (simulation-only categories/budgets never enter real transactions or rules)
+  const liveCategoryById = new Map(categories.filter(c => !c.isDeleted).map(c => [c.id, c]));
+  const liveBudgetById = new Map(budgets.filter(b => !b.isDeleted).map(b => [b.id, b]));
+
+  const isLiveCategoryId = (categoryId: number) => categoryId > 0 && liveCategoryById.has(categoryId);
+  const isLiveBudgetForCategory = (budgetId: number, categoryId: number) => {
+    if (budgetId <= 0 || categoryId <= 0) return false;
+    const b = liveBudgetById.get(budgetId);
+    return Boolean(b && b.categoryId === categoryId);
+  };
+
+  const sanitizeTxLiveRefs = <T extends {
+    categoryId: number;
+    categoryName: string;
+    categoryColor: number;
+    categoryIcon: string;
+    budgetId: number;
+    budgetTitle: string;
+  }>(
+    item: T
+  ): { sanitized: T; stripped: boolean } => {
+    if (item.categoryId === 0) {
+      if (item.budgetId !== 0) {
+        return {
+          sanitized: { ...item, budgetId: 0, budgetTitle: '' },
+          stripped: item.budgetId < 0
+        };
+      }
+      return { sanitized: item, stripped: false };
+    }
+    if (!isLiveCategoryId(item.categoryId)) {
+      return {
+        sanitized: {
+          ...item,
+          categoryId: 0,
+          categoryName: '',
+          categoryColor: 0xff64748b,
+          categoryIcon: 'HelpCircle',
+          budgetId: 0,
+          budgetTitle: ''
+        },
+        stripped: true
+      };
+    }
+    if (item.budgetId !== 0 && !isLiveBudgetForCategory(item.budgetId, item.categoryId)) {
+      return {
+        sanitized: {
+          ...item,
+          budgetId: 0,
+          budgetTitle: ''
+        },
+        stripped: true
+      };
+    }
+    return { sanitized: item, stripped: false };
+  };
+
   // Transaction mutations
   const addTransaction = (tx: Omit<TransactionEntity, 'id' | 'updatedAt' | 'isDeleted'>): number => {
+    const { sanitized, stripped } = sanitizeTxLiveRefs(tx);
     const nextId = Math.max(0, ...transactions.map(t => t.id)) + 1;
     const now = Date.now();
     const newTx: TransactionEntity = {
-      ...tx,
+      ...sanitized,
       id: nextId,
       updatedAt: now,
       isDeleted: false
@@ -826,7 +941,15 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       })
     );
 
-    showToast(language === 'fr' ? 'Transaction enregistrée' : 'Transaction saved');
+    showToast(
+      stripped
+        ? language === 'fr'
+          ? 'Catégorie de simulation ignorée — transaction enregistrée sans affectation'
+          : 'Simulation category blocked — transaction saved as unassigned'
+        : language === 'fr'
+        ? 'Transaction enregistrée'
+        : 'Transaction saved'
+    );
     return nextId;
   };
 
@@ -835,12 +958,21 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const oldTx = transactions.find(t => t.id === updatedTx.id);
     if (!oldTx) return;
 
+    const categoryOrBudgetChanged =
+      updatedTx.categoryId !== oldTx.categoryId || updatedTx.budgetId !== oldTx.budgetId;
+    const hasSimulationRef = updatedTx.categoryId < 0 || updatedTx.budgetId < 0;
+    const refCheck =
+      hasSimulationRef || categoryOrBudgetChanged
+        ? sanitizeTxLiveRefs(updatedTx)
+        : { sanitized: updatedTx, stripped: false };
+    const safeUpdatedTx = refCheck.sanitized;
+
     const isChild = oldTx.parentId !== null && oldTx.parentId !== undefined && oldTx.parentId > 0;
 
     if (isChild) {
       // Split children inherit amount/flow/account from the parent split group to prevent sum drift
       const sanitizedChild: TransactionEntity = {
-        ...updatedTx,
+        ...safeUpdatedTx,
         amount: oldTx.amount,
         isExpense: oldTx.isExpense,
         accountId: oldTx.accountId,
@@ -852,21 +984,29 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
       setTransactions(prev => prev.map(tx => (tx.id === updatedTx.id ? sanitizedChild : tx)));
       enqueueOutbox('TRANSACTION', `tx_${updatedTx.id}`, 'UPSERT');
-      showToast(language === 'fr' ? 'Transaction mise à jour' : 'Transaction updated');
+      showToast(
+        refCheck.stripped
+          ? language === 'fr'
+            ? 'Impossible d’associer une catégorie de simulation à une transaction réelle'
+            : 'Cannot associate a simulation category with a real transaction'
+          : language === 'fr'
+          ? 'Transaction mise à jour'
+          : 'Transaction updated'
+      );
       return;
     }
 
-    const isParent = Boolean(oldTx.isSplitParent || updatedTx.isSplitParent);
+    const isParent = Boolean(oldTx.isSplitParent || safeUpdatedTx.isSplitParent);
     const sanitizedTx: TransactionEntity = isParent
       ? {
-          ...updatedTx,
+          ...safeUpdatedTx,
           isSplitParent: true,
           isSplit: true,
           isExcludedFromTotals: true,
           updatedAt: now
         }
       : {
-          ...updatedTx,
+          ...safeUpdatedTx,
           updatedAt: now
         };
 
@@ -933,7 +1073,15 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       enqueueOutbox('ACCOUNT', sanitizedTx.accountId, 'UPSERT');
     }
 
-    showToast(language === 'fr' ? 'Transaction mise à jour' : 'Transaction updated');
+    showToast(
+      refCheck.stripped
+        ? language === 'fr'
+          ? 'Impossible d’associer une catégorie de simulation à une transaction réelle'
+          : 'Cannot associate a simulation category with a real transaction'
+        : language === 'fr'
+        ? 'Transaction mise à jour'
+        : 'Transaction updated'
+    );
   };
 
   const deleteTransaction = (id: number) => {
@@ -984,6 +1132,20 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const splitTransaction = (parentId: number, splits: SplitInputItem[]) => {
     const parent = transactions.find(t => t.id === parentId && !t.isDeleted);
     if (!parent || (parent.parentId && parent.parentId > 0) || splits.length < 2) return;
+
+    const hasInvalidLiveRef = splits.some(
+      s =>
+        !isLiveCategoryId(s.categoryId) ||
+        (s.budgetId !== 0 && !isLiveBudgetForCategory(s.budgetId, s.categoryId))
+    );
+    if (hasInvalidLiveRef) {
+      showToast(
+        language === 'fr'
+          ? 'Impossible d’associer une catégorie de simulation à une transaction réelle.'
+          : 'Cannot associate a simulation category with a real transaction.'
+      );
+      return;
+    }
 
     const existingChildren = transactions.filter(t => !t.isDeleted && t.parentId === parentId);
     const existingById = new Map(existingChildren.map(c => [c.id, c]));
@@ -1419,10 +1581,121 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     showToast(language === 'fr' ? 'Solde bancaire actualisé' : 'Account balance updated');
   };
 
-  // Categories CRUD
-  const addCategory = (cat: Omit<CategoryEntity, 'id' | 'updatedAt' | 'isDeleted'>) => {
-    const nextId = Math.max(0, ...categories.map(c => c.id)) + 1;
+  // What-If Budget Simulations CRUD
+  const createSimulation = (input: {
+    name: string;
+    description?: string;
+    sourceId: 'LIVE' | string;
+  }): string | null => {
+    const cleanName = input.name.trim().slice(0, 120);
+    if (!cleanName) return null;
+
     const now = Date.now();
+    let clonedCategories: CategoryEntity[] = [];
+    let clonedBudgets: CategoryBudgetEntity[] = [];
+    let clonedFromName = language === 'fr' ? 'Budget Actuel (Live)' : 'Live Budget';
+
+    if (input.sourceId === 'LIVE') {
+      const liveCats = categories.filter(c => !c.isDeleted);
+      const liveCatIds = new Set(liveCats.map(c => c.id));
+      const liveBgts = budgets.filter(b => !b.isDeleted && liveCatIds.has(b.categoryId));
+      clonedCategories = liveCats.map(c => ({ ...c }));
+      clonedBudgets = liveBgts.map(b => ({ ...b }));
+    } else {
+      const sourceSim = simulations.find(s => s.id === input.sourceId && !s.isDeleted);
+      if (!sourceSim) return null;
+      clonedFromName = sourceSim.name.slice(0, 120);
+      const srcCats = sourceSim.categories.filter(c => !c.isDeleted);
+      const srcCatIds = new Set(srcCats.map(c => c.id));
+      const srcBgts = sourceSim.budgets.filter(b => !b.isDeleted && srcCatIds.has(b.categoryId));
+      clonedCategories = srcCats.map(c => ({ ...c }));
+      clonedBudgets = srcBgts.map(b => ({ ...b }));
+    }
+
+    const id = `sim_${now}_${Math.floor(Math.random() * 10000)}`;
+    const newSim: BudgetSimulationEntity = {
+      id,
+      name: cleanName,
+      description: input.description?.trim().slice(0, 500) || null,
+      clonedFromName,
+      categories: clonedCategories,
+      budgets: clonedBudgets,
+      createdAt: now,
+      updatedAt: now,
+      isDeleted: false
+    };
+
+    setSimulations(prev => [newSim, ...prev]);
+    setActiveSimulationId(id);
+    enqueueOutbox('SIMULATION', id, 'UPSERT');
+    showToast(
+      language === 'fr'
+        ? `Simulation « ${cleanName} » créée et activée`
+        : `Simulation "${cleanName}" created and active`
+    );
+    return id;
+  };
+
+  const duplicateSimulation = (sourceSimId: string, customName?: string): string | null => {
+    const src = simulations.find(s => s.id === sourceSimId && !s.isDeleted);
+    if (!src) return null;
+    const fallbackName = `${src.name} (${language === 'fr' ? 'Copie' : 'Copy'})`.slice(0, 120);
+    return createSimulation({
+      name: customName?.trim() || fallbackName,
+      description: src.description || undefined,
+      sourceId: src.id
+    });
+  };
+
+  const renameSimulation = (id: string, name: string, description?: string | null) => {
+    const cleanName = name.trim().slice(0, 120);
+    if (!cleanName) return;
+    const now = Date.now();
+    setSimulations(prev =>
+      prev.map(s =>
+        s.id === id
+          ? {
+              ...s,
+              name: cleanName,
+              description: description !== undefined ? description?.trim().slice(0, 500) || null : s.description,
+              updatedAt: now
+            }
+          : s
+      )
+    );
+    enqueueOutbox('SIMULATION', id, 'UPSERT');
+    showToast(language === 'fr' ? 'Simulation renommée' : 'Simulation renamed');
+  };
+
+  const deleteSimulation = (id: string) => {
+    const now = Date.now();
+    setSimulations(prev => prev.map(s => (s.id === id ? { ...s, isDeleted: true, updatedAt: now } : s)));
+    if (activeSimulationId === id) {
+      setActiveSimulationId(null);
+    }
+    enqueueOutbox('SIMULATION', id, 'DELETE');
+    showToast(language === 'fr' ? 'Simulation supprimée' : 'Simulation deleted');
+  };
+
+  // Categories CRUD (routes to active simulation when simulating, otherwise updates Live)
+  const addCategory = (cat: Omit<CategoryEntity, 'id' | 'updatedAt' | 'isDeleted'>) => {
+    const now = Date.now();
+    if (activeSimulation) {
+      const nextSimCatId = Math.min(0, ...activeSimulation.categories.map(c => c.id)) - 1;
+      const newCat: CategoryEntity = { ...cat, id: nextSimCatId, updatedAt: now, isDeleted: false };
+      setSimulations(prev =>
+        prev.map(s =>
+          s.id === activeSimulation.id
+            ? { ...s, categories: [...s.categories, newCat], updatedAt: now }
+            : s
+        )
+      );
+      enqueueOutbox('SIMULATION', activeSimulation.id, 'UPSERT');
+      showToast(language === 'fr' ? 'Catégorie ajoutée à la simulation' : 'Category added to simulation');
+      return;
+    }
+
+    const nextId = Math.max(0, ...categories.map(c => c.id)) + 1;
     setCategories(prev => [...prev, { ...cat, id: nextId, updatedAt: now, isDeleted: false }]);
     enqueueOutbox('CATEGORY', `cat_${nextId}`, 'UPSERT');
     showToast(language === 'fr' ? 'Catégorie créée' : 'Category created');
@@ -1430,6 +1703,26 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateCategory = (cat: CategoryEntity) => {
     const now = Date.now();
+    if (activeSimulation) {
+      setSimulations(prev =>
+        prev.map(s =>
+          s.id === activeSimulation.id
+            ? {
+                ...s,
+                categories: s.categories.map(c => (c.id === cat.id ? { ...cat, updatedAt: now } : c)),
+                budgets: s.budgets.map(b =>
+                  b.categoryId === cat.id ? { ...b, categoryName: cat.name, updatedAt: now } : b
+                ),
+                updatedAt: now
+              }
+            : s
+        )
+      );
+      enqueueOutbox('SIMULATION', activeSimulation.id, 'UPSERT');
+      showToast(language === 'fr' ? 'Catégorie simulée mise à jour' : 'Simulated category updated');
+      return;
+    }
+
     setCategories(prev => prev.map(c => (c.id === cat.id ? { ...cat, updatedAt: now } : c)));
     setBudgets(prev =>
       prev.map(b => (b.categoryId === cat.id ? { ...b, categoryName: cat.name, updatedAt: now } : b))
@@ -1443,15 +1736,47 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const deleteCategory = (id: number) => {
     const now = Date.now();
+    if (activeSimulation) {
+      setSimulations(prev =>
+        prev.map(s =>
+          s.id === activeSimulation.id
+            ? {
+                ...s,
+                categories: s.categories.map(c => (c.id === id ? { ...c, isDeleted: true, updatedAt: now } : c)),
+                updatedAt: now
+              }
+            : s
+        )
+      );
+      enqueueOutbox('SIMULATION', activeSimulation.id, 'UPSERT');
+      showToast(language === 'fr' ? 'Catégorie retirée de la simulation' : 'Category removed from simulation');
+      return;
+    }
+
     setCategories(prev => prev.map(c => (c.id === id ? { ...c, isDeleted: true, updatedAt: now } : c)));
     enqueueOutbox('CATEGORY', `cat_${id}`, 'DELETE');
     showToast(language === 'fr' ? 'Catégorie supprimée' : 'Category deleted');
   };
 
-  // Budgets (Sub-categories) CRUD
+  // Budgets (Sub-categories) CRUD (routes to active simulation when simulating, otherwise updates Live)
   const addBudget = (b: Omit<CategoryBudgetEntity, 'id' | 'updatedAt' | 'isDeleted'>) => {
-    const nextId = Math.max(0, ...budgets.map(bg => bg.id)) + 1;
     const now = Date.now();
+    if (activeSimulation) {
+      const nextSimBudgetId = Math.min(0, ...activeSimulation.budgets.map(bg => bg.id)) - 1;
+      const newBudget: CategoryBudgetEntity = { ...b, id: nextSimBudgetId, updatedAt: now, isDeleted: false };
+      setSimulations(prev =>
+        prev.map(s =>
+          s.id === activeSimulation.id
+            ? { ...s, budgets: [...s.budgets, newBudget], updatedAt: now }
+            : s
+        )
+      );
+      enqueueOutbox('SIMULATION', activeSimulation.id, 'UPSERT');
+      showToast(language === 'fr' ? 'Ligne ajoutée à la simulation' : 'Budget line added to simulation');
+      return;
+    }
+
+    const nextId = Math.max(0, ...budgets.map(bg => bg.id)) + 1;
     setBudgets(prev => [...prev, { ...b, id: nextId, updatedAt: now, isDeleted: false }]);
     enqueueOutbox('BUDGET', `budget_${nextId}`, 'UPSERT');
     showToast(language === 'fr' ? 'Sous-catégorie créée' : 'Sub-category created');
@@ -1459,6 +1784,23 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateBudget = (b: CategoryBudgetEntity) => {
     const now = Date.now();
+    if (activeSimulation) {
+      setSimulations(prev =>
+        prev.map(s =>
+          s.id === activeSimulation.id
+            ? {
+                ...s,
+                budgets: s.budgets.map(bg => (bg.id === b.id ? { ...b, updatedAt: now } : bg)),
+                updatedAt: now
+              }
+            : s
+        )
+      );
+      enqueueOutbox('SIMULATION', activeSimulation.id, 'UPSERT');
+      showToast(language === 'fr' ? 'Ligne simulée mise à jour' : 'Simulated budget line updated');
+      return;
+    }
+
     setBudgets(prev => prev.map(bg => (bg.id === b.id ? { ...b, updatedAt: now } : bg)));
     setRules(prev =>
       prev.map(r => (r.targetBudgetId === b.id ? { ...r, targetBudgetTitle: b.title, updatedAt: now } : r))
@@ -1469,13 +1811,41 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const deleteBudget = (id: number) => {
     const now = Date.now();
+    if (activeSimulation) {
+      setSimulations(prev =>
+        prev.map(s =>
+          s.id === activeSimulation.id
+            ? {
+                ...s,
+                budgets: s.budgets.map(bg => (bg.id === id ? { ...bg, isDeleted: true, updatedAt: now } : bg)),
+                updatedAt: now
+              }
+            : s
+        )
+      );
+      enqueueOutbox('SIMULATION', activeSimulation.id, 'UPSERT');
+      showToast(language === 'fr' ? 'Ligne retirée de la simulation' : 'Budget line removed from simulation');
+      return;
+    }
+
     setBudgets(prev => prev.map(bg => (bg.id === id ? { ...bg, isDeleted: true, updatedAt: now } : bg)));
     enqueueOutbox('BUDGET', `budget_${id}`, 'DELETE');
     showToast(language === 'fr' ? 'Sous-catégorie supprimée' : 'Sub-category deleted');
   };
 
-  // Rules CRUD
+  // Rules CRUD (strictly Live-only)
   const addRule = (r: Omit<CategorizationRuleEntity, 'id' | 'updatedAt' | 'isDeleted'>) => {
+    if (
+      !isLiveCategoryId(r.targetCategoryId) ||
+      (r.targetBudgetId !== 0 && !isLiveBudgetForCategory(r.targetBudgetId, r.targetCategoryId))
+    ) {
+      showToast(
+        language === 'fr'
+          ? 'Une règle ne peut cibler qu’une catégorie réelle du budget Live.'
+          : 'Auto-categorization rules can only target Live categories and budgets.'
+      );
+      return;
+    }
     const nextId = Math.max(0, ...rules.map(rl => rl.id)) + 1;
     const now = Date.now();
     setRules(prev => [...prev, { ...r, id: nextId, updatedAt: now, isDeleted: false }]);
@@ -1484,6 +1854,17 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateRule = (r: CategorizationRuleEntity) => {
+    if (
+      !isLiveCategoryId(r.targetCategoryId) ||
+      (r.targetBudgetId !== 0 && !isLiveBudgetForCategory(r.targetBudgetId, r.targetCategoryId))
+    ) {
+      showToast(
+        language === 'fr'
+          ? 'Une règle ne peut cibler qu’une catégorie réelle du budget Live.'
+          : 'Auto-categorization rules can only target Live categories and budgets.'
+      );
+      return;
+    }
     const now = Date.now();
     setRules(prev => prev.map(rl => (rl.id === r.id ? { ...r, updatedAt: now } : rl)));
     enqueueOutbox('RULE', `rule_${r.id}`, 'UPSERT');
@@ -1667,6 +2048,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const newTxs: TransactionEntity[] = rowsToImport.map(rec => {
       balanceDelta += rec.amount;
+      const safeRefs = sanitizeTxLiveRefs({
+        categoryId: rec.matchedCategoryId,
+        categoryName: rec.matchedCategoryName,
+        categoryColor: rec.matchedCategoryColor,
+        categoryIcon: rec.matchedCategoryIcon,
+        budgetId: rec.matchedBudgetId,
+        budgetTitle: rec.matchedBudgetTitle
+      }).sanitized;
 
       return {
         id: nextId++,
@@ -1674,12 +2063,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         originalBankLabel: rec.originalLabel,
         amount: rec.amount,
         isExpense: rec.isExpense,
-        categoryId: rec.matchedCategoryId,
-        categoryName: rec.matchedCategoryName,
-        categoryColor: rec.matchedCategoryColor,
-        categoryIcon: rec.matchedCategoryIcon,
-        budgetId: rec.matchedBudgetId,
-        budgetTitle: rec.matchedBudgetTitle,
+        categoryId: safeRefs.categoryId,
+        categoryName: safeRefs.categoryName,
+        categoryColor: safeRefs.categoryColor,
+        categoryIcon: safeRefs.categoryIcon,
+        budgetId: safeRefs.budgetId,
+        budgetTitle: safeRefs.budgetTitle,
         date: rec.dateMillis,
         familyMemberId: members[0]?.id || 'primary',
         familyMemberName: members[0]?.name || 'Primary User',
@@ -1775,7 +2164,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           budgets: [],
           rules: [],
           members,
-          sharedSettlements: []
+          sharedSettlements: [],
+          simulations: []
         }
       : {
           accounts,
@@ -1784,7 +2174,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           budgets,
           rules,
           members,
-          sharedSettlements
+          sharedSettlements,
+          simulations
         };
 
     if (resetCacheBeforePull) {
@@ -1794,6 +2185,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setBudgets([]);
       setRules([]);
       setSharedSettlements([]);
+      setSimulations([]);
+      setActiveSimulationId(null);
       setOutbox([]);
       setActiveAccountId(null);
     }
@@ -1807,6 +2200,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         rules: baseData.rules,
         members: baseData.members,
         sharedSettlements: baseData.sharedSettlements,
+        simulations: baseData.simulations,
         outbox: resetCacheBeforePull ? [] : outbox,
         syncState: baseSyncState,
         config
@@ -1878,6 +2272,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       let syncRules: CategorizationRuleEntity[] = [];
       let syncMembers: FamilyMemberEntity[] = [adminMember];
       let syncSettlements: SharedSettlementEntity[] = [];
+      let syncSimulations: BudgetSimulationEntity[] = [];
       let syncOutbox: SyncOutboxEntity[] = [];
       let baseSyncState: SyncStateEntity;
 
@@ -1889,6 +2284,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         syncRules = localCache.rules;
         syncMembers = localCache.members.length > 0 ? localCache.members : [adminMember];
         syncSettlements = localCache.sharedSettlements || [];
+        syncSimulations = localCache.simulations || [];
         syncOutbox = localCache.outbox || [];
         baseSyncState = {
           ...localCache.syncState,
@@ -1921,6 +2317,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (localCache.sharedPreset) {
           setSharedPreset(localCache.sharedPreset);
         }
+        setSimulations(syncSimulations);
+        setActiveSimulationId(null);
         setOutbox(syncOutbox);
         setActiveAccountId(null);
       } else {
@@ -1944,6 +2342,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setRules([]);
         setMembers([adminMember]);
         setSharedSettlements([]);
+        setSimulations([]);
+        setActiveSimulationId(null);
         setOutbox([]);
         setActiveAccountId(null);
         setOpenBankingConfig(DEFAULT_OPEN_BANKING_CONFIG);
@@ -1979,6 +2379,7 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         rules: syncRules,
         members: syncMembers,
         sharedSettlements: syncSettlements,
+        simulations: syncSimulations,
         outbox: syncOutbox,
         syncState: baseSyncState,
         config: nextConfig
@@ -1991,7 +2392,8 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         budgets: syncBudgets,
         rules: syncRules,
         members: syncMembers,
-        sharedSettlements: syncSettlements
+        sharedSettlements: syncSettlements,
+        simulations: syncSimulations
       });
 
       const isOfflineWithCache =
@@ -2855,11 +3257,21 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           rules,
           members,
           sharedSettlements,
+          simulations,
           outbox,
           syncState,
           config: updatedCfg
         });
-        applySyncResult(result, { accounts, transactions, categories, budgets, rules, members, sharedSettlements });
+        applySyncResult(result, {
+          accounts,
+          transactions,
+          categories,
+          budgets,
+          rules,
+          members,
+          sharedSettlements,
+          simulations
+        });
         if (result.success) {
           setSessionMode('FIRESTORE');
         }
@@ -2957,6 +3369,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         members: members.filter(m => !m.isDeleted),
         sharedSettlements: sharedSettlements.filter(s => !s.isDeleted),
         sharedPreset,
+        simulations: visibleSimulations,
+        activeSimulationId: activeSimulation ? activeSimulation.id : null,
+        activeSimulation,
+        effectiveCategories: effectiveCategories.filter(c => !c.isDeleted),
+        effectiveBudgets: effectiveBudgets.filter(b => !b.isDeleted),
         config,
         syncState,
         openBankingConfig,
@@ -3013,6 +3430,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addBudget,
         updateBudget,
         deleteBudget,
+
+        setActiveSimulationId,
+        createSimulation,
+        duplicateSimulation,
+        renameSimulation,
+        deleteSimulation,
 
         addRule,
         updateRule,

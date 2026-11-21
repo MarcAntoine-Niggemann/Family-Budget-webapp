@@ -1,5 +1,6 @@
 import {
   AccountEntity,
+  BudgetSimulationEntity,
   TransactionEntity,
   CategoryEntity,
   CategoryBudgetEntity,
@@ -46,7 +47,8 @@ export const CACHE_STORAGE_KEYS = {
   THEME: 'fbv_theme',
   FAMILY_NAME: 'fbv_family_name',
   SHARED_SETTLEMENTS: 'fbv_shared_settlements',
-  SHARED_PRESET: 'fbv_shared_preset'
+  SHARED_PRESET: 'fbv_shared_preset',
+  BUDGET_SIMULATIONS: 'fbv_budget_simulations'
 } as const;
 
 export interface SavedByobConfig {
@@ -318,6 +320,7 @@ export interface ByobLocalCacheSnapshot {
   members: FamilyMemberEntity[];
   sharedSettlements: SharedSettlementEntity[];
   sharedPreset?: SharedExpensePreset;
+  simulations: BudgetSimulationEntity[];
   syncState: SyncStateEntity;
   outbox: SyncOutboxEntity[];
   openBankingConfig?: OpenBankingConfig;
@@ -361,6 +364,7 @@ export async function loadEncryptedByobLocalCache(
       members,
       sharedSettlements,
       sharedPreset,
+      simulations,
       outbox,
       openBankingConfig,
       currency,
@@ -374,6 +378,7 @@ export async function loadEncryptedByobLocalCache(
       loadEncryptedCachedData<FamilyMemberEntity[]>(CACHE_STORAGE_KEYS.MEMBERS, [], dek),
       loadEncryptedCachedData<SharedSettlementEntity[]>(CACHE_STORAGE_KEYS.SHARED_SETTLEMENTS, [], dek),
       loadEncryptedCachedData<SharedExpensePreset | undefined>(CACHE_STORAGE_KEYS.SHARED_PRESET, undefined, dek),
+      loadEncryptedCachedData<BudgetSimulationEntity[]>(CACHE_STORAGE_KEYS.BUDGET_SIMULATIONS, [], dek),
       loadEncryptedCachedData<SyncOutboxEntity[]>(CACHE_STORAGE_KEYS.OUTBOX, [], dek),
       loadEncryptedCachedData<OpenBankingConfig | undefined>(
         CACHE_STORAGE_KEYS.OPEN_BANKING,
@@ -393,6 +398,7 @@ export async function loadEncryptedByobLocalCache(
       members,
       sharedSettlements,
       sharedPreset,
+      simulations,
       syncState,
       outbox,
       openBankingConfig,
@@ -1663,6 +1669,8 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
     pendingOutboxCount: 0
   };
 
+  const simulations: BudgetSimulationEntity[] = [];
+
   return {
     accounts,
     transactions,
@@ -1672,6 +1680,7 @@ export function getInitialSeedData(language: 'fr' | 'en' = 'fr') {
     members,
     sharedSettlements,
     sharedPreset,
+    simulations,
     config,
     syncState
   };

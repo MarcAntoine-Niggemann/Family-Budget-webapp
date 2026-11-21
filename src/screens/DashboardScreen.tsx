@@ -42,7 +42,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     accounts,
     transactions,
     categories,
-    budgets,
+    effectiveCategories,
+    effectiveBudgets,
+    activeSimulation,
     members,
     currency,
     language,
@@ -57,20 +59,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [expandedParentIds, setExpandedParentIds] = useState<Record<number, boolean>>({});
 
   const netWorth = computeNetWorth(accounts);
-  const forecast = computeCashFlowForecast(accounts, transactions, budgets, 30, language);
+  const forecast = computeCashFlowForecast(accounts, transactions, effectiveBudgets, 30, language);
 
   const now = new Date();
   const monthlyReport = computeMonthlyReport(
     now.getFullYear(),
     now.getMonth(),
     transactions,
-    categories,
-    budgets,
+    effectiveCategories,
+    effectiveBudgets,
     members,
     language
   );
 
   const activeAccounts = accounts.filter(a => !a.isDeleted);
+  // Keep unassigned transaction detection strictly anchored to Live categories
   const activeCategoryIds = new Set(categories.filter(c => !c.isDeleted).map(c => c.id));
   const activeTransactions = transactions.filter(tx => !tx.isDeleted);
 
@@ -111,11 +114,18 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Forecast Included Balance + 30d Minimum Forecast Card */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white to-slate-50/80 dark:from-slate-900 dark:to-slate-950 border border-slate-200 dark:border-slate-800 p-5 shadow-sm dark:shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              {isFr ? 'Trésorerie Prévisionnelle' : 'Forecast Balance'}
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                {isFr ? 'Trésorerie Prévisionnelle' : 'Forecast Balance'}
+              </span>
+              {activeSimulation && (
+                <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 truncate block mt-0.5">
+                  {isFr ? 'Simulation :' : 'Simulation:'} {activeSimulation.name}
+                </span>
+              )}
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
               <Landmark className="w-4 h-4" />
             </div>
           </div>
@@ -176,11 +186,18 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
         {/* Monthly Budget Burn Card */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white to-slate-50/80 dark:from-slate-900 dark:to-slate-950 border border-slate-200 dark:border-slate-800 p-5 shadow-sm dark:shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              {isFr ? 'Budget du Mois en cours' : 'Monthly Budget Spend'}
-            </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                {isFr ? 'Budget du Mois en cours' : 'Monthly Budget Spend'}
+              </span>
+              {activeSimulation && (
+                <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 truncate block mt-0.5">
+                  {isFr ? 'Simulation :' : 'Simulation:'} {activeSimulation.name}
+                </span>
+              )}
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
               <TrendingDown className="w-4 h-4" />
             </div>
           </div>
@@ -353,6 +370,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {isFr ? 'Trésorerie Prévisionnelle (30 Jours)' : 'Cash Flow Forecast (30 Days)'}
+                {activeSimulation && (
+                  <span className="ml-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                    · {activeSimulation.name}
+                  </span>
+                )}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {isFr

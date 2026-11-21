@@ -15,6 +15,7 @@ import {
 import { getAuth } from 'firebase/auth';
 import {
   AccountEntity,
+  BudgetSimulationEntity,
   CategorizationRuleEntity,
   CategoryBudgetEntity,
   CategoryEntity,
@@ -152,6 +153,7 @@ export interface SyncPayload {
   rules: CategorizationRuleEntity[];
   members: FamilyMemberEntity[];
   sharedSettlements?: SharedSettlementEntity[];
+  simulations?: BudgetSimulationEntity[];
   outbox: SyncOutboxEntity[];
   syncState: SyncStateEntity;
   config: FirebaseConfigEntity;
@@ -170,6 +172,7 @@ export interface SyncResult {
   incomingRules?: CategorizationRuleEntity[];
   incomingMembers?: FamilyMemberEntity[];
   incomingSharedSettlements?: SharedSettlementEntity[];
+  incomingSimulations?: BudgetSimulationEntity[];
   incomingFamilyName?: string;
   resolvedUserRole?: MemberRole;
 }
@@ -502,6 +505,26 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
             batch.set(docRef, stripUndefined({ ...st, updatedAt: item.createdAt }), { merge: true });
             chunkOps++;
           }
+        } else if (item.entityType === 'SIMULATION') {
+          const simId = item.entityId;
+          const docRef = doc(db, 'budget_simulations', simId);
+          const sim = (payload.simulations || []).find(s => s.id === simId);
+          if (sim) {
+            const cleanSim = stripUndefined({
+              ...sim,
+              description: sim.description ?? null,
+              categories: sim.categories.map(c => stripUndefined(c)),
+              budgets: sim.budgets.map(b => stripUndefined(b)),
+              isDeleted: item.operation === 'DELETE' ? true : Boolean(sim.isDeleted),
+              updatedAt: item.createdAt
+            });
+            if (item.operation === 'DELETE') {
+              batch.set(docRef, cleanSim);
+            } else {
+              batch.set(docRef, cleanSim, { merge: true });
+            }
+            chunkOps++;
+          }
         }
       }
 
@@ -526,6 +549,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
     const incomingRules: CategorizationRuleEntity[] = [];
     const incomingMembers: FamilyMemberEntity[] = [];
     const incomingSharedSettlements: SharedSettlementEntity[] = [];
+    const incomingSimulations: BudgetSimulationEntity[] = [];
 
     // 4a. Pull Categories
     currentStage = 'Lecture de la collection Firestore (categories)';
@@ -794,6 +818,58 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
       }
     });
 
+    // 4h. Pull Budget Simulations
+    currentStage = 'Lecture de la collection Firestore (budget_simulations)';
+    const simCol = collection(db, 'budget_simulations');
+    const simQuery =
+      lastPull > 0 ? query(simCol, where('updatedAt', '>', lastPull)) : query(simCol);
+    const simSnap = await withFirestoreTimeout(getDocs(simQuery), currentStage);
+    simSnap.forEach(docSnap => {
+      if (!dirtyIds.has(docSnap.id)) {
+        const raw = docSnap.data();
+        const rawCats = Array.isArray(raw.categories) ? raw.categories : [];
+        const rawBgts = Array.isArray(raw.budgets) ? raw.budgets : [];
+        incomingSimulations.push({
+          id: raw.id || docSnap.id,
+          name: raw.name || 'Simulation',
+          description: raw.description ?? null,
+          clonedFromName: raw.clonedFromName || 'Budget Live',
+          categories: rawCats.map((c: any, idx: number) => ({
+            id: typeof c?.id === 'number' && Number.isFinite(c.id) && c.id !== 0 ? c.id : -(idx + 1),
+            name: c?.name || 'Catégorie',
+            icon: c?.icon || 'Tag',
+            color: typeof c?.color === 'number' ? c.color : 0xff6366f1,
+            updatedAt: toMillis(c?.updatedAt, syncStartTime),
+            isDeleted: Boolean(c?.isDeleted)
+          })),
+          budgets: rawBgts.map((b: any, idx: number) => ({
+            id: typeof b?.id === 'number' && Number.isFinite(b.id) && b.id !== 0 ? b.id : -(idx + 1),
+            categoryId: typeof b?.categoryId === 'number' && Number.isFinite(b.categoryId) ? b.categoryId : 0,
+            categoryName: b?.categoryName || '',
+            amount: Number(b?.amount) || 0,
+            frequency: b?.frequency || 'MONTHLY',
+            year: b?.year,
+            month: b?.month ?? null,
+            day: b?.day ?? null,
+            startYear: b?.startYear,
+            startMonth: b?.startMonth ?? null,
+            endYear: b?.endYear ?? null,
+            endMonth: b?.endMonth ?? null,
+            title: b?.title || b?.categoryName || 'Budget',
+            notes: b?.notes ?? null,
+            isExpense: b?.isExpense !== undefined ? Boolean(b.isExpense) : true,
+            isActive: b?.isActive !== undefined ? Boolean(b.isActive) : true,
+            updatedAt: toMillis(b?.updatedAt, syncStartTime),
+            isDeleted: Boolean(b?.isDeleted)
+          })),
+          createdAt: toMillis(raw.createdAt, syncStartTime),
+          updatedAt: toMillis(raw.updatedAt, syncStartTime),
+          isDeleted: Boolean(raw.isDeleted)
+        });
+        pulledCount++;
+      }
+    });
+
     // -------------------------------------------------------------
     // PHASE 5: ADVANCE WATERMARK
     // -------------------------------------------------------------
@@ -819,6 +895,7 @@ export async function executeBidirectionalSync(payload: SyncPayload): Promise<Sy
       incomingRules: incomingRules,
       incomingMembers: incomingMembers.length > 0 ? incomingMembers : undefined,
       incomingSharedSettlements: incomingSharedSettlements.length > 0 ? incomingSharedSettlements : undefined,
+      incomingSimulations: incomingSimulations.length > 0 ? incomingSimulations : undefined,
       incomingFamilyName,
       resolvedUserRole: serverRole
     };

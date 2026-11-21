@@ -330,6 +330,31 @@ service cloud.firestore {
         && data.isDeleted is bool;
     }
 
+    function isValidSimulation(data) {
+      return data.keys().hasAll([
+          'id', 'name', 'clonedFromName', 'categories', 'budgets',
+          'createdAt', 'updatedAt', 'isDeleted'
+        ])
+        && data.keys().hasOnly([
+          'id', 'name', 'description', 'clonedFromName', 'categories', 'budgets',
+          'createdAt', 'updatedAt', 'isDeleted'
+        ])
+        && isValidId(data.id)
+        && isValidString(data.name, 120)
+        && data.name.size() >= 1
+        && isOptionalString(data, 'description', 500)
+        && isValidString(data.clonedFromName, 120)
+        && data.categories is list
+        && data.categories.size() <= 200
+        && (data.categories.size() == 0 || data.categories[0] is map)
+        && data.budgets is list
+        && data.budgets.size() <= 1000
+        && (data.budgets.size() == 0 || data.budgets[0] is map)
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt)
+        && data.isDeleted is bool;
+    }
+
     function isValidLegacyAccountBalance(data) {
       return data.keys().hasAll(['currentBalance', 'updatedAt'])
         && data.keys().hasOnly(['id', 'accountName', 'currentBalance', 'lastManualSyncTimestamp', 'updatedAt', 'isDeleted'])
@@ -569,6 +594,14 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(settlementId);
     }
 
+    match /budget_simulations/{simId} {
+      allow get: if isValidId(simId) && isFamilyMember();
+      allow list: if isFamilyMember();
+      allow create: if canEdit() && isValidId(simId) && isValidSimulation(incoming());
+      allow update: if canEdit() && isValidId(simId) && isValidSimulation(incoming());
+      allow delete: if isAdmin() && isValidId(simId);
+    }
+
     // -------------------------------------------------------------------------
     // TURNKEY MANAGED CLOUD MULTI-TENANT VAULTS (/vaults/{vaultId}/...)
     // -------------------------------------------------------------------------
@@ -726,6 +759,14 @@ service cloud.firestore {
         allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(settlementId) && isValidSettlement(incoming());
         allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(settlementId) && isValidSettlement(incoming());
         allow delete: if isVaultAdmin(vaultId) && isValidId(settlementId);
+      }
+
+      match /budget_simulations/{simId} {
+        allow get: if isValidId(simId) && isVaultMember(vaultId);
+        allow list: if isVaultMember(vaultId);
+        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(simId) && isValidSimulation(incoming());
+        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(simId) && isValidSimulation(incoming());
+        allow delete: if isVaultAdmin(vaultId) && isValidId(simId);
       }
     }
   }
