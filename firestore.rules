@@ -1,6 +1,6 @@
 rules_version = '2';
 // =========================================================================
-// HARDENED ZERO-TRUST SECURITY RULES — BYOB & MULTI-TENANT FAMILY VAULT
+// HARDENED ZERO-TRUST SECURITY RULES — PRIVATE BYOB FAMILY VAULT
 // - Enforces verified Google accounts (request.auth.token.email_verified == true)
 // - Atomic create-only bootstrap (zero missing-metadata bypass)
 // - Strict schema key allowlists, ID regex guards, and size bounds
@@ -129,21 +129,6 @@ service cloud.firestore {
         && data.familyName.size() >= 1
         && isValidString(data.adminEmail, 254)
         && isValidTimestamp(data.updatedAt);
-    }
-
-    function isValidMultiTenantVaultMeta(data) {
-      return data.keys().hasAll(['familyName', 'adminEmail', 'updatedAt'])
-        && data.keys().hasOnly([
-          'familyName', 'adminEmail', 'updatedAt',
-          'subscriptionStatus', 'subscriptionExpiryMillis', 'subscriptionPurchaseToken'
-        ])
-        && isValidString(data.familyName, 120)
-        && data.familyName.size() >= 1
-        && isValidString(data.adminEmail, 254)
-        && isValidTimestamp(data.updatedAt)
-        && isOptionalString(data, 'subscriptionStatus', 32)
-        && isOptionalNumber(data, 'subscriptionExpiryMillis')
-        && isOptionalString(data, 'subscriptionPurchaseToken', 512);
     }
 
     function isValidMember(data) {
@@ -398,64 +383,6 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
-    // 3. TURNKEY MANAGED CLOUD (/vaults/{vaultId}) MULTI-TENANT HELPERS
-    // -------------------------------------------------------------------------
-    function vaultRolesPath(vaultId) {
-      return /databases/$(database)/documents/vaults/$(vaultId)/security_config/roles;
-    }
-
-    function vaultMetaDocPath(vaultId) {
-      return /databases/$(database)/documents/vaults/$(vaultId)/family_meta/vault;
-    }
-
-    function vaultRolesExists(vaultId) {
-      return exists(vaultRolesPath(vaultId));
-    }
-
-    function vaultMetaDocExists(vaultId) {
-      return exists(vaultMetaDocPath(vaultId));
-    }
-
-    function hasVaultUserRole(vaultId) {
-      return vaultRolesExists(vaultId)
-        && ('userRoles' in get(vaultRolesPath(vaultId)).data)
-        && get(vaultRolesPath(vaultId)).data.userRoles is map
-        && (userEmail() in get(vaultRolesPath(vaultId)).data.userRoles);
-    }
-
-    function isVaultUserAdmin(vaultId) {
-      return hasVaultUserRole(vaultId)
-        && get(vaultRolesPath(vaultId)).data.userRoles[userEmail()] == 'ADMIN';
-    }
-
-    function isVaultUserEditorOrMember(vaultId) {
-      return hasVaultUserRole(vaultId)
-        && (get(vaultRolesPath(vaultId)).data.userRoles[userEmail()] in ['ADMIN', 'EDITOR', 'MEMBER']);
-    }
-
-    function isVaultMember(vaultId) {
-      return isSignedIn() && isValidId(vaultId) && hasVaultUserRole(vaultId);
-    }
-
-    function isVaultAdmin(vaultId) {
-      return isSignedIn() && isValidId(vaultId) && isVaultUserAdmin(vaultId);
-    }
-
-    function canWriteVaultData(vaultId) {
-      return isSignedIn() && isValidId(vaultId) && isVaultUserEditorOrMember(vaultId);
-    }
-
-    // Subscription MUST explicitly exist and be active (never bypass on missing doc)
-    function isVaultSubscriptionActive(vaultId) {
-      return vaultMetaDocExists(vaultId)
-        && ('subscriptionStatus' in get(vaultMetaDocPath(vaultId)).data)
-        && get(vaultMetaDocPath(vaultId)).data.subscriptionStatus == 'ACTIVE'
-        && get(vaultMetaDocPath(vaultId)).data.subscriptionExpiryMillis > request.time.toMillis()
-        && get(vaultMetaDocPath(vaultId)).data.subscriptionPurchaseToken is string
-        && get(vaultMetaDocPath(vaultId)).data.subscriptionPurchaseToken.size() > 10;
-    }
-
-    // -------------------------------------------------------------------------
     // SELF-HOSTED (BYOB) ROOT COLLECTIONS
     // -------------------------------------------------------------------------
     match /users/{userId} {
@@ -602,174 +529,6 @@ service cloud.firestore {
       allow create: if canEdit() && isValidId(simId) && isValidSimulation(incoming());
       allow update: if canEdit() && isValidId(simId) && isValidSimulation(incoming());
       allow delete: if isAdmin() && isValidId(simId);
-    }
-
-    // -------------------------------------------------------------------------
-    // TURNKEY MANAGED CLOUD MULTI-TENANT VAULTS (/vaults/{vaultId}/...)
-    // -------------------------------------------------------------------------
-    match /vaults/{vaultId} {
-      allow list: if false;
-      allow get: if isVaultMember(vaultId);
-      allow create: if isSignedIn()
-        && isValidId(vaultId)
-        && incoming().keys().hasOnly(['familyName', 'adminEmail', 'createdAt', 'updatedAt'])
-        && isValidString(incoming().adminEmail, 254)
-        && incoming().adminEmail.lower() == userEmail()
-        && !vaultRolesExists(vaultId)
-        && !vaultMetaDocExists(vaultId)
-        && getAfter(vaultRolesPath(vaultId)).data.userRoles[userEmail()] == 'ADMIN';
-      allow update: if isVaultAdmin(vaultId)
-        && incoming().diff(existing()).affectedKeys().hasOnly(['familyName', 'updatedAt']);
-      allow delete: if false;
-
-      match /users/{userId} {
-        allow get: if isSignedIn() && isValidId(vaultId) && isValidId(userId) && request.auth.uid == userId;
-        allow list: if false;
-        allow create, update: if isSignedIn()
-          && isValidId(vaultId)
-          && isValidId(userId)
-          && request.auth.uid == userId
-          && isValidUserProfile(incoming(), userId);
-        allow delete: if false;
-      }
-
-      match /security_config/{configDoc} {
-        allow get: if isValidId(configDoc) && isVaultMember(vaultId);
-        allow list: if false;
-        allow create: if isSignedIn()
-          && isValidId(vaultId)
-          && configDoc == 'roles'
-          && isValidRolesDoc(incoming())
-          && (
-            (
-              !vaultRolesExists(vaultId)
-              && !vaultMetaDocExists(vaultId)
-              && (userEmail() in incoming().userRoles)
-              && incoming().userRoles[userEmail()] == 'ADMIN'
-              && existsAfter(vaultMetaDocPath(vaultId))
-            )
-            || isVaultAdmin(vaultId)
-          );
-        allow update: if isVaultAdmin(vaultId)
-          && configDoc == 'roles'
-          && isValidRolesDoc(incoming())
-          && (userEmail() in incoming().userRoles)
-          && incoming().userRoles[userEmail()] == 'ADMIN';
-        allow delete: if false;
-      }
-
-      match /family_meta/{docId} {
-        allow get: if isValidId(docId) && isVaultMember(vaultId);
-        allow list: if false;
-        // Clients cannot forge subscriptionStatus / subscriptionExpiryMillis / subscriptionPurchaseToken
-        allow create: if isSignedIn()
-          && isValidId(vaultId)
-          && docId == 'vault'
-          && isValidMultiTenantVaultMeta(incoming())
-          && !incoming().keys().hasAny(['subscriptionStatus', 'subscriptionExpiryMillis', 'subscriptionPurchaseToken'])
-          && (
-            (
-              !vaultRolesExists(vaultId)
-              && !vaultMetaDocExists(vaultId)
-              && incoming().adminEmail.lower() == userEmail()
-              && getAfter(vaultRolesPath(vaultId)).data.userRoles[userEmail()] == 'ADMIN'
-            )
-            || isVaultAdmin(vaultId)
-          );
-        allow update: if isVaultAdmin(vaultId)
-          && docId == 'vault'
-          && isValidMultiTenantVaultMeta(incoming())
-          && incoming().diff(existing()).affectedKeys().hasOnly(['familyName', 'updatedAt']);
-        allow delete: if false;
-      }
-
-      match /family_members/{memberId} {
-        allow get: if isValidId(memberId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && isVaultAdmin(vaultId) && isValidId(memberId) && isValidMember(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && isVaultAdmin(vaultId) && isValidId(memberId) && isValidMember(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(memberId);
-      }
-
-      match /categories/{catId} {
-        allow get: if isValidId(catId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(catId) && isValidCategory(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(catId) && isValidCategory(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(catId);
-      }
-
-      match /transactions/{txId} {
-        allow get: if isValidId(txId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(txId) && isValidTransaction(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(txId) && isValidTransaction(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(txId);
-      }
-
-      match /category_budgets/{budgetId} {
-        allow get: if isValidId(budgetId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(budgetId) && isValidBudget(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(budgetId) && isValidBudget(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(budgetId);
-      }
-
-      match /rules/{ruleId} {
-        allow get: if isValidId(ruleId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(ruleId) && isValidRule(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(ruleId) && isValidRule(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(ruleId);
-      }
-
-      match /expected_spends/{spendId} {
-        allow get: if isValidId(spendId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(spendId) && isValidLegacyExpectedSpend(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(spendId) && isValidLegacyExpectedSpend(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(spendId);
-      }
-
-      match /account_balance/{docId} {
-        allow get: if isValidId(docId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(docId) && isValidLegacyAccountBalance(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(docId) && isValidLegacyAccountBalance(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(docId);
-      }
-
-      match /accounts/{accountId} {
-        allow get: if isValidId(accountId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(accountId) && isValidAccount(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(accountId) && isValidAccount(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(accountId);
-      }
-
-      match /payment_methods/{pmId} {
-        allow get: if isValidId(pmId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(pmId) && isValidLegacyPaymentMethod(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(pmId) && isValidLegacyPaymentMethod(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(pmId);
-      }
-
-      match /shared_settlements/{settlementId} {
-        allow get: if isValidId(settlementId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(settlementId) && isValidSettlement(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(settlementId) && isValidSettlement(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(settlementId);
-      }
-
-      match /budget_simulations/{simId} {
-        allow get: if isValidId(simId) && isVaultMember(vaultId);
-        allow list: if isVaultMember(vaultId);
-        allow create: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(simId) && isValidSimulation(incoming());
-        allow update: if isVaultSubscriptionActive(vaultId) && canWriteVaultData(vaultId) && isValidId(simId) && isValidSimulation(incoming());
-        allow delete: if isVaultAdmin(vaultId) && isValidId(simId);
-      }
     }
   }
 }

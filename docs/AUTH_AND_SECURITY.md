@@ -80,4 +80,3 @@ Users deploy `firestore.rules` **once** to their Firebase project and validate t
    - `ADMIN`: Full read/write including `security_config/roles`, `family_meta/vault`, `family_members`, and Vault QR sharing.
    - `EDITOR` / `MEMBER`: Read/write on financial collections (`accounts`, `transactions`, `categories`, `category_budgets`, `rules`, `shared_settlements`).
    - `VIEWER` / `CHILD`: Read-only access to vault collections.
-   - *(Note: `firestore.rules` also protects `/vaults/{vaultId}/...` multi-tenant rules against missing-doc bypasses and subscription field forgery.)*

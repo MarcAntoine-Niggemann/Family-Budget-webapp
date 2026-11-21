@@ -29,10 +29,7 @@
       "properties": {
         "familyName": { "type": "string", "maxLength": 120 },
         "adminEmail": { "type": "string", "format": "email", "maxLength": 254 },
-        "updatedAt": { "type": "number" },
-        "subscriptionStatus": { "type": "string", "enum": ["ACTIVE", "EXPIRED", "CANCELLED"] },
-        "subscriptionExpiryMillis": { "type": "number" },
-        "subscriptionPurchaseToken": { "type": "string", "maxLength": 512 }
+        "updatedAt": { "type": "number" }
       },
       "required": ["familyName", "adminEmail", "updatedAt"]
     },
